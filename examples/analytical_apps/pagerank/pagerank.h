@@ -23,18 +23,21 @@ namespace grape {
 
 /**
  * @brief An implementation of PageRank, which can work
- * on both directed and undirected graphs.
+
+ * on undirected graphs.
+ *
+ * This version of PageRank inherits BatchShuffleAppBase.
+ * Messages are generated in batches and received in-place.
  *
  * @tparam FRAG_T
  */
 template <typename FRAG_T>
-class PageRank
-    : public BatchShuffleAppBase<FRAG_T, PageRankContext<FRAG_T>>,
-      public ParallelEngine,
-      public Communicator {
+class PageRank : public BatchShuffleAppBase<FRAG_T, PageRankContext<FRAG_T>>,
+                 public ParallelEngine,
+                 public Communicator {
  public:
-  INSTALL_BATCH_SHUFFLE_WORKER(PageRank<FRAG_T>,
-                               PageRankContext<FRAG_T>, FRAG_T)
+  INSTALL_BATCH_SHUFFLE_WORKER(PageRank<FRAG_T>, PageRankContext<FRAG_T>,
+                               FRAG_T)
 
   using vertex_t = typename FRAG_T::vertex_t;
   using vid_t = typename FRAG_T::vid_t;
