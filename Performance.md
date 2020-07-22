@@ -36,8 +36,8 @@ The best results are marked in **bold**.
 |  PageRank | datagen-9_0-fb |        26.90        |  X    |      X   |    **1.61**    |
 |           | datagen-9_1-fb |        34.01        |  X    |      X   |    **1.99**    |
 |           | datagen-9_2-zf |        152.11       |  X    |      X   |    **4.00**    |
-|           | graph500-26    |        34.89        |  X    |      X   |    **4.99**    |
-|           | com-friendster |        66.61        |  X    |      X   |    **6.36**    |
+|           | graph500-26    |        34.89        |  X    |      X   |    **2.95**    |
+|           | com-friendster |        66.61        |  X    |      X   |    **5.91**    |
 |    CDLP   | datagen-9_0-fb |        1535.09      |  N/A    |     16.67   |    **8.49**    |
 |           | datagen-9_1-fb |        2725.54      |  N/A    |     21.60   |    **10.78**   |
 |           | datagen-9_2-zf |        > 3600       |  N/A    |     46.05   |    **17.17**   |
