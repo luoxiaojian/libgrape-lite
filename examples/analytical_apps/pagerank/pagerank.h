@@ -23,7 +23,6 @@ namespace grape {
 
 /**
  * @brief An implementation of PageRank, which can work
-
  * on undirected graphs.
  *
  * This version of PageRank inherits BatchShuffleAppBase.
