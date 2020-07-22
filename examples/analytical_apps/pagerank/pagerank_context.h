@@ -45,11 +45,6 @@ class PageRankContext : public ContextBase<FRAG_T> {
 
     avg_degree = static_cast<double>(frag.GetEdgeNum()) /
                  static_cast<double>(frag.GetInnerVerticesNum());
-#ifdef PROFILING
-    preprocess_time = 0;
-    exec_time = 0;
-    postprocess_time = 0;
-#endif
   }
 
   void Output(const FRAG_T& frag, std::ostream& os) {
