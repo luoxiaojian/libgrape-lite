@@ -41,3 +41,43 @@ while (true) {
     worker->Output(ostream);
   }
 }
+
+void PEval(const fragment_t& frag, context_t& ctx) {
+  vertex_t source;
+  bool native_source = frag.GetInnerVertex(ctx.source_id, source);
+
+  std::priority_queue<std::pair<double, vertex_t>> heap;
+
+  if (native_source) {
+    ctx.partial_result.SetValue(source, 0.0);
+    heap.emplace(0, source);
+  }
+
+  Dijkstra(frag, ctx, heap);
+}
+
+void IncEval(const fragment_t& frag, context_t& ctx) {
+  auto inner_vertices = frag.InnerVertices();
+
+  std::priority_queue<std::pair<double, vertex_t>> heap;
+
+  for (auto& v : inner_vertices) {
+    if (ctx.partial_result.IsUpdated(v)) {
+      heap.emplace(-ctx.partial_result.GetValue(v), v);
+    }
+  }
+
+  Dijkstra(frag, ctx, heap);
+}
+
+// sequential Dijkstra algorithm for SSSP.
+void Dijkstra(const fragment_t& frag, context_t& ctx,
+              std::priority_queue<std::pair<double, vertex_t>>& heap) {
+  while (!heap.empty()) {
+    vertex_t u = heap.top().second;
+    double distu = -heap.top().first;
+    heap.pop();
+
+    // ...
+  }
+}
