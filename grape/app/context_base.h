@@ -16,8 +16,10 @@ limitations under the License.
 #ifndef GRAPE_APP_CONTEXT_BASE_H_
 #define GRAPE_APP_CONTEXT_BASE_H_
 
-#include <memory>
 #include <ostream>
+#include <memory>
+
+#include "grape/types.h"
 
 namespace grape {
 
@@ -27,11 +29,10 @@ namespace grape {
  * during supersteps.
  *
  */
-template <typename FRAG_T>
 class ContextBase {
  public:
-  ContextBase() {}
-  virtual ~ContextBase() {}
+  ContextBase() = default;
+  virtual ~ContextBase() = default;
 
   /**
    * @brief Output function to implement for result output.
@@ -42,7 +43,7 @@ class ContextBase {
    * @param frag
    * @param os
    */
-  virtual void Output(const FRAG_T& frag, std::ostream& os) {}
+  virtual void Output(std::ostream& os) {}
 };
 
 }  // namespace grape
