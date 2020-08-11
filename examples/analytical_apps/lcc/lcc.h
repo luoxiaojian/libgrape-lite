@@ -102,7 +102,7 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T>>,
         std::vector<vid_t> msg_vec;
         msg_vec.reserve(degree);
         for (auto& e : es) {
-          auto u = e.neighbor;
+          auto u = e.get_neighbor();
           if (ctx.global_degree[u] < ctx.global_degree[v]) {
             nbr_vec.push_back(u);
             msg_vec.push_back(frag.Vertex2Gid(u));
@@ -149,33 +149,32 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T>>,
 
       std::vector<DenseVertexSet<vid_t>> vertexsets(thread_num());
 
-      ForEach(
-          inner_vertices,
-          [&vertexsets, &frag](int tid) {
-            auto& ns = vertexsets[tid];
-            ns.Init(frag.Vertices());
-          },
-          [&vertexsets, &ctx](int tid, vertex_t v) {
-            auto& v0_nbr_set = vertexsets[tid];
-            auto& v0_nbr_vec = ctx.complete_neighbor[v];
-            for (auto u : v0_nbr_vec) {
-              v0_nbr_set.Insert(u);
-            }
-            for (auto u : v0_nbr_vec) {
-              auto& v1_nbr_vec = ctx.complete_neighbor[u];
-              for (auto w : v1_nbr_vec) {
-                if (v0_nbr_set.Exist(w)) {
-                  atomic_add(ctx.tricnt[u], 1);
-                  atomic_add(ctx.tricnt[v], 1);
-                  atomic_add(ctx.tricnt[w], 1);
+      ForEach(inner_vertices,
+              [&vertexsets, &frag](int tid) {
+                auto& ns = vertexsets[tid];
+                ns.Init(frag.Vertices());
+              },
+              [&vertexsets, &ctx](int tid, vertex_t v) {
+                auto& v0_nbr_set = vertexsets[tid];
+                auto& v0_nbr_vec = ctx.complete_neighbor[v];
+                for (auto u : v0_nbr_vec) {
+                  v0_nbr_set.Insert(u);
                 }
-              }
-            }
-            for (auto u : v0_nbr_vec) {
-              v0_nbr_set.Erase(u);
-            }
-          },
-          [](int tid) {});
+                for (auto u : v0_nbr_vec) {
+                  auto& v1_nbr_vec = ctx.complete_neighbor[u];
+                  for (auto w : v1_nbr_vec) {
+                    if (v0_nbr_set.Exist(w)) {
+                      atomic_add(ctx.tricnt[u], 1);
+                      atomic_add(ctx.tricnt[v], 1);
+                      atomic_add(ctx.tricnt[w], 1);
+                    }
+                  }
+                }
+                for (auto u : v0_nbr_vec) {
+                  v0_nbr_set.Erase(u);
+                }
+              },
+              [](int tid) {});
 
 #ifdef PROFILING
       ctx.exec_time += GetCurrentTime();
@@ -195,7 +194,6 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T>>,
       messages.ForceContinue();
     } else if (ctx.stage == 2) {
       ctx.stage = 3;
-
 #ifdef PROFILING
       ctx.preprocess_time -= GetCurrentTime();
 #endif
@@ -206,9 +204,22 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T>>,
 #ifdef PROFILING
       ctx.preprocess_time += GetCurrentTime();
 #endif
-    } else {
-      messages.ParallelProcess<fragment_t, int>(
-          thread_num(), frag, [](int tid, vertex_t u, int) {});
+
+      // output result to context data
+      auto& global_degree = ctx.global_degree;
+      auto& tricnt = ctx.tricnt;
+      auto& ctx_data = ctx.data();
+
+      for (auto v : inner_vertices) {
+        if (global_degree[v] == 0 || global_degree[v] == 1) {
+          ctx_data[v] = 0;
+        } else {
+          double re = 2.0 * (tricnt[v]) /
+              (static_cast<int64_t>(global_degree[v]) *
+                  (static_cast<int64_t>(global_degree[v]) - 1));
+          ctx_data[v] = re;
+        }
+      }
     }
   }
 };

@@ -22,7 +22,7 @@ limitations under the License.
 
 namespace grape {
 
-#define MIN(a, b) ((a) > (b) ? (b) : (a))
+#define MIN_COMP_ID(a, b) ((a) > (b) ? (b) : (a))
 
 /**
  * @brief WCC application, determines the weakly connected component each vertex
@@ -58,8 +58,8 @@ class WCC : public ParallelAppBase<FRAG_T, WCCContext<FRAG_T>>,
       auto new_cid = old_cid;
       auto es = frag.GetOutgoingInnerVertexAdjList(v);
       for (auto& e : es) {
-        auto u = e.neighbor;
-        new_cid = MIN(ctx.comp_id[u], new_cid);
+        auto u = e.get_neighbor();
+        new_cid = MIN_COMP_ID(ctx.comp_id[u], new_cid);
       }
       if (new_cid < old_cid) {
         ctx.comp_id[v] = new_cid;
@@ -72,8 +72,8 @@ class WCC : public ParallelAppBase<FRAG_T, WCCContext<FRAG_T>>,
       auto new_cid = old_cid;
       auto es = frag.GetIncomingAdjList(v);
       for (auto& e : es) {
-        auto u = e.neighbor;
-        new_cid = MIN(ctx.comp_id[u], new_cid);
+        auto u = e.get_neighbor();
+        new_cid = MIN_COMP_ID(ctx.comp_id[u], new_cid);
       }
       ctx.comp_id[v] = new_cid;
       if (new_cid < old_cid) {
@@ -97,7 +97,7 @@ class WCC : public ParallelAppBase<FRAG_T, WCCContext<FRAG_T>>,
               auto cid = ctx.comp_id[v];
               auto es = frag.GetOutgoingAdjList(v);
               for (auto& e : es) {
-                auto u = e.neighbor;
+                auto u = e.get_neighbor();
                 if (ctx.comp_id[u] > cid) {
                   atomic_min(ctx.comp_id[u], cid);
                   ctx.next_modified.set_bit(u.GetValue());

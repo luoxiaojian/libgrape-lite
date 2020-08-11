@@ -70,8 +70,9 @@ class SSSP : public ParallelAppBase<FRAG_T, SSSPContext<FRAG_T>>,
       ctx.partial_result[source] = 0;
       auto es = frag.GetOutgoingAdjList(source);
       for (auto& e : es) {
-        vertex_t v = e.neighbor;
-        ctx.partial_result[v] = std::min(ctx.partial_result[v], e.data);
+        vertex_t v = e.get_neighbor();
+        ctx.partial_result[v] =
+            std::min(ctx.partial_result[v], static_cast<double>(e.get_data()));
         if (frag.IsOuterVertex(v)) {
           // put the message to the channel.
           channel_0.SyncStateOnOuterVertex<fragment_t, double>(
@@ -134,8 +135,8 @@ class SSSP : public ParallelAppBase<FRAG_T, SSSPContext<FRAG_T>>,
               double distv = ctx.partial_result[v];
               auto es = frag.GetOutgoingAdjList(v);
               for (auto& e : es) {
-                vertex_t u = e.neighbor;
-                double ndistu = distv + e.data;
+                vertex_t u = e.get_neighbor();
+                double ndistu = distv + e.get_data();
                 if (ndistu < ctx.partial_result[u]) {
                   atomic_min(ctx.partial_result[u], ndistu);
                   ctx.next_modified.set_bit(u.GetValue());

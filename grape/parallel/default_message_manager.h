@@ -303,6 +303,8 @@ class DefaultMessageManager : public MessageManagerBase {
   fid_t fid() const { return fid_; }
   fid_t fnum() const { return fnum_; }
 
+  std::vector<InArchive> to_send_;
+
  private:
   void syncLengths() {
     for (fid_t i = 0; i < fnum_; ++i) {
@@ -325,7 +327,6 @@ class DefaultMessageManager : public MessageManagerBase {
     return true;
   }
 
-  std::vector<InArchive> to_send_;
   std::vector<OutArchive> to_recv_;
   fid_t cur_;
 

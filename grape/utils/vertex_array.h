@@ -169,7 +169,7 @@ class VertexArray : public Array<T, Allocator<T>> {
     fake_start_ = Base::data() - range_.begin().GetValue();
   }
 
-  ~VertexArray() {}
+  ~VertexArray() = default;
 
   void Init(const VertexRange<VID_T>& range) {
     Base::clear();

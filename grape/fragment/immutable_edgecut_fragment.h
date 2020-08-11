@@ -108,7 +108,8 @@ class ImmutableEdgecutFragment
   using oid_t = OID_T;
   using vdata_t = VDATA_T;
   using edata_t = EDATA_T;
-
+  template <typename DATA_T>
+  using vertex_array_t = VertexArray<DATA_T, vid_t>;
   using vertex_map_t = GlobalVertexMap<oid_t, vid_t>;
 
   using IsEdgeCut = std::true_type;
@@ -765,7 +766,7 @@ class ImmutableEdgecutFragment
     return ovgid_[v.GetValue() - ivnum_];
   }
   inline VID_T GetInnerVertexGid(const vertex_t& v) const override {
-    return (v.GetValue() | ((VID_T) fid_ << fid_offset_));
+    return (v.GetValue() | ((VID_T)fid_ << fid_offset_));
   }
 
   /**
@@ -1231,7 +1232,7 @@ class ImmutableEdgecutFragment
       }
       fid_offset = (sizeof(T) * 8) - i;
     }
-    id_mask = ((T) 1 << fid_offset) - (T) 1;
+    id_mask = ((T)1 << fid_offset) - (T)1;
   }
 
   std::shared_ptr<vertex_map_t> vm_ptr_;

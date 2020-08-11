@@ -280,7 +280,7 @@ class ParallelMessageManager : public MessageManagerBase {
       threads[i] = std::thread(
           [&](int tid) {
             typename GRAPH_T::vid_t id;
-            typename GRAPH_T::vertex_t vertex;
+            typename GRAPH_T::vertex_t vertex(0);
             MESSAGE_T msg;
             auto& que = recv_queues_[round_ % 2];
             OutArchive arc;
