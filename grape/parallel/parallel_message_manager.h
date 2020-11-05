@@ -158,7 +158,7 @@ class ParallelMessageManager : public MessageManagerBase {
    */
   void ForceTerminate(const std::string& terminate_info) override {
     force_terminate_ = true;
-    terminate_info_[comm_spec_.fid()] = terminate_info;
+    terminate_info_.info[comm_spec_.fid()] = terminate_info;
   }
 
   /**
