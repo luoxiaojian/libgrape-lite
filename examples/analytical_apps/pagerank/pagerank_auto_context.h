@@ -36,9 +36,9 @@ class PageRankAutoContext : public VertexDataContext<FRAG_T, double> {
       : VertexDataContext<FRAG_T, double>(fragment, true),
         results(this->data()) {}
 
-  void Init(AutoParallelMessageManager<FRAG_T>& messages,
-            double delta, int max_round) {
-    auto &frag = this->fragment();
+  void Init(AutoParallelMessageManager<FRAG_T>& messages, double delta,
+            int max_round) {
+    auto& frag = this->fragment();
     auto inner_vertices = frag.InnerVertices();
     auto vertices = frag.Vertices();
 

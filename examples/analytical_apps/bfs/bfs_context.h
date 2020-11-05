@@ -37,9 +37,8 @@ class BFSContext : public VertexDataContext<FRAG_T, int64_t> {
       : VertexDataContext<FRAG_T, int64_t>(fragment, true),
         partial_result(this->data()) {}
 
-  void Init(ParallelMessageManager& messages,
-            oid_t src_id) {
-    auto &frag = this->fragment();
+  void Init(ParallelMessageManager& messages, oid_t src_id) {
+    auto& frag = this->fragment();
 
     source_id = src_id;
     partial_result.SetValue(std::numeric_limits<depth_type>::max());
@@ -54,7 +53,7 @@ class BFSContext : public VertexDataContext<FRAG_T, int64_t> {
   }
 
   void Output(std::ostream& os) override {
-    auto &frag = this->fragment();
+    auto& frag = this->fragment();
     auto inner_vertices = frag.InnerVertices();
 
     for (auto v : inner_vertices) {

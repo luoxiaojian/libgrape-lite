@@ -36,9 +36,8 @@ class PageRankLocalContext : public VertexDataContext<FRAG_T, double> {
       : VertexDataContext<FRAG_T, double>(fragment, true),
         result(this->data()) {}
 
-  void Init(BatchShuffleMessageManager& messages,
-            double delta, int max_round) {
-    auto &frag = this->fragment();
+  void Init(BatchShuffleMessageManager& messages, double delta, int max_round) {
+    auto& frag = this->fragment();
     auto vertices = frag.Vertices();
 
     this->delta = delta;

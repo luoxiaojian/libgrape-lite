@@ -39,7 +39,7 @@ class LCCContext : public VertexDataContext<FRAG_T, double> {
       : VertexDataContext<FRAG_T, double>(fragment) {}
 
   void Init(ParallelMessageManager& messages) {
-    auto &frag = this->fragment();
+    auto& frag = this->fragment();
     auto vertices = frag.Vertices();
 
     global_degree.Init(vertices);
@@ -56,8 +56,8 @@ class LCCContext : public VertexDataContext<FRAG_T, double> {
            << 0.0 << std::endl;
       } else {
         double re = 2.0 * (tricnt[v]) /
-            (static_cast<int64_t>(global_degree[v]) *
-                (static_cast<int64_t>(global_degree[v]) - 1));
+                    (static_cast<int64_t>(global_degree[v]) *
+                     (static_cast<int64_t>(global_degree[v]) - 1));
         os << frag.GetId(v) << " " << std::scientific << std::setprecision(15)
            << re << std::endl;
       }

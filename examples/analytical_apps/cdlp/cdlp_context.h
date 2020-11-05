@@ -41,9 +41,8 @@ class CDLPContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> {
       : VertexDataContext<FRAG_T, typename FRAG_T::oid_t>(fragment, true),
         labels(this->data()) {}
 
-  void Init(ParallelMessageManager& messages,
-            int max_round) {
-    auto &frag = this->fragment();
+  void Init(ParallelMessageManager& messages, int max_round) {
+    auto& frag = this->fragment();
     auto inner_vertices = frag.InnerVertices();
 
     this->max_round = max_round;
@@ -58,7 +57,7 @@ class CDLPContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> {
   }
 
   void Output(std::ostream& os) override {
-    auto &frag = this->fragment();
+    auto& frag = this->fragment();
     auto inner_vertices = frag.InnerVertices();
 
     for (auto v : inner_vertices) {

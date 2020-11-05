@@ -24,10 +24,10 @@ limitations under the License.
 #include <utility>
 
 #include "grape/communication/communicator.h"
+#include "grape/config.h"
 #include "grape/parallel/batch_shuffle_message_manager.h"
 #include "grape/parallel/parallel_engine.h"
 #include "grape/worker/comm_spec.h"
-#include "grape/config.h"
 
 namespace grape {
 
@@ -122,13 +122,9 @@ class BatchShuffleWorker {
     messages_.Finalize();
   }
 
-  std::shared_ptr<context_t> GetContext() {
-    return context_;
-  }
+  std::shared_ptr<context_t> GetContext() { return context_; }
 
-  void Output(std::ostream& os) {
-    context_->Output(os);
-  }
+  void Output(std::ostream& os) { context_->Output(os); }
 
  private:
   std::shared_ptr<APP_T> app_;

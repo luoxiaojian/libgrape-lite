@@ -403,7 +403,7 @@ class ParallelEngine {
     for (uint32_t i = 0; i < thread_num_; ++i) {
       threads[i] = std::thread(
           [&iter_func, &cur, chunk_size, &bitset, batch_begin, batch_end,
-              origin_begin, origin_end, this](uint32_t tid) {
+           origin_begin, origin_end, this](uint32_t tid) {
             if (tid == 0 && origin_begin < batch_begin) {
               Vertex<VID_T> v(origin_begin);
               Vertex<VID_T> end(batch_begin);

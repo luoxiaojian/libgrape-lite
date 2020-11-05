@@ -35,7 +35,7 @@ class WCCContext : public VertexDataContext<FRAG_T, typename FRAG_T::vid_t> {
         comp_id(this->data()) {}
 
   void Init(ParallelMessageManager& messages) {
-    auto &frag = this->fragment();
+    auto& frag = this->fragment();
 
     curr_modified.Init(frag.Vertices());
     next_modified.Init(frag.Vertices());

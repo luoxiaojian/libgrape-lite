@@ -36,9 +36,8 @@ class PageRankLocalParallelContext : public VertexDataContext<FRAG_T, double> {
       : VertexDataContext<FRAG_T, double>(fragment, true),
         result(this->data()) {}
 
-  void Init(ParallelMessageManager& messages, double delta,
-            int max_round) {
-    auto &frag = this->fragment();
+  void Init(ParallelMessageManager& messages, double delta, int max_round) {
+    auto& frag = this->fragment();
     auto inner_vertices = frag.InnerVertices();
     auto vertices = frag.Vertices();
 
@@ -59,8 +58,8 @@ class PageRankLocalParallelContext : public VertexDataContext<FRAG_T, double> {
     auto& frag = this->fragment();
     auto inner_vertices = frag.InnerVertices();
     for (auto v : inner_vertices) {
-        os << frag.GetId(v) << " " << std::scientific << std::setprecision(15)
-           << result[v] << std::endl;
+      os << frag.GetId(v) << " " << std::scientific << std::setprecision(15)
+         << result[v] << std::endl;
     }
 #ifdef PROFILING
     VLOG(2) << "preprocess_time: " << preprocess_time << "s.";

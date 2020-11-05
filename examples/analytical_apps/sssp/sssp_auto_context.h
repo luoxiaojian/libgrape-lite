@@ -39,7 +39,7 @@ class SSSPAutoContext : public VertexDataContext<FRAG_T, double> {
         partial_result(this->data()) {}
 
   void Init(AutoParallelMessageManager<FRAG_T>& messages, oid_t source_id) {
-    auto &frag = this->fragment();
+    auto& frag = this->fragment();
     auto vertices = frag.Vertices();
 
     this->source_id = source_id;
@@ -60,7 +60,7 @@ class SSSPAutoContext : public VertexDataContext<FRAG_T, double> {
     // If the distance is the max value for vertex_data_type
     // then the vertex is not connected to the source vertex.
     // According to specs, the output should be +inf
-    auto &frag = this->fragment();
+    auto& frag = this->fragment();
     auto inner_vertices = frag.InnerVertices();
     for (auto v : inner_vertices) {
       double d = partial_result[v];

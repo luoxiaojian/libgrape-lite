@@ -164,8 +164,7 @@ class VertexRange {
 template <typename T>
 class VertexVector {
  public:
-  VertexVector()
-      : vertices_(dummy) {}
+  VertexVector() : vertices_(dummy) {}
 
   explicit VertexVector(const std::vector<Vertex<T>>& vertices)
       : vertices_(vertices) {}

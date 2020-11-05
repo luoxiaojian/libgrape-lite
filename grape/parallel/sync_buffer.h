@@ -55,8 +55,7 @@ class SyncBuffer : public ISyncBuffer {
  public:
   SyncBuffer() : data_(internal_data_) {}
 
-  explicit SyncBuffer(VertexArray<T, VID_T>& data)
-      : data_(data) {}
+  explicit SyncBuffer(VertexArray<T, VID_T>& data) : data_(data) {}
 
   bool updated(size_t begin, size_t length) const override {
     auto iter = updated_.begin() + begin;

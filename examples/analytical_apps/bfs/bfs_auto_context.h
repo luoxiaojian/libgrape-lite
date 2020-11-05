@@ -36,9 +36,8 @@ class BFSAutoContext : public VertexDataContext<FRAG_T, int64_t> {
       : VertexDataContext<FRAG_T, int64_t>(fragment),
         partial_result(this->data()) {}
 
-  void Init(AutoParallelMessageManager<FRAG_T>& messages,
-            oid_t src_id) {
-    auto &frag = this->fragment();
+  void Init(AutoParallelMessageManager<FRAG_T>& messages, oid_t src_id) {
+    auto& frag = this->fragment();
     auto vertices = frag.Vertices();
 
     source_id = src_id;
@@ -57,7 +56,7 @@ class BFSAutoContext : public VertexDataContext<FRAG_T, int64_t> {
   }
 
   void Output(std::ostream& os) override {
-    auto &frag = this->fragment();
+    auto& frag = this->fragment();
     auto inner_vertices = frag.InnerVertices();
 
     for (auto v : inner_vertices) {

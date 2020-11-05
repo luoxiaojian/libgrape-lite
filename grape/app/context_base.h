@@ -16,8 +16,8 @@ limitations under the License.
 #ifndef GRAPE_APP_CONTEXT_BASE_H_
 #define GRAPE_APP_CONTEXT_BASE_H_
 
-#include <ostream>
 #include <memory>
+#include <ostream>
 
 #include "grape/types.h"
 
