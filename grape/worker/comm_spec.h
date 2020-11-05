@@ -170,6 +170,9 @@ class CommSpec {
       hostname_to_host_id[worker_host_names[idx]] = idx;
     }
     int color = hostname_to_host_id[worker_host_names[worker_id_]];
+    if (local_owner_ && ValidComm(local_comm_)) {
+      MPI_Comm_free(&local_comm_);
+    }
     MPI_Comm_split(comm_, color, worker_id_, &local_comm_);
     local_owner_ = true;
   }
