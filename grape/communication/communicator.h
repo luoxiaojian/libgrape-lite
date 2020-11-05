@@ -35,7 +35,7 @@ namespace grape {
 class Communicator {
  public:
   Communicator() : comm_(NULL_COMM) {}
-  ~Communicator() {
+  virtual ~Communicator() {
     if (ValidComm(comm_)) {
       MPI_Comm_free(&comm_);
     }
