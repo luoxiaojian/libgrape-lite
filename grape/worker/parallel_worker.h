@@ -123,6 +123,10 @@ class ParallelWorker {
 
   std::shared_ptr<context_t> GetContext() { return context_; }
 
+  const TerminateInfo& GetTerminateInfo() const {
+    return messages_.GetTerminateInfo();
+  }
+
   void Output(std::ostream& os) { context_->Output(os); }
 
  private:
