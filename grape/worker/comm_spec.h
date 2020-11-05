@@ -61,7 +61,7 @@ class CommSpec {
     if (owner_ && ValidComm(comm_)) {
       MPI_Comm_free(&comm_);
     }
-    if (local_owner_ && ValidComm(local_comm)) {
+    if (local_owner_ && ValidComm(local_comm_)) {
       MPI_Comm_free(&local_comm_);
     }
   }
@@ -70,7 +70,7 @@ class CommSpec {
     if (owner_ && ValidComm(comm_)) {
       MPI_Comm_free(&comm_);
     }
-    if (local_owner_ && ValidComm(local_comm)) {
+    if (local_owner_ && ValidComm(local_comm_)) {
       MPI_Comm_free(&local_comm_);
     }
 
