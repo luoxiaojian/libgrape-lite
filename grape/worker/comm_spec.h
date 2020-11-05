@@ -44,18 +44,18 @@ class CommSpec {
         local_comm_(NULL_COMM),
         owner_(false) {}
 
-  CommSpec(const CommSpec& comm_spec)
-      : worker_num_(comm_spec.worker_num_),
-        worker_id_(comm_spec.worker_id_),
-        local_num_(comm_spec.local_num_),
-        local_id_(comm_spec.local_id_),
-        fid_(comm_spec.fid_),
-        fnum_(comm_spec.fnum_),
-        comm_(comm_spec.comm_),
-        local_comm_(comm_spec.local_comm_),
-        owner_(false) {}
+  CommSpec(const CommSpec& comm_spec) __attribute__((no_sanitize_address))
+  : worker_num_(comm_spec.worker_num_),
+    worker_id_(comm_spec.worker_id_),
+    local_num_(comm_spec.local_num_),
+    local_id_(comm_spec.local_id_),
+    fid_(comm_spec.fid_),
+    fnum_(comm_spec.fnum_),
+    comm_(comm_spec.comm_),
+    local_comm_(comm_spec.local_comm_),
+    owner_(false) {}
 
-  ~CommSpec() {
+  ~CommSpec() __attribute__((no_sanitize_address)) {
     if (owner_) {
       if (ValidComm(comm_)) {
         MPI_Comm_free(&comm_);
@@ -66,7 +66,8 @@ class CommSpec {
     }
   }
 
-  CommSpec& operator=(const CommSpec& rhs) {
+  CommSpec& operator=(const CommSpec& rhs)
+      __attribute__((no_sanitize_address)) {
     if (owner_) {
       if (ValidComm(comm_)) {
         MPI_Comm_free(&comm_);
@@ -102,7 +103,7 @@ class CommSpec {
     fid_ = worker_id_;
   }
 
-  void Dup() {
+  void Dup() __attribute__((no_sanitize_address)) {
     MPI_Comm old_comm = comm_;
     MPI_Comm old_local_comm = local_comm_;
     MPI_Comm_dup(old_comm, &comm_);
@@ -131,7 +132,7 @@ class CommSpec {
   inline MPI_Comm local_comm() const { return local_comm_; }
 
  private:
-  void initLocalInfo() __attribute__((no_sanitize("address"))) {
+  void initLocalInfo() __attribute__((no_sanitize_address)) {
     char hn[MPI_MAX_PROCESSOR_NAME];
     int hn_len;
 
