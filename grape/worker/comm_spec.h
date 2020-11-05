@@ -33,7 +33,7 @@ namespace grape {
  */
 class CommSpec {
  public:
-  CommSpec()
+  __attribute__((no_sanitize_address)) CommSpec()
       : worker_num_(1),
         worker_id_(0),
         local_num_(1),
@@ -45,7 +45,7 @@ class CommSpec {
         owner_(false),
         local_owner_(false) {}
 
-  CommSpec(const CommSpec& comm_spec)
+  __attribute__((no_sanitize_address)) CommSpec(const CommSpec& comm_spec)
       : worker_num_(comm_spec.worker_num_),
         worker_id_(comm_spec.worker_id_),
         local_num_(comm_spec.local_num_),
@@ -57,7 +57,7 @@ class CommSpec {
         owner_(false),
         local_owner_(false) {}
 
-  ~CommSpec() {
+  __attribute__((no_sanitize_address)) ~CommSpec() {
     if (owner_ && ValidComm(comm_)) {
       MPI_Comm_free(&comm_);
     }
@@ -66,7 +66,8 @@ class CommSpec {
     }
   }
 
-  CommSpec& operator=(const CommSpec& rhs) {
+  __attribute__((no_sanitize_address)) CommSpec& operator=(
+      const CommSpec& rhs) {
     if (owner_ && ValidComm(comm_)) {
       MPI_Comm_free(&comm_);
     }
@@ -88,7 +89,7 @@ class CommSpec {
     return *this;
   }
 
-  void Init(MPI_Comm comm) {
+  __attribute__((no_sanitize_address)) void Init(MPI_Comm comm) {
     MPI_Comm_rank(comm, &worker_id_);
     MPI_Comm_size(comm, &worker_num_);
 
@@ -101,7 +102,7 @@ class CommSpec {
     fid_ = worker_id_;
   }
 
-  void Dup() {
+  __attribute__((no_sanitize_address)) void Dup() {
     if (!owner_) {
       MPI_Comm old_comm = comm_;
       MPI_Comm_dup(old_comm, &comm_);
@@ -130,12 +131,16 @@ class CommSpec {
 
   inline fid_t fid() const { return fid_; }
 
-  inline MPI_Comm comm() const { return comm_; }
+  __attribute__((no_sanitize_address)) inline MPI_Comm comm() const {
+    return comm_;
+  }
 
-  inline MPI_Comm local_comm() const { return local_comm_; }
+  __attribute__((no_sanitize_address)) inline MPI_Comm local_comm() const {
+    return local_comm_;
+  }
 
  private:
-  void initLocalInfo() {
+  __attribute__((no_sanitize_address)) void initLocalInfo() {
     char hn[MPI_MAX_PROCESSOR_NAME];
     int hn_len;
 
