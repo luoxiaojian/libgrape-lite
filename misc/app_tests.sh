@@ -93,8 +93,8 @@ for np in ${proc_list}; do
     RunApp ${np} bfs_auto --bfs_source=6 --deserialize=true --serialization_prefix=./serial/${GRAPH} --directed
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-BFS-directed
 
-    RunApp ${np} pagerank --pr_mr=10 --pr_d=0.85
-    EpsVerify ${GRAPE_HOME}/dataset/${GRAPH}-PR
+    # RunApp ${np} pagerank --pr_mr=10 --pr_d=0.85
+    # EpsVerify ${GRAPE_HOME}/dataset/${GRAPH}-PR
 
     # RunApp ${np} pagerank_auto --pr_mr=10 --pr_d=0.85
     # EpsVerify ${GRAPE_HOME}/dataset/${GRAPH}-PR
