@@ -50,6 +50,7 @@ limitations under the License.
 #include "pagerank/pagerank_local.h"
 #include "pagerank/pagerank_local_parallel.h"
 #include "pagerank/pagerank_parallel.h"
+#include "sssp/default_sssp.h"
 #include "sssp/sssp.h"
 #include "sssp/sssp_auto.h"
 #include "timer.h"
@@ -174,6 +175,10 @@ void Run() {
           comm_spec, efile, vfile, out_prefix, fnum, spec, FLAGS_sssp_source);
     } else if (name == "sssp") {
       using AppType = SSSP<GraphType>;
+      CreateAndQuery<GraphType, AppType, OID_T>(
+          comm_spec, efile, vfile, out_prefix, fnum, spec, FLAGS_sssp_source);
+    } else if (name == "default_sssp") {
+      using AppType = DefaultSSSP<GraphType>;
       CreateAndQuery<GraphType, AppType, OID_T>(
           comm_spec, efile, vfile, out_prefix, fnum, spec, FLAGS_sssp_source);
     } else {

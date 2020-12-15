@@ -19,6 +19,7 @@ limitations under the License.
 #include "grape/app/auto_app_base.h"
 #include "grape/app/batch_shuffle_app_base.h"
 #include "grape/app/context_base.h"
+#include "grape/app/default_app_base.h"
 #include "grape/app/parallel_app_base.h"
 #include "grape/app/vertex_data_context.h"
 #include "grape/parallel/auto_parallel_message_manager.h"
@@ -30,6 +31,7 @@ limitations under the License.
 #include "grape/utils/vertex_set.h"
 #include "grape/worker/auto_worker.h"
 #include "grape/worker/batch_shuffle_worker.h"
+#include "grape/worker/default_worker.h"
 #include "grape/worker/parallel_worker.h"
 namespace grape {}
 

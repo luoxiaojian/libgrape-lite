@@ -72,10 +72,16 @@ for np in ${proc_list}; do
     RunWeightedApp ${np} sssp --sssp_source=6 --serialize=true --serialization_prefix=./serial/${GRAPH}
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
 
+    RunWeightedApp ${np} default_sssp --sssp_source=6 --serialize=true --serialization_prefix=./serial/${GRAPH}
+    ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
+
     RunWeightedApp ${np} sssp_auto --sssp_source=6 --deserialize=true --serialization_prefix=./serial/${GRAPH}
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
 
     RunWeightedApp ${np} sssp --sssp_source=6 --serialize=true --serialization_prefix=./serial/${GRAPH} --directed
+    ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP-directed
+
+    RunWeightedApp ${np} default_sssp --sssp_source=6 --serialize=true --serialization_prefix=./serial/${GRAPH} --directed
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP-directed
 
     RunWeightedApp ${np} sssp_auto --sssp_source=6 --deserialize=true --serialization_prefix=./serial/${GRAPH} --directed
