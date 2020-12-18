@@ -78,24 +78,6 @@ static inline void recv_buffer(T* ptr, size_t len, int src_worker_id,
   }
 }
 
-template <typename T>
-inline void SendVector(const std::vector<T>& vec, int dst_worker_id,
-                       MPI_Comm comm, int tag = 0) {
-  size_t len = vec.size();
-  MPI_Send(&len, sizeof(size_t), MPI_CHAR, dst_worker_id, tag, comm);
-  send_buffer<T>(&vec[0], len, dst_worker_id, comm, tag);
-}
-
-template <typename T>
-inline void RecvVector(std::vector<T>& vec, int src_worker_id, MPI_Comm comm,
-                       int tag = 0) {
-  size_t len;
-  MPI_Recv(&len, sizeof(size_t), MPI_CHAR, src_worker_id, tag, comm,
-           MPI_STATUS_IGNORE);
-  vec.resize(len);
-  recv_buffer<T>(&vec[0], len, src_worker_id, comm, tag);
-}
-
 inline void SendArchive(const InArchive& archive, int dst_worker_id,
                         MPI_Comm comm, int tag = 0) {
   size_t len = archive.GetSize();
@@ -131,6 +113,41 @@ inline void RecvArchive(OutArchive& archive, int src_worker_id, MPI_Comm comm,
     MPI_Recv(ptr, remaining, MPI_CHAR, src_worker_id, tag, comm,
              MPI_STATUS_IGNORE);
   }
+}
+
+template <typename T>
+inline typename std::enable_if<std::is_pod<T>::value>::type SendVector(
+    const std::vector<T>& vec, int dst_worker_id, MPI_Comm comm, int tag = 0) {
+  size_t len = vec.size();
+  MPI_Send(&len, sizeof(size_t), MPI_CHAR, dst_worker_id, tag, comm);
+  send_buffer<T>(&vec[0], len, dst_worker_id, comm, tag);
+}
+
+template <typename T>
+inline typename std::enable_if<!std::is_pod<T>::value>::type SendVector(
+    const std::vector<T>& vec, int dst_worker_id, MPI_Comm comm, int tag = 0) {
+  InArchive arc;
+  arc << vec;
+  SendArchive(arc, dst_worker_id, comm, tag);
+}
+
+template <typename T>
+inline typename std::enable_if<std::is_pod<T>::value>::type RecvVector(
+    std::vector<T>& vec, int src_worker_id, MPI_Comm comm, int tag = 0) {
+  size_t len;
+  MPI_Recv(&len, sizeof(size_t), MPI_CHAR, src_worker_id, tag, comm,
+           MPI_STATUS_IGNORE);
+  vec.resize(len);
+  recv_buffer<T>(&vec[0], len, src_worker_id, comm, tag);
+}
+
+template <typename T>
+inline typename std::enable_if<!std::is_pod<T>::value>::type RecvVector(
+    std::vector<T>& vec, int src_worker_id, MPI_Comm comm, int tag = 0) {
+  OutArchive arc;
+  RecvArchive(arc, src_worker_id, comm, tag);
+  vec.clear();
+  arc >> vec;
 }
 
 template <class T>
