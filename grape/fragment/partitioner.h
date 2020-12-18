@@ -59,6 +59,41 @@ class HashPartitioner {
   fid_t fnum_;
 };
 
+template <>
+class HashPartitioner<std::string> {
+ public:
+  HashPartitioner() : fnum_(1) {}
+  HashPartitioner(size_t frag_num, std::vector<std::string>&)
+      : fnum_(frag_num) {}
+
+  inline fid_t GetPartitionId(const std::string& oid) {
+    fid_t seed = 0;
+    for (size_t i = 0; i < oid.size(); i++) {
+      seed += oid[i];
+    }
+    return seed % fnum_;
+  }
+
+  HashPartitioner& operator=(const HashPartitioner& other) {
+    if (this == &other) {
+      return *this;
+    }
+    fnum_ = other.fnum_;
+    return *this;
+  }
+
+  HashPartitioner& operator=(HashPartitioner&& other) {
+    if (this == &other) {
+      return *this;
+    }
+    fnum_ = other.fnum_;
+    return *this;
+  }
+
+ private:
+  fid_t fnum_;
+};
+
 /**
  * @brief SegmentedPartitioner is a partitioner with a strategy of chunking
  * original vertex_ids.
