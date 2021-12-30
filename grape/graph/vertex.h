@@ -27,10 +27,6 @@ namespace internal {
 class InArchive;
 class OutArchive;
 
-template <typename FRAG_T, typename PARTITIONER_T, typename IOADAPTOR_T,
-          typename Enable>
-class BasicFragmentLoader;
-
 /**
  * @brief Vertex representation.
  *
@@ -38,13 +34,12 @@ class BasicFragmentLoader;
  * @tparam VDATA_T
  */
 template <typename VID_T, typename VDATA_T>
-class Vertex {
- public:
+struct Vertex {
   Vertex() = default;
 
-  explicit Vertex(const VID_T& vid) : vid_(vid), vdata_() {}
-  Vertex(const VID_T& vid, const VDATA_T& vdata) : vid_(vid), vdata_(vdata) {}
-  Vertex(const Vertex& vert) : vid_(vert.vid_), vdata_(vert.vdata_) {}
+  explicit Vertex(const VID_T& vid) : vid(vid), vdata() {}
+  Vertex(const VID_T& vid, const VDATA_T& vdata) : vid(vid), vdata(vdata) {}
+  Vertex(const Vertex& vert) : vid(vert.vid), vdata(vert.vdata) {}
 
   ~Vertex() {}
 
@@ -52,38 +47,13 @@ class Vertex {
     if (this == &rhs) {
       return *this;
     }
-    vid_ = rhs.vid_;
-    vdata_ = rhs.vdata_;
+    vid = rhs.vid;
+    vdata = rhs.vdata;
     return *this;
   }
 
-  inline const VID_T& vid() const { return vid_; }
-  inline const VDATA_T& vdata() const { return vdata_; }
-
-  inline void set_vid(const VID_T& vid) { vid_ = vid; }
-  inline void set_vdata(const VDATA_T& vdata) { vdata_ = vdata; }
-  inline void set_vdata(VDATA_T&& vdata) { vdata_ = std::move(vdata); }
-
- private:
-  template <typename _FRAG_T, typename _PARTITIONER_T, typename _IOADAPTOR_T,
-            typename _Enable>
-  friend class BasicFragmentLoader;
-  VID_T vid_;
-  VDATA_T vdata_;
-
-  friend InArchive& operator<<(InArchive& archive,
-                               const Vertex<VID_T, VDATA_T>& v) {
-    archive << v.vid_;
-    archive << v.vdata_;
-    return archive;
-  }
-
-  friend OutArchive& operator>>(OutArchive& archive,
-                                Vertex<VID_T, VDATA_T>& v) {
-    archive >> v.vid_;
-    archive >> v.vdata_;
-    return archive;
-  }
+  VID_T vid;
+  VDATA_T vdata;
 };
 
 /**
@@ -91,13 +61,12 @@ class Vertex {
  *
  */
 template <typename VID_T>
-class Vertex<VID_T, EmptyType> {
- public:
-  Vertex() : vid_() {}
+struct Vertex<VID_T, EmptyType> {
+  Vertex() : vid() {}
 
-  explicit Vertex(const VID_T& vid) : vid_(vid) {}
-  Vertex(const VID_T& vid, const EmptyType&) : vid_(vid) {}
-  Vertex(const Vertex& vert) : vid_(vert.vid_) {}
+  explicit Vertex(const VID_T& vid) : vid(vid) {}
+  Vertex(const VID_T& vid, const EmptyType&) : vid(vid) {}
+  Vertex(const Vertex& vert) : vid(vert.vid) {}
 
   ~Vertex() {}
 
@@ -105,39 +74,45 @@ class Vertex<VID_T, EmptyType> {
     if (this == &rhs) {
       return *this;
     }
-    vid_ = rhs.vid_;
+    vid = rhs.vid;
     return *this;
   }
 
-  inline const VID_T& vid() const { return vid_; }
-  inline const EmptyType& vdata() const { return vdata_; }
-
-  inline void set_vid(const VID_T& vid) { vid_ = vid; }
-  inline void set_vdata(const EmptyType& vdata) {}
-
- private:
   union {
-    VID_T vid_;
-    EmptyType vdata_;
+    VID_T vid;
+    EmptyType vdata;
   };
-  template <typename _FRAG_T, typename _PARTITIONER_T, typename _IOADAPTOR_T,
-            typename _Enable>
-  friend class BasicFragmentLoader;
-
-  friend InArchive& operator<<(InArchive& archive,
-                               const Vertex<VID_T, EmptyType>& v) {
-    archive << v.vid_;
-    return archive;
-  }
-
-  friend OutArchive& operator>>(OutArchive& archive,
-                                Vertex<VID_T, EmptyType>& v) {
-    archive >> v.vid_;
-    return archive;
-  }
 };
 
 }  // namespace internal
+
+template <typename VID_T, typename VDATA_T>
+InArchive& operator<<(InArchive& archive,
+                      const internal::Vertex<VID_T, VDATA_T>& v) {
+  archive << v.vid << v.vdata;
+  return archive;
+}
+
+template <typename VID_T, typename VDATA_T>
+OutArchive& operator>>(OutArchive& archive,
+                       internal::Vertex<VID_T, VDATA_T>& v) {
+  archive >> v.vid >> v.vdata;
+  return archive;
+}
+
+template <typename VID_T>
+InArchive& operator<<(InArchive& archive,
+                      const internal::Vertex<VID_T, EmptyType>& v) {
+  archive << v.vid;
+  return archive;
+}
+
+template <typename VID_T>
+OutArchive& operator>>(OutArchive& archive,
+                       internal::Vertex<VID_T, EmptyType>& v) {
+  archive >> v.vid;
+  return archive;
+}
 
 }  // namespace grape
 

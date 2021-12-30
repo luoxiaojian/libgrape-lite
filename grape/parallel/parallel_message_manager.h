@@ -131,7 +131,7 @@ class ParallelMessageManager : public MessageManagerBase {
     MPI_Allreduce(&flag[0], &ret[0], 2, MPI_INT, MPI_SUM, comm_);
     if (ret[1] > 0) {
       terminate_info_.success = false;
-      AllToAll(terminate_info_.info, comm_);
+      AllGather(terminate_info_.info, comm_);
       return true;
     }
     return (ret[0] == 0);
