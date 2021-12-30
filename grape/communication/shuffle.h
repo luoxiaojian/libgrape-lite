@@ -142,32 +142,66 @@ struct frag_shuffle_header {
   fid_t fid;
 };
 
-/**
- * @brief ShuffleOut for a <ShuffleUnit>.
- *
- * to exchange vertices when building fragments.
- *
- * @tparam T0, ValueT of the ShuffleUnit.
- */
-template <typename T0>
-class ShuffleOutUnary {
+template <int index, typename First, typename... Rest>
+struct GetImpl;
+
+template <typename First, typename... Rest>
+struct ShuffleTuple : public ShuffleTuple<Rest...> {
+  ShuffleTuple() : ShuffleTuple<Rest...>() {}
+
+  void Emplace(const First& v0, const Rest&... vx) {
+    first.emplace(v0);
+    ShuffleTuple<Rest...>::Emplace(vx...);
+  }
+
+  void SendTo(int dst_worker_id, int tag, MPI_Comm comm) {
+    first.SendTo(dst_worker_id, tag, comm);
+    ShuffleTuple<Rest...>::SendTo(dst_worker_id, tag, comm);
+  }
+
+  void RecvFrom(int src_worker, int tag, MPI_Comm comm) {
+    first.RecvFrom(src_worker, tag, comm);
+    ShuffleTuple<Rest...>::RecvFrom(src_worker, tag, comm);
+  }
+
+  void Clear() {
+    first.clear();
+    ShuffleTuple<Rest...>::Clear();
+  }
+
+  ShuffleUnit<First> first;
+};
+
+template <typename First>
+struct ShuffleTuple<First> {
+  ShuffleTuple() {}
+
+  void Emplace(const First& v0) { first.emplace(v0); }
+
+  void SendTo(int dst_worker_id, int tag, MPI_Comm comm) {
+    first.SendTo(dst_worker_id, tag, comm);
+  }
+
+  void RecvFrom(int src_worker, int tag, MPI_Comm comm) {
+    first.RecvFrom(src_worker, tag, comm);
+  }
+
+  void Clear() { first.clear(); }
+
+  ShuffleUnit<First> first;
+};
+
+template <typename First, typename... Rest>
+class ShuffleOut {
  public:
-  ShuffleOutUnary()
-      : current_size_(0),
-        dst_worker_id_(-1),
-        dst_frag_id_(0),
-        tag_(0),
-        comm_disabled_(false),
-        comm_(NULL_COMM) {}
-  ~ShuffleOutUnary() {}
+  ShuffleOut() {}
 
-  using BufferT0 = typename ShuffleUnit<T0>::BufferT;
-  using ValueT0 = typename ShuffleUnit<T0>::ValueT;
-
-  void Init(MPI_Comm comm, int tag = 0, size_t cs = DEFAULT_CHUNK_SIZE) {
+  void Init(MPI_Comm comm, int tag = 0, size_t cs = 4096) {
     comm_ = comm;
     tag_ = tag;
     chunk_size_ = cs;
+    current_size_ = 0;
+    comm_disabled_ = false;
   }
   void DisableComm() { comm_disabled_ = true; }
   void SetDestination(int dst_worker_id, fid_t dst_frag_id) {
@@ -177,11 +211,11 @@ class ShuffleOutUnary {
 
   void Clear() {
     current_size_ = 0;
-    su0.clear();
+    tuple_.Clear();
   }
 
-  void Emplace(const ValueT0& v0) {
-    su0.emplace(v0);
+  void Emplace(const First& t0, const Rest&... rest) {
+    tuple_.Emplace(t0, rest...);
     ++current_size_;
     if (comm_disabled_) {
       return;
@@ -203,8 +237,7 @@ class ShuffleOutUnary {
     issue();
   }
 
-  BufferT0& Buffer0() { return su0.data(); }
-  const BufferT0& Buffer0() const { return su0.data(); }
+  ShuffleTuple<First, Rest...> tuple_;
 
  private:
   void issue() {
@@ -212,13 +245,11 @@ class ShuffleOutUnary {
     MPI_Send(&header, static_cast<int>(sizeof(frag_shuffle_header)), MPI_CHAR,
              dst_worker_id_, tag_, comm_);
     if (current_size_) {
-      su0.SendTo(dst_worker_id_, tag_, comm_);
+      tuple_.SendTo(dst_worker_id_, tag_, comm_);
     }
   }
 
-  ShuffleUnit<T0> su0;
-
-  size_t chunk_size_ = 4096;
+  size_t chunk_size_;
   size_t current_size_;
   int dst_worker_id_;
   fid_t dst_frag_id_;
@@ -228,225 +259,16 @@ class ShuffleOutUnary {
   MPI_Comm comm_;
 };
 
-/**
- * @brief ShuffleOut for two <ShuffleUnit>s.
- *
- * To exchange vertices and their attributes, or edges when building fragments.
- *
- * @tparam T0
- * @tparam T1
- */
-template <typename T0, typename T1>
-class ShuffleOutPair {
+template <typename First, typename... Rest>
+class ShuffleIn {
  public:
-  ShuffleOutPair()
-      : current_size_(0),
-        dst_worker_id_(-1),
-        dst_frag_id_(0),
-        tag_(0),
-        comm_disabled_(false),
-        comm_(NULL_COMM) {}
-  ~ShuffleOutPair() {}
+  ShuffleIn() {}
 
-  using BufferT0 = typename ShuffleUnit<T0>::BufferT;
-  using BufferT1 = typename ShuffleUnit<T1>::BufferT;
-  using ValueT0 = typename ShuffleUnit<T0>::ValueT;
-  using ValueT1 = typename ShuffleUnit<T1>::ValueT;
-
-  void Init(MPI_Comm comm, int tag = 0, size_t cs = DEFAULT_CHUNK_SIZE) {
+  void Init(fid_t fnum, MPI_Comm comm, int tag = 0) {
+    remaining_frag_num_ = fnum - 1;
     comm_ = comm;
     tag_ = tag;
-    chunk_size_ = cs;
-  }
-  void DisableComm() { comm_disabled_ = true; }
-  void SetDestination(int dst_worker_id, fid_t dst_frag_id) {
-    dst_worker_id_ = dst_worker_id;
-    dst_frag_id_ = dst_frag_id;
-  }
-
-  void Clear() {
     current_size_ = 0;
-    su0.clear();
-    su1.clear();
-  }
-
-  void Emplace(const ValueT0& v0, const ValueT1& v1) {
-    su0.emplace(v0);
-    su1.emplace(v1);
-    ++current_size_;
-    if (comm_disabled_) {
-      return;
-    }
-    if (current_size_ >= chunk_size_) {
-      issue();
-      Clear();
-    }
-  }
-
-  void Flush() {
-    if (comm_disabled_) {
-      return;
-    }
-    if (current_size_) {
-      issue();
-      Clear();
-    }
-    issue();
-  }
-
-  BufferT0& Buffer0() { return su0.data(); }
-  const BufferT0& Buffer0() const { return su0.data(); }
-
-  BufferT1& Buffer1() { return su1.data(); }
-  const BufferT1& Buffer1() const { return su1.data(); }
-
- private:
-  void issue() {
-    frag_shuffle_header header(current_size_, dst_frag_id_);
-    MPI_Send(&header, static_cast<int>(sizeof(frag_shuffle_header)), MPI_CHAR,
-             dst_worker_id_, tag_, comm_);
-    if (current_size_) {
-      su0.SendTo(dst_worker_id_, tag_, comm_);
-      su1.SendTo(dst_worker_id_, tag_, comm_);
-    }
-  }
-
-  ShuffleUnit<T0> su0;
-  ShuffleUnit<T1> su1;
-
-  size_t chunk_size_ = 4096;
-  size_t current_size_;
-  int dst_worker_id_;
-  fid_t dst_frag_id_;
-  int tag_;
-  bool comm_disabled_;
-
-  MPI_Comm comm_;
-};
-
-/**
- * @brief ShuffleOut for three <ShuffleUnit>s.
- *
- * to exchange edges and their edges when building fragment.
- *
- * @tparam T0
- * @tparam T1
- * @tparam T2
- */
-template <typename T0, typename T1, typename T2>
-class ShuffleOutTriple {
- public:
-  ShuffleOutTriple()
-      : current_size_(0),
-        dst_worker_id_(-1),
-        dst_frag_id_(0),
-        tag_(0),
-        comm_disabled_(false),
-        comm_(NULL_COMM) {}
-  ~ShuffleOutTriple() {}
-
-  using BufferT0 = typename ShuffleUnit<T0>::BufferT;
-  using BufferT1 = typename ShuffleUnit<T1>::BufferT;
-  using BufferT2 = typename ShuffleUnit<T2>::BufferT;
-  using ValueT0 = typename ShuffleUnit<T0>::ValueT;
-  using ValueT1 = typename ShuffleUnit<T1>::ValueT;
-  using ValueT2 = typename ShuffleUnit<T2>::ValueT;
-
-  void Init(MPI_Comm comm, int tag = 0, size_t cs = DEFAULT_CHUNK_SIZE) {
-    comm_ = comm;
-    tag_ = tag;
-    chunk_size_ = cs;
-  }
-  void DisableComm() { comm_disabled_ = true; }
-  void SetDestination(int dst_worker_id, fid_t dst_frag_id) {
-    dst_worker_id_ = dst_worker_id;
-    dst_frag_id_ = dst_frag_id;
-  }
-
-  void Clear() {
-    current_size_ = 0;
-    su0.clear();
-    su1.clear();
-    su2.clear();
-  }
-
-  void Emplace(const ValueT0& v0, const ValueT1& v1, const ValueT2& v2) {
-    su0.emplace(v0);
-    su1.emplace(v1);
-    su2.emplace(v2);
-    ++current_size_;
-    if (comm_disabled_) {
-      return;
-    }
-    if (current_size_ >= chunk_size_) {
-      issue();
-      Clear();
-    }
-  }
-
-  void Flush() {
-    if (comm_disabled_) {
-      return;
-    }
-    if (current_size_) {
-      issue();
-      Clear();
-    }
-    issue();
-  }
-
-  BufferT0& Buffer0() { return su0.data(); }
-  const BufferT0& Buffer0() const { return su0.data(); }
-
-  BufferT1& Buffer1() { return su1.data(); }
-  const BufferT1& Buffer1() const { return su1.data(); }
-
-  BufferT2& Buffer2() { return su2.data(); }
-  const BufferT2& Buffer2() const { return su2.data(); }
-
- private:
-  void issue() {
-    frag_shuffle_header header(current_size_, dst_frag_id_);
-    MPI_Send(&header, static_cast<int>(sizeof(frag_shuffle_header)), MPI_CHAR,
-             dst_worker_id_, tag_, comm_);
-    if (current_size_) {
-      su0.SendTo(dst_worker_id_, tag_, comm_);
-      su1.SendTo(dst_worker_id_, tag_, comm_);
-      su2.SendTo(dst_worker_id_, tag_, comm_);
-    }
-  }
-
-  ShuffleUnit<T0> su0;
-  ShuffleUnit<T1> su1;
-  ShuffleUnit<T2> su2;
-
-  size_t chunk_size_ = 4096;
-  size_t current_size_;
-  int dst_worker_id_;
-  fid_t dst_frag_id_;
-  int tag_;
-  bool comm_disabled_;
-
-  MPI_Comm comm_;
-};
-
-/**
- * @brief ShuffleIn for a <ShuffleUnit>.
- *
- * to exchange vertices when building fragments.
- *
- * @tparam T0, ValueT of the ShuffleUnit.
- */
-template <typename T0>
-class ShuffleInUnary {
- public:
-  explicit ShuffleInUnary(fid_t frag_num)
-      : remaining_frag_num_(frag_num), tag_(0), comm_(NULL_COMM) {}
-  ~ShuffleInUnary() {}
-
-  void Init(MPI_Comm comm, int tag = 0) {
-    comm_ = comm;
-    tag_ = tag;
   }
 
   int Recv(fid_t& fid) {
@@ -462,194 +284,97 @@ class ShuffleInUnary {
         --remaining_frag_num_;
       } else {
         int src_worker_id = status.MPI_SOURCE;
-        current_size_ = header.size;
+        current_size_ += header.size;
         fid = header.fid;
-        su0.clear();
-        su0.RecvFrom(src_worker_id, tag_, comm_);
+        tuple_.RecvFrom(src_worker_id, tag_, comm_);
         return src_worker_id;
       }
     }
   }
 
-  bool Finished() { return remaining_frag_num_ == 0; }
-
-  void Clear() {
-    su0.clear();
-    current_size_ = 0;
-  }
-
-  size_t Size() const { return current_size_; }
-
-  typename ShuffleUnit<T0>::BufferT& Buffer0() { return su0.data(); }
-  const typename ShuffleUnit<T0>::BufferT& Buffer0() const {
-    return su0.data();
-  }
-
- private:
-  fid_t remaining_frag_num_;
-  int tag_;
-  ShuffleUnit<T0> su0;
-  size_t current_size_;
-
-  MPI_Comm comm_;
-};
-
-/**
- * @brief ShuffleIn for two <ShuffleUnit>s.
- *
- * To exchange vertices and their attributes, or edges when building fragments.
- *
- * @tparam T0
- * @tparam T1
- */
-template <typename T0, typename T1>
-class ShuffleInPair {
- public:
-  explicit ShuffleInPair(fid_t frag_num)
-      : remaining_frag_num_(frag_num), tag_(0), comm_(NULL_COMM) {}
-  ~ShuffleInPair() {}
-
-  void Init(MPI_Comm comm, int tag = 0) {
-    comm_ = comm;
-    tag_ = tag;
-  }
-
-  int Recv(fid_t& fid) {
-    MPI_Status status;
+  int RecvFrom(int src_worker_id) {
     frag_shuffle_header header;
-    while (true) {
-      if (remaining_frag_num_ == 0) {
-        return -1;
-      }
-      MPI_Recv(&header, static_cast<int>(sizeof(frag_shuffle_header)), MPI_CHAR,
-               MPI_ANY_SOURCE, tag_, comm_, &status);
-      if (header.size == 0) {
-        --remaining_frag_num_;
-      } else {
-        int src_worker_id = status.MPI_SOURCE;
-        current_size_ = header.size;
-        fid = header.fid;
-        su0.clear();
-        su1.clear();
-        su0.RecvFrom(src_worker_id, tag_, comm_);
-        su1.RecvFrom(src_worker_id, tag_, comm_);
-        return src_worker_id;
-      }
+    MPI_Recv(&header, static_cast<int>(sizeof(frag_shuffle_header)), MPI_CHAR,
+             src_worker_id, tag_, comm_, MPI_STATUS_IGNORE);
+    if (header.size == 0) {
+      --remaining_frag_num_;
+    } else {
+      current_size_ += header.size;
+      tuple_.RecvFrom(src_worker_id, tag_, comm_);
     }
+    return header.size;
   }
 
   bool Finished() { return remaining_frag_num_ == 0; }
 
   void Clear() {
-    su0.clear();
-    su1.clear();
+    tuple_.Clear();
     current_size_ = 0;
   }
 
   size_t Size() const { return current_size_; }
 
-  typename ShuffleUnit<T0>::BufferT& Buffer0() { return su0.data(); }
-  const typename ShuffleUnit<T0>::BufferT& Buffer0() const {
-    return su0.data();
-  }
-
-  typename ShuffleUnit<T1>::BufferT& Buffer1() { return su1.data(); }
-  const typename ShuffleUnit<T1>::BufferT& Buffer1() const {
-    return su1.data();
-  }
+  ShuffleTuple<First, Rest...> tuple_;
 
  private:
   fid_t remaining_frag_num_;
   int tag_;
-  ShuffleUnit<T0> su0;
-  ShuffleUnit<T1> su1;
   size_t current_size_;
   MPI_Comm comm_;
 };
 
-/**
- * @brief ShuffleIn for three <ShuffleUnit>s.
- *
- * to exchange edges and their edges when building fragment.
- *
- * @tparam T0
- * @tparam T1
- * @tparam T2
- */
-template <typename T0, typename T1, typename T2>
-class ShuffleInTriple {
- public:
-  explicit ShuffleInTriple(fid_t frag_num)
-      : remaining_frag_num_(frag_num), tag_(0), comm_(NULL_COMM) {}
-  ~ShuffleInTriple() {}
+template <std::size_t index, typename Tp>
+struct shuffle_tuple_element;
 
-  void Init(MPI_Comm comm, int tag = 0) {
-    comm_ = comm;
-    tag_ = tag;
-  }
+template <std::size_t index, typename Head, typename... Tail>
+struct shuffle_tuple_element<index, ShuffleTuple<Head, Tail...>>
+    : shuffle_tuple_element<index - 1, ShuffleTuple<Tail...>> {};
 
-  int Recv(fid_t& fid) {
-    MPI_Status status;
-    frag_shuffle_header header;
-    while (true) {
-      if (remaining_frag_num_ == 0) {
-        return -1;
-      }
-      MPI_Recv(&header, static_cast<int>(sizeof(frag_shuffle_header)), MPI_CHAR,
-               MPI_ANY_SOURCE, tag_, comm_, &status);
-      if (header.size == 0) {
-        --remaining_frag_num_;
-      } else {
-        int src_worker_id = status.MPI_SOURCE;
-        current_size_ = header.size;
-        fid = header.fid;
-        su0.clear();
-        su1.clear();
-        su2.clear();
-        su0.RecvFrom(src_worker_id, tag_, comm_);
-        su1.RecvFrom(src_worker_id, tag_, comm_);
-        su2.RecvFrom(src_worker_id, tag_, comm_);
-        return src_worker_id;
-      }
-    }
-  }
-
-  bool Finished() { return remaining_frag_num_ == 0; }
-
-  void Clear() {
-    su0.clear();
-    su1.clear();
-    su2.clear();
-    current_size_ = 0;
-  }
-
-  size_t Size() const { return current_size_; }
-
-  typename ShuffleUnit<T0>::BufferT& Buffer0() { return su0.data(); }
-  const typename ShuffleUnit<T0>::BufferT& Buffer0() const {
-    return su0.data();
-  }
-
-  typename ShuffleUnit<T1>::BufferT& Buffer1() { return su1.data(); }
-  const typename ShuffleUnit<T1>::BufferT& Buffer1() const {
-    return su1.data();
-  }
-
-  typename ShuffleUnit<T2>::BufferT& Buffer2() { return su2.data(); }
-  const typename ShuffleUnit<T2>::BufferT& Buffer2() const {
-    return su2.data();
-  }
-
- private:
-  fid_t remaining_frag_num_;
-  int tag_;
-  ShuffleUnit<T0> su0;
-  ShuffleUnit<T1> su1;
-  ShuffleUnit<T2> su2;
-  size_t current_size_;
-
-  MPI_Comm comm_;
+template <typename Head, typename... Tail>
+struct shuffle_tuple_element<0, ShuffleTuple<Head, Tail...>> {
+  typedef typename ShuffleUnit<Head>::BufferT type;
 };
+
+template <typename T>
+struct add_ref {
+  typedef T& type;
+};
+
+template <typename T>
+struct add_ref<T&> {
+  typedef T& type;
+};
+
+template <std::size_t index, typename Head, typename... Tail>
+struct get_buffer_helper {
+  static typename add_ref<typename shuffle_tuple_element<
+      index, ShuffleTuple<Head, Tail...>>::type>::type
+  value(ShuffleTuple<Head, Tail...>& t) {
+    return get_buffer_helper<index - 1, Tail...>::value(t);
+  }
+};
+
+template <typename Head, typename... Tail>
+struct get_buffer_helper<0, Head, Tail...> {
+  static typename ShuffleUnit<Head>::BufferT& value(
+      ShuffleTuple<Head, Tail...>& t) {
+    return t.first.data();
+  }
+};
+
+template <std::size_t index, typename Head, typename... Tail>
+typename add_ref<typename shuffle_tuple_element<
+    index, ShuffleTuple<Head, Tail...>>::type>::type
+get_buffer(ShuffleIn<Head, Tail...>& t) {
+  return get_buffer_helper<index, Head, Tail...>::value(t.tuple_);
+}
+
+template <std::size_t index, typename Head, typename... Tail>
+typename add_ref<typename shuffle_tuple_element<
+    index, ShuffleTuple<Head, Tail...>>::type>::type
+get_buffer(ShuffleOut<Head, Tail...>& t) {
+  return get_buffer_helper<index, Head, Tail...>::value(t.tuple_);
+}
 
 #undef DEFAULT_CHUNK_SIZE
 

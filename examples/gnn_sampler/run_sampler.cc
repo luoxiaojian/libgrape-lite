@@ -77,7 +77,7 @@ int main(int argc, char* argv[]) {
       graph_spec.set_serialize(true, FLAGS_serialization_prefix);
     }
     graph_spec.set_directed(false);
-    auto fragment = grape::LoadGraph<graph_t, grape::HashPartitioner<oid_t>>(
+    auto fragment = grape::LoadGraph<graph_t>(
         FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
     auto app = std::make_shared<app_t>();
 

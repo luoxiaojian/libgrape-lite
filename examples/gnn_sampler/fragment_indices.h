@@ -27,6 +27,14 @@ limitations under the License.
 #include <grape/utils/vertex_array.h>
 
 #include "flat_hash_map/flat_hash_map.hpp"
+#include "append_only_edgecut_fragment.h"
+
+namespace grape {
+
+template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
+struct AppendOnlyEdgecutFragmentTraits;
+
+}  // namespace grape
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
 class FragmentIndicesBase {
@@ -37,7 +45,8 @@ class FragmentIndicesBase {
   Create();
 
   virtual void Init(
-      grape::EdgecutFragmentBase<OID_T, VID_T, VDATA_T, EDATA_T>* frag) = 0;
+      grape::EdgecutFragmentBase<OID_T, VID_T, VDATA_T, EDATA_T,
+                                 grape::AppendOnlyEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T>>* frag) = 0;
 
   virtual void Insert(VID_T u, VID_T v, EDATA_T data) = 0;
 
@@ -63,7 +72,8 @@ class WeightIndices final
     std::vector<vid_t> ordered_ids;
   };
 
-  void Init(grape::EdgecutFragmentBase<oid_t, vid_t, vdata_t, edata_t>* frag)
+  void Init(grape::EdgecutFragmentBase<oid_t, vid_t, vdata_t, edata_t,
+                                       grape::AppendOnlyEdgecutFragmentTraits<oid_t, vid_t, vdata_t, edata_t>>* frag)
       override {
     weight_indices_.resize(frag->GetInnerVerticesNum());
     for (auto& v : frag->InnerVertices()) {
@@ -165,7 +175,8 @@ template <typename OID_T, typename VID_T, typename VDATA_T>
 class WeightIndices<OID_T, VID_T, VDATA_T, grape::EmptyType>
     : public FragmentIndicesBase<OID_T, VID_T, VDATA_T, grape::EmptyType> {
  public:
-  void Init(grape::EdgecutFragmentBase<OID_T, VID_T, VDATA_T, grape::EmptyType>*
+  void Init(grape::EdgecutFragmentBase<OID_T, VID_T, VDATA_T, grape::EmptyType,
+                                       grape::AppendOnlyEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, grape::EmptyType>>*
                 frag) override {}
 
   void Insert(VID_T vid, VID_T nei_id, grape::EmptyType w) override {}
