@@ -136,10 +136,6 @@ class ImmutableEdgecutFragment
 
     tvnum_ = ivnum_;
 
-    ImmutableCSRBuild<VID_T, nbr_t> ie_builder, oe_builder;
-    ie_builder.init(tvnum_);
-    oe_builder.init(tvnum_);
-
     VID_T invalid_vid = std::numeric_limits<VID_T>::max();
     auto is_iv_gid = [this](VID_T id) { return (id >> fid_offset_) == fid_; };
     {
@@ -206,6 +202,9 @@ class ImmutableEdgecutFragment
       ++tvnum_;
     }
     ovnum_ = tvnum_ - ivnum_;
+    ImmutableCSRBuild<VID_T, nbr_t> ie_builder, oe_builder;
+    ie_builder.init(tvnum_);
+    oe_builder.init(tvnum_);
 
     {
       auto gid_to_lid = [this](VID_T gid) {
