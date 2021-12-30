@@ -147,36 +147,36 @@ class ImmutableEdgecutFragment
       auto first_iter_in = [&is_iv_gid, invalid_vid](
                                Edge<VID_T, EDATA_T>& e,
                                std::vector<VID_T>& outer_vertices) {
-        if (is_iv_gid(e.dst_)) {
-          if (!is_iv_gid(e.src_)) {
-            outer_vertices.push_back(e.src_);
+        if (is_iv_gid(e.dst())) {
+          if (!is_iv_gid(e.src())) {
+            outer_vertices.push_back(e.src());
           }
         } else {
-          e.src_ = invalid_vid;
+          e.set_src(invalid_vid);
         }
       };
       auto first_iter_out = [&is_iv_gid, invalid_vid](
                                 Edge<VID_T, EDATA_T>& e,
                                 std::vector<VID_T>& outer_vertices) {
-        if (is_iv_gid(e.src_)) {
-          if (!is_iv_gid(e.dst_)) {
-            outer_vertices.push_back(e.dst_);
+        if (is_iv_gid(e.src())) {
+          if (!is_iv_gid(e.dst())) {
+            outer_vertices.push_back(e.dst());
           }
         } else {
-          e.src_ = invalid_vid;
+          e.set_src(invalid_vid);
         }
       };
       auto first_iter_out_in = [&is_iv_gid, invalid_vid](
                                    Edge<VID_T, EDATA_T>& e,
                                    std::vector<VID_T>& outer_vertices) {
-        if (is_iv_gid(e.src_)) {
-          if (!is_iv_gid(e.dst_)) {
-            outer_vertices.push_back(e.dst_);
+        if (is_iv_gid(e.src())) {
+          if (!is_iv_gid(e.dst())) {
+            outer_vertices.push_back(e.dst());
           }
-        } else if (is_iv_gid(e.dst_)) {
-          outer_vertices.push_back(e.src_);
+        } else if (is_iv_gid(e.dst())) {
+          outer_vertices.push_back(e.src());
         } else {
-          e.src_ = invalid_vid;
+          e.set_src(invalid_vid);
         }
       };
 
@@ -221,39 +221,39 @@ class ImmutableEdgecutFragment
 
       auto second_iter_in = [&iv_gid_to_lid, &ov_gid_to_lid, invalid_vid,
                              &is_iv_gid, &ie_builder, &oe_builder](Edge<VID_T, EDATA_T>& e) {
-        if (e.src_ != invalid_vid) {
-          if (is_iv_gid(e.src_)) {
-            e.src_ = iv_gid_to_lid(e.src_);
+        if (e.src() != invalid_vid) {
+          if (is_iv_gid(e.src())) {
+            e.set_src(iv_gid_to_lid(e.src()));
           } else {
-            e.src_ = ov_gid_to_lid(e.src_);
-            oe_builder.inc_degree(e.src_);
+            e.set_src(ov_gid_to_lid(e.src()));
+            oe_builder.inc_degree(e.src());
           }
-          e.dst_ = iv_gid_to_lid(e.dst_);
-          ie_builder.inc_degree(e.dst_);
+          e.set_dst(iv_gid_to_lid(e.dst()));
+          ie_builder.inc_degree(e.dst());
         }
       };
 
       auto second_iter_out = [&iv_gid_to_lid, &ov_gid_to_lid, invalid_vid,
                               &is_iv_gid, &ie_builder, &oe_builder](Edge<VID_T, EDATA_T>& e) {
-        if (e.src_ != invalid_vid) {
-          e.src_ = iv_gid_to_lid(e.src_);
-          if (is_iv_gid(e.dst_)) {
-            e.dst_ = iv_gid_to_lid(e.dst_);
+        if (e.src() != invalid_vid) {
+          e.set_src(iv_gid_to_lid(e.src()));
+          if (is_iv_gid(e.dst())) {
+            e.set_dst(iv_gid_to_lid(e.dst()));
           } else {
-            e.dst_ = ov_gid_to_lid(e.dst_);
-            ie_builder.inc_degree(e.dst_);
+            e.set_dst(ov_gid_to_lid(e.dst()));
+            ie_builder.inc_degree(e.dst());
           }
-          oe_builder.inc_degree(e.src_);
+          oe_builder.inc_degree(e.src());
         }
       };
 
       auto second_iter_out_in = [&gid_to_lid, invalid_vid, &ie_builder, &oe_builder](
                                     Edge<VID_T, EDATA_T>& e) {
-        if (e.src_ != invalid_vid) {
-          e.src_ = gid_to_lid(e.src_);
-          e.dst_ = gid_to_lid(e.dst_);
-          ie_builder.inc_degree(e.dst_);
-          oe_builder.inc_degree(e.src_);
+        if (e.src() != invalid_vid) {
+          e.set_src(gid_to_lid(e.src()));
+          e.set_dst(gid_to_lid(e.dst()));
+          ie_builder.inc_degree(e.dst());
+          oe_builder.inc_degree(e.src());
         }
       };
 
@@ -280,29 +280,29 @@ class ImmutableEdgecutFragment
     {
       auto third_iter_in = [invalid_vid, this, &ie_builder, &oe_builder](
                                const Edge<VID_T, EDATA_T>& e) {
-        if (e.src_ != invalid_vid) {
-          ie_builder.add_edge(e.dst_, nbr_t(e.src_, e.edata_));
-          if (e.src_ >= ivnum_) {
-            oe_builder.add_edge(e.src_, nbr_t(e.dst_, e.edata_));
+        if (e.src() != invalid_vid) {
+          ie_builder.add_edge(e.dst(), nbr_t(e.src(), e.edata()));
+          if (e.src() >= ivnum_) {
+            oe_builder.add_edge(e.src(), nbr_t(e.dst(), e.edata()));
           }
         }
       };
 
       auto third_iter_out = [invalid_vid, this, &ie_builder, &oe_builder](
                                 const Edge<VID_T, EDATA_T>& e) {
-        if (e.src_ != invalid_vid) {
-          oe_builder.add_edge(e.src_, nbr_t(e.dst_, e.edata_));
-          if (e.dst_ >= ivnum_) {
-            ie_builder.add_edge(e.dst_, nbr_t(e.src_, e.edata_));
+        if (e.src() != invalid_vid) {
+          oe_builder.add_edge(e.src(), nbr_t(e.dst(), e.edata()));
+          if (e.dst() >= ivnum_) {
+            ie_builder.add_edge(e.dst(), nbr_t(e.src(), e.edata()));
           }
         }
       };
 
       auto third_iter_out_in = [invalid_vid, &ie_builder, &oe_builder](
                                    const Edge<VID_T, EDATA_T>& e) {
-        if (e.src_ != invalid_vid) {
-          ie_builder.add_edge(e.dst_, nbr_t(e.src_, e.edata_));
-          oe_builder.add_edge(e.src_, nbr_t(e.dst_, e.edata_));
+        if (e.src() != invalid_vid) {
+          ie_builder.add_edge(e.dst(), nbr_t(e.src(), e.edata()));
+          oe_builder.add_edge(e.src(), nbr_t(e.dst(), e.edata()));
         }
       };
 
@@ -499,19 +499,19 @@ class ImmutableEdgecutFragment
     return vm_ptr_->GetTotalVertexSize();
   }
 
-  inline VertexRange<VID_T> Vertices() const override {
-    return VertexRange<VID_T>(0, tvnum_);
+  inline vertex_range_t Vertices() const override {
+    return vertex_range_t(0, tvnum_);
   }
 
-  inline VertexRange<VID_T> InnerVertices() const override {
-    return VertexRange<VID_T>(0, ivnum_);
+  inline vertex_range_t InnerVertices() const override {
+    return vertex_range_t(0, ivnum_);
   }
 
-  inline VertexRange<VID_T> OuterVertices() const override {
-    return VertexRange<VID_T>(ivnum_, tvnum_);
+  inline vertex_range_t OuterVertices() const override {
+    return vertex_range_t(ivnum_, tvnum_);
   }
 
-  inline VertexRange<VID_T> OuterVertices(fid_t fid) const {
+  inline vertex_range_t OuterVertices(fid_t fid) const {
     return outer_vertices_of_frag_[fid];
   }
 
@@ -973,11 +973,11 @@ class ImmutableEdgecutFragment
     return mirrors_of_frag_[fid];
   }
 
-  inline const VertexRange<VID_T>& MirrorsRange(fid_t fid) const {
+  inline const vertex_range_t& MirrorsRange(fid_t fid) const {
     return mirrors_range_[fid];
   }
 
-  void SetupMirrorInfo(fid_t fid, const VertexRange<VID_T>& range,
+  void SetupMirrorInfo(fid_t fid, const vertex_range_t & range,
                        const std::vector<VID_T>& gid_list) {
     mirrors_range_[fid].SetRange(range.begin().GetValue(),
                                  range.end().GetValue());
@@ -1118,18 +1118,14 @@ class ImmutableEdgecutFragment
   ImmutableCSR<VID_T, nbr_t> ie_, oe_;
   Array<VDATA_T, Allocator<VDATA_T>> vdata_;
 
-  std::vector<VertexRange<VID_T>> outer_vertices_of_frag_;
+  std::vector<vertex_range_t> outer_vertices_of_frag_;
 
-  std::vector<VertexRange<VID_T>> mirrors_range_;
+  std::vector<vertex_range_t> mirrors_range_;
   std::vector<std::vector<vertex_t>> mirrors_of_frag_;
 
   ImmutableCSR<VID_T, fid_t> idst_, odst_, iodst_;
 
   std::vector<Array<nbr_t*, Allocator<nbr_t*>>> iespliters_, oespliters_;
-
-  template <typename _FRAG_T, typename _PARTITIONER_T, typename _IOADAPTOR_T,
-            typename _Enable>
-  friend class BasicFragmentLoader;
 };
 
 }  // namespace grape
