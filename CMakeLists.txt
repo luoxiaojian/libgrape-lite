@@ -25,7 +25,7 @@ if (PROFILING)
     add_definitions(-DPROFILING)
 endif ()
 
-include_directories(thirdparty)
+include_directories(SYSTEM thirdparty)
 
 # ------------------------------------------------------------------------------
 # setting default cmake type to Release
@@ -149,6 +149,16 @@ else ()
     target_link_libraries(analytical_apps grape-lite ${MPI_CXX_LIBRARIES}
             ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS})
     install_libgrapelite_target(analytical_apps)
+
+    add_executable(benchmark_app examples/analytical_apps/mutate_benchmark_flags.cc
+            examples/analytical_apps/mutate_benchmark.cc)
+    target_include_directories(benchmark_app PRIVATE
+            examples/analytical_apps)
+    target_link_libraries(benchmark_app grape-lite ${MPI_CXX_LIBRARIES}
+            ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS})
+
+    add_executable(delta_generator misc/delta_generator.cc)
+    add_executable(delta_spliter misc/delta_spliter.cc)
 endif ()
 
 if (NOT GFLAGS_FOUND)
