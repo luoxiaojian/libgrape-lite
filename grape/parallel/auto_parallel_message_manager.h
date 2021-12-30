@@ -240,7 +240,7 @@ class AutoParallelMessageManager : public DefaultMessageManager {
       for (auto v : inner_vertices) {
         if (bptr->IsUpdated(v)) {
           auto dsts = frag.IOEDests(v);
-          fid_t* ptr = dsts.begin;
+          const fid_t* ptr = dsts.begin;
           while (ptr != dsts.end) {
             ++message_num[*(ptr++)];
           }
@@ -251,7 +251,7 @@ class AutoParallelMessageManager : public DefaultMessageManager {
       for (auto v : inner_vertices) {
         if (bptr->IsUpdated(v)) {
           auto dsts = frag.IEDests(v);
-          fid_t* ptr = dsts.begin;
+          const fid_t* ptr = dsts.begin;
           while (ptr != dsts.end) {
             ++message_num[*(ptr++)];
           }
@@ -262,7 +262,7 @@ class AutoParallelMessageManager : public DefaultMessageManager {
       for (auto v : inner_vertices) {
         if (bptr->IsUpdated(v)) {
           auto dsts = frag.OEDests(v);
-          fid_t* ptr = dsts.begin;
+          const fid_t* ptr = dsts.begin;
           while (ptr != dsts.end) {
             ++message_num[*(ptr++)];
           }

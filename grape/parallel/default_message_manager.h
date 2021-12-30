@@ -216,7 +216,7 @@ class DefaultMessageManager : public MessageManagerBase {
                                    const typename GRAPH_T::vertex_t& v,
                                    const MESSAGE_T& msg) {
     auto dsts = frag.IEDests(v);
-    fid_t* ptr = dsts.begin;
+    const fid_t* ptr = dsts.begin;
     typename GRAPH_T::vid_t gid = frag.GetInnerVertexGid(v);
     while (ptr != dsts.end) {
       fid_t fid = *(ptr++);
@@ -239,7 +239,7 @@ class DefaultMessageManager : public MessageManagerBase {
                                    const typename GRAPH_T::vertex_t& v,
                                    const MESSAGE_T& msg) {
     auto dsts = frag.OEDests(v);
-    fid_t* ptr = dsts.begin;
+    const fid_t* ptr = dsts.begin;
     typename GRAPH_T::vid_t gid = frag.GetInnerVertexGid(v);
     while (ptr != dsts.end) {
       fid_t fid = *(ptr++);
@@ -262,7 +262,7 @@ class DefaultMessageManager : public MessageManagerBase {
                                   const typename GRAPH_T::vertex_t& v,
                                   const MESSAGE_T& msg) {
     auto dsts = frag.IOEDests(v);
-    fid_t* ptr = dsts.begin;
+    const fid_t* ptr = dsts.begin;
     typename GRAPH_T::vid_t gid = frag.GetInnerVertexGid(v);
     while (ptr != dsts.end) {
       fid_t fid = *(ptr++);

@@ -46,10 +46,9 @@ class Edge {
   inline const VID_T& dst() const { return dst_; }
   inline const EDATA_T& edata() const { return edata_; }
 
-  void SetEndpoint(const VID_T& src, const VID_T& dst) {
-    src_ = src;
-    dst_ = dst;
-  }
+  inline VID_T& src() { return src_; }
+  inline VID_T& dst() { return dst_; }
+  EDATA_T& edata() { return edata_; }
 
   void set_src(const VID_T& src) { src_ = src; }
 
@@ -76,17 +75,6 @@ class Edge {
   VID_T src_;
   VID_T dst_;
   EDATA_T edata_;
-
-  template <typename _OID_T, typename _VID_T, typename _VDATA_T,
-            typename _EDATA_T, LoadStrategy _load_strategy>
-  friend class ImmutableEdgecutFragment;
-
-  template <typename _FRAG_T, typename _PARTITIONER_T, typename _IOADAPTOR_T,
-            typename _Enable>
-  friend class BasicFragmentLoader;
-
-  template <typename _FRAG_T, typename _Enable>
-  friend class Rebalancer;
 
   friend InArchive& operator<<(InArchive& archive,
                                const Edge<VID_T, EDATA_T>& e) {
@@ -119,11 +107,12 @@ class Edge<VID_T, EmptyType> {
   inline const VID_T& dst() const { return dst_; }
   inline const EmptyType& edata() const { return edata_; }
 
-  void SetEndpoint(const VID_T& src, const VID_T& dst) {
-    src_ = src;
-    dst_ = dst;
-  }
+  inline VID_T& src() { return src_; }
+  inline VID_T& dst() { return dst_; }
+  EmptyType& edata() { return edata_; }
 
+  void set_src(const VID_T& src) { src_ = src; }
+  void set_dst(const VID_T& dst) { dst_ = dst; }
   void set_edata(const EmptyType& edata) {}
 
   Edge& operator=(const Edge& other) {
@@ -144,17 +133,6 @@ class Edge<VID_T, EmptyType> {
     VID_T dst_;
     EmptyType edata_;
   };
-
-  template <typename _OID_T, typename _VID_T, typename _VDATA_T,
-            typename _EDATA_T, LoadStrategy _load_strategy>
-  friend class ImmutableEdgecutFragment;
-
-  template <typename _FRAG_T, typename _PARTITIONER_T, typename _IOADAPTOR_T,
-            typename _Enable>
-  friend class BasicFragmentLoader;
-
-  template <typename _FRAG_T, typename _Enable>
-  friend class Rebalancer;
 
   friend InArchive& operator<<(InArchive& archive,
                                const Edge<VID_T, EmptyType>& e) {

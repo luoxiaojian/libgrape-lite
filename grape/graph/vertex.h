@@ -27,10 +27,6 @@ namespace internal {
 class InArchive;
 class OutArchive;
 
-template <typename FRAG_T, typename PARTITIONER_T, typename IOADAPTOR_T,
-          typename Enable>
-class BasicFragmentLoader;
-
 /**
  * @brief Vertex representation.
  *
@@ -65,9 +61,6 @@ class Vertex {
   inline void set_vdata(VDATA_T&& vdata) { vdata_ = std::move(vdata); }
 
  private:
-  template <typename _FRAG_T, typename _PARTITIONER_T, typename _IOADAPTOR_T,
-            typename _Enable>
-  friend class BasicFragmentLoader;
   VID_T vid_;
   VDATA_T vdata_;
 
@@ -120,9 +113,6 @@ class Vertex<VID_T, EmptyType> {
     VID_T vid_;
     EmptyType vdata_;
   };
-  template <typename _FRAG_T, typename _PARTITIONER_T, typename _IOADAPTOR_T,
-            typename _Enable>
-  friend class BasicFragmentLoader;
 
   friend InArchive& operator<<(InArchive& archive,
                                const Vertex<VID_T, EmptyType>& v) {
