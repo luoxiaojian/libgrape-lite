@@ -13,7 +13,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-
 #ifndef GRAPE_GRAPH_IMMUTABLE_CSR_H_
 #define GRAPE_GRAPH_IMMUTABLE_CSR_H_
 
@@ -23,10 +22,10 @@ limitations under the License.
 #include <glog/logging.h>
 
 #include "grape/config.h"
-#include "grape/utils/gcontainer.h"
 #include "grape/graph/adj_list.h"
 #include "grape/graph/edge.h"
 #include "grape/graph/vertex.h"
+#include "grape/utils/gcontainer.h"
 
 namespace grape {
 
@@ -37,6 +36,7 @@ template <typename VID_T, typename NBR_T>
 class ImmutableCSRBuild {
   using vid_t = VID_T;
   using nbr_t = NBR_T;
+
  public:
   ImmutableCSRBuild() {}
   ~ImmutableCSRBuild() {}
@@ -47,9 +47,7 @@ class ImmutableCSRBuild {
     degree_.resize(vnum, 0);
   }
 
-  void inc_degree(VID_T i) {
-    ++degree_[i];
-  }
+  void inc_degree(VID_T i) { ++degree_[i]; }
 
   void build_offsets() {
     edge_num_ = 0;

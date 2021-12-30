@@ -48,9 +48,7 @@ class Vertex {
     return *this;
   }
 
-  inline const Vertex& operator*() const {
-    return *this;
-  }
+  inline const Vertex& operator*() const { return *this; }
 
   inline Vertex& operator=(Vertex&& rhs) {
     value_ = rhs.value_;

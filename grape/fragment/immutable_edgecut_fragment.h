@@ -32,8 +32,8 @@ limitations under the License.
 #include "grape/fragment/edgecut_fragment_base.h"
 #include "grape/graph/adj_list.h"
 #include "grape/graph/edge.h"
-#include "grape/graph/vertex.h"
 #include "grape/graph/immutable_csr.h"
+#include "grape/graph/vertex.h"
 #include "grape/io/io_adaptor_base.h"
 #include "grape/serialization/in_archive.h"
 #include "grape/serialization/out_archive.h"
@@ -136,10 +136,6 @@ class ImmutableEdgecutFragment
 
     tvnum_ = ivnum_;
 
-    ImmutableCSRBuild<VID_T, nbr_t> ie_builder, oe_builder;
-    ie_builder.init(tvnum_);
-    oe_builder.init(tvnum_);
-
     VID_T invalid_vid = std::numeric_limits<VID_T>::max();
     auto is_iv_gid = [this](VID_T id) { return (id >> fid_offset_) == fid_; };
     {
@@ -210,6 +206,10 @@ class ImmutableEdgecutFragment
     }
     ovnum_ = tvnum_ - ivnum_;
 
+    ImmutableCSRBuild<VID_T, nbr_t> ie_builder, oe_builder;
+    ie_builder.init(tvnum_);
+    oe_builder.init(tvnum_);
+
     {
       auto gid_to_lid = [this](VID_T gid) {
         return ((gid >> fid_offset_) == fid_) ? (gid & id_mask_)
@@ -220,7 +220,8 @@ class ImmutableEdgecutFragment
       auto ov_gid_to_lid = [this](VID_T gid) { return ovg2l_.at(gid); };
 
       auto second_iter_in = [&iv_gid_to_lid, &ov_gid_to_lid, invalid_vid,
-                             &is_iv_gid, &ie_builder, &oe_builder](Edge<VID_T, EDATA_T>& e) {
+                             &is_iv_gid, &ie_builder,
+                             &oe_builder](Edge<VID_T, EDATA_T>& e) {
         if (e.src_ != invalid_vid) {
           if (is_iv_gid(e.src_)) {
             e.src_ = iv_gid_to_lid(e.src_);
@@ -234,7 +235,8 @@ class ImmutableEdgecutFragment
       };
 
       auto second_iter_out = [&iv_gid_to_lid, &ov_gid_to_lid, invalid_vid,
-                              &is_iv_gid, &ie_builder, &oe_builder](Edge<VID_T, EDATA_T>& e) {
+                              &is_iv_gid, &ie_builder,
+                              &oe_builder](Edge<VID_T, EDATA_T>& e) {
         if (e.src_ != invalid_vid) {
           e.src_ = iv_gid_to_lid(e.src_);
           if (is_iv_gid(e.dst_)) {
@@ -247,8 +249,8 @@ class ImmutableEdgecutFragment
         }
       };
 
-      auto second_iter_out_in = [&gid_to_lid, invalid_vid, &ie_builder, &oe_builder](
-                                    Edge<VID_T, EDATA_T>& e) {
+      auto second_iter_out_in = [&gid_to_lid, invalid_vid, &ie_builder,
+                                 &oe_builder](Edge<VID_T, EDATA_T>& e) {
         if (e.src_ != invalid_vid) {
           e.src_ = gid_to_lid(e.src_);
           e.dst_ = gid_to_lid(e.dst_);
@@ -278,8 +280,8 @@ class ImmutableEdgecutFragment
     oe_builder.build_offsets();
 
     {
-      auto third_iter_in = [invalid_vid, this, &ie_builder, &oe_builder](
-                               const Edge<VID_T, EDATA_T>& e) {
+      auto third_iter_in = [invalid_vid, this, &ie_builder,
+                            &oe_builder](const Edge<VID_T, EDATA_T>& e) {
         if (e.src_ != invalid_vid) {
           ie_builder.add_edge(e.dst_, nbr_t(e.src_, e.edata_));
           if (e.src_ >= ivnum_) {
@@ -288,8 +290,8 @@ class ImmutableEdgecutFragment
         }
       };
 
-      auto third_iter_out = [invalid_vid, this, &ie_builder, &oe_builder](
-                                const Edge<VID_T, EDATA_T>& e) {
+      auto third_iter_out = [invalid_vid, this, &ie_builder,
+                             &oe_builder](const Edge<VID_T, EDATA_T>& e) {
         if (e.src_ != invalid_vid) {
           oe_builder.add_edge(e.src_, nbr_t(e.dst_, e.edata_));
           if (e.dst_ >= ivnum_) {
@@ -298,8 +300,8 @@ class ImmutableEdgecutFragment
         }
       };
 
-      auto third_iter_out_in = [invalid_vid, &ie_builder, &oe_builder](
-                                   const Edge<VID_T, EDATA_T>& e) {
+      auto third_iter_out_in = [invalid_vid, &ie_builder,
+                                &oe_builder](const Edge<VID_T, EDATA_T>& e) {
         if (e.src_ != invalid_vid) {
           ie_builder.add_edge(e.dst_, nbr_t(e.src_, e.edata_));
           oe_builder.add_edge(e.src_, nbr_t(e.dst_, e.edata_));
@@ -491,7 +493,9 @@ class ImmutableEdgecutFragment
 
   inline const vid_t* GetOuterVerticesGid() const { return &ovgid_[0]; }
 
-  inline size_t GetEdgeNum() const override { return ie_.edge_num() + oe_.edge_num(); }
+  inline size_t GetEdgeNum() const override {
+    return ie_.edge_num() + oe_.edge_num();
+  }
 
   inline VID_T GetVerticesNum() const override { return tvnum_; }
 
@@ -666,7 +670,8 @@ class ImmutableEdgecutFragment
    * strategy as kAlongOutgoingEdgeToOuterVertex.
    */
   inline bool IsIncomingBorderVertex(const vertex_t& v) const {
-    return (!idst_.empty() && IsInnerVertex(v) && !idst_.is_empty(v.GetValue()));
+    return (!idst_.empty() && IsInnerVertex(v) &&
+            !idst_.is_empty(v.GetValue()));
   }
 
   /**
@@ -680,7 +685,8 @@ class ImmutableEdgecutFragment
    * strategy as kAlongIncomingEdgeToOuterVertex.
    */
   inline bool IsOutgoingBorderVertex(const vertex_t& v) const {
-    return (!odst_.empty() && IsInnerVertex(v) && !odst_.is_empty(v.GetValue()));
+    return (!odst_.empty() && IsInnerVertex(v) &&
+            !odst_.is_empty(v.GetValue()));
   }
 
   /**
@@ -694,7 +700,8 @@ class ImmutableEdgecutFragment
    * strategy as kAlongEdgeToOuterVertex.
    */
   inline bool IsBorderVertex(const vertex_t& v) const {
-    return (!iodst_.empty() && IsInnerVertex(v) && !iodst_.is_empty(v.GetValue()));
+    return (!iodst_.empty() && IsInnerVertex(v) &&
+            !iodst_.is_empty(v.GetValue()));
   }
 
   /**
@@ -743,7 +750,8 @@ class ImmutableEdgecutFragment
   inline DestList IOEDests(const vertex_t& v) const override {
     assert(!iodst_.empty());
     assert(IsInnerVertex(v));
-    return DestList(iodst_.get_begin(v.GetValue()), iodst_.get_end(v.GetValue()));
+    return DestList(iodst_.get_begin(v.GetValue()),
+                    iodst_.get_end(v.GetValue()));
   }
 
  public:
@@ -814,7 +822,8 @@ class ImmutableEdgecutFragment
   inline adj_list_t GetIncomingInnerVertexAdjList(const vertex_t& v) override {
     assert(IsInnerVertex(v));
     assert(!iespliters_.empty());
-    return adj_list_t(ie_.get_begin(v.GetValue()), iespliters_[0][v.GetValue()]);
+    return adj_list_t(ie_.get_begin(v.GetValue()),
+                      iespliters_[0][v.GetValue()]);
   }
 
   /**
@@ -847,8 +856,7 @@ class ImmutableEdgecutFragment
   inline adj_list_t GetIncomingOuterVertexAdjList(const vertex_t& v) override {
     assert(IsInnerVertex(v));
     assert(!iespliters_.empty());
-    return adj_list_t(iespliters_[0][v.GetValue()],
-                      ie_.get_end(v.GetValue()));
+    return adj_list_t(iespliters_[0][v.GetValue()], ie_.get_end(v.GetValue()));
   }
   /**
    * @brief Returns the incoming adjacent outer vertices of v.
@@ -880,7 +888,8 @@ class ImmutableEdgecutFragment
   inline adj_list_t GetOutgoingInnerVertexAdjList(const vertex_t& v) override {
     assert(IsInnerVertex(v));
     assert(!oespliters_.empty());
-    return adj_list_t(oe_.get_begin(v.GetValue()), oespliters_[0][v.GetValue()]);
+    return adj_list_t(oe_.get_begin(v.GetValue()),
+                      oespliters_[0][v.GetValue()]);
   }
   /**
    * @brief Returns the outgoing adjacent inner vertices of v.
@@ -913,8 +922,7 @@ class ImmutableEdgecutFragment
   inline adj_list_t GetOutgoingOuterVertexAdjList(const vertex_t& v) override {
     assert(IsInnerVertex(v));
     assert(!oespliters_.empty());
-    return adj_list_t(oespliters_[0][v.GetValue()],
-                      oe_.get_end(v.GetValue()));
+    return adj_list_t(oespliters_[0][v.GetValue()], oe_.get_end(v.GetValue()));
   }
 
   /**
@@ -1002,7 +1010,7 @@ class ImmutableEdgecutFragment
   }
 
   void initDestFidList(bool in_edge, bool out_edge,
-                       ImmutableCSR<VID_T, fid_t> &csr) {
+                       ImmutableCSR<VID_T, fid_t>& csr) {
     if (csr.vertex_num() != 0) {
       return;
     }
