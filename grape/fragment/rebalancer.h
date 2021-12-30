@@ -244,9 +244,9 @@ class Rebalancer<
           edge_t e;
           auto& old_e = edges[i];
           e.set_src(gid_maps_[vm_ptr->GetFidFromGid(old_e.src())]
-                            [vm_ptr->GetLidFromGid(old_e.src())]);
+                             [vm_ptr->GetLidFromGid(old_e.src())]);
           e.set_dst(gid_maps_[vm_ptr->GetFidFromGid(old_e.dst())]
-                            [vm_ptr->GetLidFromGid(old_e.dst())]);
+                             [vm_ptr->GetLidFromGid(old_e.dst())]);
           if (vm_ptr->GetFidFromGid(old_e.src()) == fid) {
             e.set_edata(std::move(old_e.edata()));
             if (vm_ptr->GetFidFromGid(e.src()) == fid) {
@@ -265,9 +265,9 @@ class Rebalancer<
           edge_t e;
           auto& old_e = edges[i];
           e.set_src(gid_maps_[vm_ptr->GetFidFromGid(old_e.src())]
-                            [vm_ptr->GetLidFromGid(old_e.src())]);
+                             [vm_ptr->GetLidFromGid(old_e.src())]);
           e.set_dst(gid_maps_[vm_ptr->GetFidFromGid(old_e.dst())]
-                            [vm_ptr->GetLidFromGid(old_e.dst())]);
+                             [vm_ptr->GetLidFromGid(old_e.dst())]);
           if (vm_ptr->GetFidFromGid(old_e.dst()) == fid) {
             e.set_edata(std::move(old_e.edata()));
             if (vm_ptr->GetFidFromGid(e.dst()) == fid) {
@@ -351,18 +351,21 @@ class Rebalancer<
     if (load_strategy == LoadStrategy::kOnlyOut) {
       for (auto& e : edges_to_send) {
         fid_t src_fid = vm_ptr->GetFidFromGid(e.src());
-        delta_edges_to_frag[src_fid].Emplace(e.src(), e.dst(), edata_t(e.edata()));
+        delta_edges_to_frag[src_fid].Emplace(e.src(), e.dst(),
+                                             edata_t(e.edata()));
       }
     } else if (load_strategy == LoadStrategy::kOnlyIn) {
       for (auto& e : edges_to_send) {
         fid_t dst_fid = vm_ptr->GetFidFromGid(e.dst());
-        delta_edges_to_frag[dst_fid].Emplace(e.src(), e.dst(), edata_t(e.edata()));
+        delta_edges_to_frag[dst_fid].Emplace(e.src(), e.dst(),
+                                             edata_t(e.edata()));
       }
     } else if (load_strategy == LoadStrategy::kBothOutIn) {
       for (auto& e : edges_to_send) {
         fid_t src_fid = vm_ptr->GetFidFromGid(e.src());
         fid_t dst_fid = vm_ptr->GetFidFromGid(e.dst());
-        delta_edges_to_frag[src_fid].Emplace(e.src(), e.dst(), edata_t(e.edata()));
+        delta_edges_to_frag[src_fid].Emplace(e.src(), e.dst(),
+                                             edata_t(e.edata()));
         if (src_fid != dst_fid) {
           delta_edges_to_frag[dst_fid].Emplace(e.src(), e.dst(),
                                                edata_t(e.edata()));
