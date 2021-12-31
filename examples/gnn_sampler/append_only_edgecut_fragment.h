@@ -327,12 +327,12 @@ class AppendOnlyEdgecutFragment
     {
       std::vector<vid_t> outer_vertices;
       for (auto& e : edges) {
-        if (is_iv_gid(e.src())) {
-          if (!is_iv_gid(e.dst())) {
-            outer_vertices.push_back(e.dst());
+        if (is_iv_gid(e.src)) {
+          if (!is_iv_gid(e.dst)) {
+            outer_vertices.push_back(e.dst);
           }
         } else {
-          e.set_src(invalid_vid);
+          e.src = invalid_vid;
         }
       }
       DistinctSort(outer_vertices);
@@ -359,10 +359,10 @@ class AppendOnlyEdgecutFragment
       };
       auto iv_gid_to_lid = [this](vid_t gid) { return gid & id_mask_; };
       for (auto& e : edges) {
-        if (e.src() != invalid_vid) {
-          e.set_src(iv_gid_to_lid(e.src()));
-          e.set_dst(gid_to_lid(e.dst()));
-          ++odegree[e.src()];
+        if (e.src != invalid_vid) {
+          e.src = iv_gid_to_lid(e.src);
+          e.dst = gid_to_lid(e.dst);
+          ++odegree[e.src];
           ++oenum_;
         }
       }
@@ -377,9 +377,10 @@ class AppendOnlyEdgecutFragment
     {
       Array<nbr_t*, Allocator<nbr_t*>> oeiter(oeoffset_);
       for (auto& e : edges) {
-        if (e.src() != invalid_vid) {
-          oeiter[e.src()]->GetEdgeDst(e);
-          ++oeiter[e.src()];
+        if (e.src != invalid_vid) {
+          oeiter[e.src]->neighbor = e.dst;
+          oeiter[e.src]->data = e.edata;
+          ++oeiter[e.src];
         }
       }
     }
@@ -399,9 +400,9 @@ class AppendOnlyEdgecutFragment
     ivdata_.resize(ivnum_);
     if (sizeof(internal_vertex_t) > sizeof(vid_t)) {
       for (auto& v : vertices) {
-        vid_t gid = v.vid();
+        vid_t gid = v.vid;
         if (gid >> fid_offset_ == fid_) {
-          ivdata_[(gid & id_mask_)] = v.vdata();
+          ivdata_[(gid & id_mask_)] = v.vdata;
         }
       }
     }
@@ -465,40 +466,40 @@ class AppendOnlyEdgecutFragment
       std::vector<vid_t> ov_to_extend;
       auto is_iv_gid = [this](vid_t id) { return (id >> fid_offset_) == fid_; };
       for (auto& e : edges) {
-        if (is_iv_gid(e.src())) {
-          src_lid = e.src() & id_mask_;
-          if (is_iv_gid(e.dst())) {
-            dst_lid = e.dst() & id_mask_;
+        if (is_iv_gid(e.src)) {
+          src_lid = e.src & id_mask_;
+          if (is_iv_gid(e.dst)) {
+            dst_lid = e.dst & id_mask_;
             if (!spec.directed) {
-              addOutgoingEdge(dst_lid, src_lid, e.edata());
-              fragment_indices_->Insert(dst_lid, e.src(), e.edata());
+              addOutgoingEdge(dst_lid, src_lid, e.edata);
+              fragment_indices_->Insert(dst_lid, e.src, e.edata);
             }
           } else {
-            auto iter = ovg2i_.find(e.dst());
+            auto iter = ovg2i_.find(e.dst);
             if (iter != ovg2i_.end()) {
               dst_lid = id_mask_ - iter->second;
             } else {
-              ovg2i_.emplace(e.dst(), ovnum_);
-              ov_to_extend.emplace_back(e.dst());
+              ovg2i_.emplace(e.dst, ovnum_);
+              ov_to_extend.emplace_back(e.dst);
               dst_lid = id_mask_ - ovnum_;
               ++ovnum_;
             }
           }
-          addOutgoingEdge(src_lid, dst_lid, e.edata());
-          fragment_indices_->Insert(src_lid, e.dst(), e.edata());
-        } else if (!spec.directed && is_iv_gid(e.dst())) {
-          dst_lid = e.dst() & id_mask_;
-          auto iter = ovg2i_.find(e.src());
+          addOutgoingEdge(src_lid, dst_lid, e.edata);
+          fragment_indices_->Insert(src_lid, e.dst, e.edata);
+        } else if (!spec.directed && is_iv_gid(e.dst)) {
+          dst_lid = e.dst & id_mask_;
+          auto iter = ovg2i_.find(e.src);
           if (iter != ovg2i_.end()) {
             src_lid = id_mask_ - iter->second;
           } else {
-            ovg2i_.emplace(e.src(), ovnum_);
-            ov_to_extend.emplace_back(e.src());
+            ovg2i_.emplace(e.src, ovnum_);
+            ov_to_extend.emplace_back(e.src);
             src_lid = id_mask_ - ovnum_;
             ++ovnum_;
           }
-          addOutgoingEdge(dst_lid, src_lid, e.edata());
-          fragment_indices_->Insert(dst_lid, e.src(), e.edata());
+          addOutgoingEdge(dst_lid, src_lid, e.edata);
+          fragment_indices_->Insert(dst_lid, e.src, e.edata);
         }
       }
       tvnum_ = ivnum_ + ovnum_;

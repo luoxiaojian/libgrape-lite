@@ -730,9 +730,9 @@ class BasicFragmentLoader<
             while (src_iter != src_end) {
               u_fid = partitioner_.GetPartitionId(*src_iter);
               v_fid = partitioner_.GetPartitionId(*dst_iter);
-              vm_ptr_->GetGid(u_fid, *src_iter, ptr->src_);
-              vm_ptr_->GetGid(v_fid, *dst_iter, ptr->dst_);
-              ptr->edata_ = std::move(*data_iter);
+              vm_ptr_->GetGid(u_fid, *src_iter, ptr->src);
+              vm_ptr_->GetGid(v_fid, *dst_iter, ptr->dst);
+              ptr->edata = std::move(*data_iter);
               ++src_iter;
               ++dst_iter;
               ++data_iter;

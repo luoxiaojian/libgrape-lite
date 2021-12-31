@@ -49,16 +49,6 @@ struct Nbr {
     return *this;
   }
 
-  void GetEdgeSrc(const Edge<VID_T, EDATA_T>& edge) {
-    neighbor.SetValue(edge.src());
-    data = edge.edata();
-  }
-
-  void GetEdgeDst(const Edge<VID_T, EDATA_T>& edge) {
-    neighbor.SetValue(edge.dst());
-    data = edge.edata();
-  }
-
   Vertex<VID_T> get_neighbor() const { return neighbor; }
   EDATA_T get_data() const { return data; }
 
@@ -85,14 +75,6 @@ struct Nbr<VID_T, EmptyType> {
   Nbr& operator=(const Nbr& rhs) {
     neighbor = rhs.neighbor;
     return *this;
-  }
-
-  void GetEdgeSrc(const Edge<VID_T, EmptyType>& edge) {
-    neighbor.SetValue(edge.src());
-  }
-
-  void GetEdgeDst(const Edge<VID_T, EmptyType>& edge) {
-    neighbor.SetValue(edge.dst());
   }
 
   Vertex<VID_T> get_neighbor() const { return neighbor; }

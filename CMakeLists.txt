@@ -25,7 +25,7 @@ if (PROFILING)
     add_definitions(-DPROFILING)
 endif ()
 
-include_directories(thirdparty)
+include_directories(SYSTEM thirdparty)
 
 # ------------------------------------------------------------------------------
 # setting default cmake type to Release

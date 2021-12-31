@@ -143,36 +143,36 @@ class ImmutableEdgecutFragment
       auto first_iter_in = [&is_iv_gid, invalid_vid](
                                Edge<VID_T, EDATA_T>& e,
                                std::vector<VID_T>& outer_vertices) {
-        if (is_iv_gid(e.dst_)) {
-          if (!is_iv_gid(e.src_)) {
-            outer_vertices.push_back(e.src_);
+        if (is_iv_gid(e.dst)) {
+          if (!is_iv_gid(e.src)) {
+            outer_vertices.push_back(e.src);
           }
         } else {
-          e.src_ = invalid_vid;
+          e.src = invalid_vid;
         }
       };
       auto first_iter_out = [&is_iv_gid, invalid_vid](
                                 Edge<VID_T, EDATA_T>& e,
                                 std::vector<VID_T>& outer_vertices) {
-        if (is_iv_gid(e.src_)) {
-          if (!is_iv_gid(e.dst_)) {
-            outer_vertices.push_back(e.dst_);
+        if (is_iv_gid(e.src)) {
+          if (!is_iv_gid(e.dst)) {
+            outer_vertices.push_back(e.dst);
           }
         } else {
-          e.src_ = invalid_vid;
+          e.src = invalid_vid;
         }
       };
       auto first_iter_out_in = [&is_iv_gid, invalid_vid](
                                    Edge<VID_T, EDATA_T>& e,
                                    std::vector<VID_T>& outer_vertices) {
-        if (is_iv_gid(e.src_)) {
-          if (!is_iv_gid(e.dst_)) {
-            outer_vertices.push_back(e.dst_);
+        if (is_iv_gid(e.src)) {
+          if (!is_iv_gid(e.dst)) {
+            outer_vertices.push_back(e.dst);
           }
-        } else if (is_iv_gid(e.dst_)) {
-          outer_vertices.push_back(e.src_);
+        } else if (is_iv_gid(e.dst)) {
+          outer_vertices.push_back(e.src);
         } else {
-          e.src_ = invalid_vid;
+          e.src = invalid_vid;
         }
       };
 
@@ -222,40 +222,40 @@ class ImmutableEdgecutFragment
       auto second_iter_in = [&iv_gid_to_lid, &ov_gid_to_lid, invalid_vid,
                              &is_iv_gid, &ie_builder,
                              &oe_builder](Edge<VID_T, EDATA_T>& e) {
-        if (e.src_ != invalid_vid) {
-          if (is_iv_gid(e.src_)) {
-            e.src_ = iv_gid_to_lid(e.src_);
+        if (e.src != invalid_vid) {
+          if (is_iv_gid(e.src)) {
+            e.src = iv_gid_to_lid(e.src);
           } else {
-            e.src_ = ov_gid_to_lid(e.src_);
-            oe_builder.inc_degree(e.src_);
+            e.src = ov_gid_to_lid(e.src);
+            oe_builder.inc_degree(e.src);
           }
-          e.dst_ = iv_gid_to_lid(e.dst_);
-          ie_builder.inc_degree(e.dst_);
+          e.dst = iv_gid_to_lid(e.dst);
+          ie_builder.inc_degree(e.dst);
         }
       };
 
       auto second_iter_out = [&iv_gid_to_lid, &ov_gid_to_lid, invalid_vid,
                               &is_iv_gid, &ie_builder,
                               &oe_builder](Edge<VID_T, EDATA_T>& e) {
-        if (e.src_ != invalid_vid) {
-          e.src_ = iv_gid_to_lid(e.src_);
-          if (is_iv_gid(e.dst_)) {
-            e.dst_ = iv_gid_to_lid(e.dst_);
+        if (e.src != invalid_vid) {
+          e.src = iv_gid_to_lid(e.src);
+          if (is_iv_gid(e.dst)) {
+            e.dst = iv_gid_to_lid(e.dst);
           } else {
-            e.dst_ = ov_gid_to_lid(e.dst_);
-            ie_builder.inc_degree(e.dst_);
+            e.dst = ov_gid_to_lid(e.dst);
+            ie_builder.inc_degree(e.dst);
           }
-          oe_builder.inc_degree(e.src_);
+          oe_builder.inc_degree(e.src);
         }
       };
 
       auto second_iter_out_in = [&gid_to_lid, invalid_vid, &ie_builder,
                                  &oe_builder](Edge<VID_T, EDATA_T>& e) {
-        if (e.src_ != invalid_vid) {
-          e.src_ = gid_to_lid(e.src_);
-          e.dst_ = gid_to_lid(e.dst_);
-          ie_builder.inc_degree(e.dst_);
-          oe_builder.inc_degree(e.src_);
+        if (e.src != invalid_vid) {
+          e.src = gid_to_lid(e.src);
+          e.dst = gid_to_lid(e.dst);
+          ie_builder.inc_degree(e.dst);
+          oe_builder.inc_degree(e.src);
         }
       };
 
@@ -282,29 +282,29 @@ class ImmutableEdgecutFragment
     {
       auto third_iter_in = [invalid_vid, this, &ie_builder,
                             &oe_builder](const Edge<VID_T, EDATA_T>& e) {
-        if (e.src_ != invalid_vid) {
-          ie_builder.add_edge(e.dst_, nbr_t(e.src_, e.edata_));
-          if (e.src_ >= ivnum_) {
-            oe_builder.add_edge(e.src_, nbr_t(e.dst_, e.edata_));
+        if (e.src != invalid_vid) {
+          ie_builder.add_edge(e.dst, nbr_t(e.src, e.edata));
+          if (e.src >= ivnum_) {
+            oe_builder.add_edge(e.src, nbr_t(e.dst, e.edata));
           }
         }
       };
 
       auto third_iter_out = [invalid_vid, this, &ie_builder,
                              &oe_builder](const Edge<VID_T, EDATA_T>& e) {
-        if (e.src_ != invalid_vid) {
-          oe_builder.add_edge(e.src_, nbr_t(e.dst_, e.edata_));
-          if (e.dst_ >= ivnum_) {
-            ie_builder.add_edge(e.dst_, nbr_t(e.src_, e.edata_));
+        if (e.src != invalid_vid) {
+          oe_builder.add_edge(e.src, nbr_t(e.dst, e.edata));
+          if (e.dst >= ivnum_) {
+            ie_builder.add_edge(e.dst, nbr_t(e.src, e.edata));
           }
         }
       };
 
       auto third_iter_out_in = [invalid_vid, &ie_builder,
                                 &oe_builder](const Edge<VID_T, EDATA_T>& e) {
-        if (e.src_ != invalid_vid) {
-          ie_builder.add_edge(e.dst_, nbr_t(e.src_, e.edata_));
-          oe_builder.add_edge(e.src_, nbr_t(e.dst_, e.edata_));
+        if (e.src != invalid_vid) {
+          ie_builder.add_edge(e.dst, nbr_t(e.src, e.edata));
+          oe_builder.add_edge(e.src, nbr_t(e.dst, e.edata));
         }
       };
 
@@ -340,13 +340,13 @@ class ImmutableEdgecutFragment
     vdata_.resize(tvnum_);
     if (sizeof(internal_vertex_t) > sizeof(VID_T)) {
       for (auto& v : vertices) {
-        VID_T gid = v.vid();
+        VID_T gid = v.vid;
         if (gid >> fid_offset_ == fid_) {
-          vdata_[(gid & id_mask_)] = v.vdata();
+          vdata_[(gid & id_mask_)] = v.vdata;
         } else {
           auto iter = ovg2l_.find(gid);
           if (iter != ovg2l_.end()) {
-            vdata_[iter->second] = v.vdata();
+            vdata_[iter->second] = v.vdata;
           }
         }
       }

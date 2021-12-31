@@ -107,23 +107,23 @@ class Rebalancer<
       degree_list.resize(vm_ptr->GetInnerVertexSize(fid), 0);
       if (load_strategy == LoadStrategy::kOnlyOut) {
         for (auto& e : edges) {
-          if (vm_ptr->GetFidFromGid(e.src_) == fid) {
-            ++degree_list[vm_ptr->GetLidFromGid(e.src_)];
+          if (vm_ptr->GetFidFromGid(e.src) == fid) {
+            ++degree_list[vm_ptr->GetLidFromGid(e.src)];
           }
         }
       } else if (load_strategy == LoadStrategy::kOnlyIn) {
         for (auto& e : edges) {
-          if (vm_ptr->GetFidFromGid(e.dst_) == fid) {
-            ++degree_list[vm_ptr->GetLidFromGid(e.dst_)];
+          if (vm_ptr->GetFidFromGid(e.dst) == fid) {
+            ++degree_list[vm_ptr->GetLidFromGid(e.dst)];
           }
         }
       } else if (load_strategy == LoadStrategy::kBothOutIn) {
         for (auto& e : edges) {
-          if (vm_ptr->GetFidFromGid(e.src_) == fid) {
-            ++degree_list[vm_ptr->GetLidFromGid(e.src_)];
+          if (vm_ptr->GetFidFromGid(e.src) == fid) {
+            ++degree_list[vm_ptr->GetLidFromGid(e.src)];
           }
-          if (vm_ptr->GetFidFromGid(e.dst_) == fid) {
-            ++degree_list[vm_ptr->GetLidFromGid(e.dst_)];
+          if (vm_ptr->GetFidFromGid(e.dst) == fid) {
+            ++degree_list[vm_ptr->GetLidFromGid(e.dst)];
           }
         }
       }
@@ -243,13 +243,13 @@ class Rebalancer<
         for (size_t i = 0; i < evec_size; ++i) {
           edge_t e;
           auto& old_e = edges[i];
-          e.src_ = gid_maps_[vm_ptr->GetFidFromGid(old_e.src_)]
-                            [vm_ptr->GetLidFromGid(old_e.src_)];
-          e.dst_ = gid_maps_[vm_ptr->GetFidFromGid(old_e.dst_)]
-                            [vm_ptr->GetLidFromGid(old_e.dst_)];
-          if (vm_ptr->GetFidFromGid(old_e.src_) == fid) {
-            e.set_edata(std::move(old_e.edata_));
-            if (vm_ptr->GetFidFromGid(e.src_) == fid) {
+          e.src = gid_maps_[vm_ptr->GetFidFromGid(old_e.src)]
+                           [vm_ptr->GetLidFromGid(old_e.src)];
+          e.dst = gid_maps_[vm_ptr->GetFidFromGid(old_e.dst)]
+                           [vm_ptr->GetLidFromGid(old_e.dst)];
+          if (vm_ptr->GetFidFromGid(old_e.src) == fid) {
+            e.edata = std::move(old_e.edata);
+            if (vm_ptr->GetFidFromGid(e.src) == fid) {
               edges[i - count] = std::move(e);
             } else {
               edges_to_send.emplace_back(std::move(e));
@@ -264,13 +264,13 @@ class Rebalancer<
         for (size_t i = 0; i < evec_size; ++i) {
           edge_t e;
           auto& old_e = edges[i];
-          e.src_ = gid_maps_[vm_ptr->GetFidFromGid(old_e.src_)]
-                            [vm_ptr->GetLidFromGid(old_e.src_)];
-          e.dst_ = gid_maps_[vm_ptr->GetFidFromGid(old_e.dst_)]
-                            [vm_ptr->GetLidFromGid(old_e.dst_)];
-          if (vm_ptr->GetFidFromGid(old_e.dst_) == fid) {
-            e.set_edata(std::move(old_e.edata_));
-            if (vm_ptr->GetFidFromGid(e.dst_) == fid) {
+          e.src = gid_maps_[vm_ptr->GetFidFromGid(old_e.src)]
+                           [vm_ptr->GetLidFromGid(old_e.src)];
+          e.dst = gid_maps_[vm_ptr->GetFidFromGid(old_e.dst)]
+                           [vm_ptr->GetLidFromGid(old_e.dst)];
+          if (vm_ptr->GetFidFromGid(old_e.dst) == fid) {
+            e.edata = std::move(old_e.edata);
+            if (vm_ptr->GetFidFromGid(e.dst) == fid) {
               edges[i - count] = std::move(e);
             } else {
               edges_to_send.emplace_back(std::move(e));
@@ -285,17 +285,17 @@ class Rebalancer<
         for (size_t i = 0; i < evec_size; ++i) {
           edge_t e;
           auto& old_e = edges[i];
-          fid_t old_src_fid = vm_ptr->GetFidFromGid(old_e.src_);
-          fid_t old_dst_fid = vm_ptr->GetFidFromGid(old_e.dst_);
-          e.src_ = gid_maps_[old_src_fid][vm_ptr->GetLidFromGid(old_e.src_)];
-          e.dst_ = gid_maps_[old_dst_fid][vm_ptr->GetLidFromGid(old_e.dst_)];
-          fid_t new_src_fid = vm_ptr->GetFidFromGid(e.src_);
-          fid_t new_dst_fid = vm_ptr->GetFidFromGid(e.dst_);
+          fid_t old_src_fid = vm_ptr->GetFidFromGid(old_e.src);
+          fid_t old_dst_fid = vm_ptr->GetFidFromGid(old_e.dst);
+          e.src = gid_maps_[old_src_fid][vm_ptr->GetLidFromGid(old_e.src)];
+          e.dst = gid_maps_[old_dst_fid][vm_ptr->GetLidFromGid(old_e.dst)];
+          fid_t new_src_fid = vm_ptr->GetFidFromGid(e.src);
+          fid_t new_dst_fid = vm_ptr->GetFidFromGid(e.dst);
           if (new_src_fid == old_src_fid && new_dst_fid == old_dst_fid) {
-            e.set_edata(std::move(old_e.edata_));
+            e.edata = std::move(old_e.edata);
             edges[i - count] = std::move(e);
           } else if (old_src_fid == fid) {
-            e.set_edata(std::move(old_e.edata_));
+            e.edata = std::move(old_e.edata);
             edges_to_send.emplace_back(std::move(e));
             ++count;
           } else {
@@ -340,11 +340,9 @@ class Rebalancer<
         auto data_iter = data_in.Buffer2().begin();
         auto src_end = data_in.Buffer0().end();
         while (src_iter != src_end) {
-          buf_ptr->SetEndpoint(*src_iter, *dst_iter);
-          buf_ptr->set_edata(*data_iter);
-          ++src_iter;
-          ++dst_iter;
-          ++data_iter;
+          buf_ptr->src = *src_iter++;
+          buf_ptr->dst = *dst_iter++;
+          buf_ptr->edata = *data_iter++;
           ++buf_ptr;
         }
       }
@@ -352,22 +350,21 @@ class Rebalancer<
 
     if (load_strategy == LoadStrategy::kOnlyOut) {
       for (auto& e : edges_to_send) {
-        fid_t src_fid = vm_ptr->GetFidFromGid(e.src_);
-        delta_edges_to_frag[src_fid].Emplace(e.src_, e.dst_, edata_t(e.edata_));
+        fid_t src_fid = vm_ptr->GetFidFromGid(e.src);
+        delta_edges_to_frag[src_fid].Emplace(e.src, e.dst, edata_t(e.edata));
       }
     } else if (load_strategy == LoadStrategy::kOnlyIn) {
       for (auto& e : edges_to_send) {
-        fid_t dst_fid = vm_ptr->GetFidFromGid(e.dst_);
-        delta_edges_to_frag[dst_fid].Emplace(e.src_, e.dst_, edata_t(e.edata_));
+        fid_t dst_fid = vm_ptr->GetFidFromGid(e.dst);
+        delta_edges_to_frag[dst_fid].Emplace(e.src, e.dst, edata_t(e.edata));
       }
     } else if (load_strategy == LoadStrategy::kBothOutIn) {
       for (auto& e : edges_to_send) {
-        fid_t src_fid = vm_ptr->GetFidFromGid(e.src_);
-        fid_t dst_fid = vm_ptr->GetFidFromGid(e.dst_);
-        delta_edges_to_frag[src_fid].Emplace(e.src_, e.dst_, edata_t(e.edata_));
+        fid_t src_fid = vm_ptr->GetFidFromGid(e.src);
+        fid_t dst_fid = vm_ptr->GetFidFromGid(e.dst);
+        delta_edges_to_frag[src_fid].Emplace(e.src, e.dst, edata_t(e.edata));
         if (src_fid != dst_fid) {
-          delta_edges_to_frag[dst_fid].Emplace(e.src_, e.dst_,
-                                               edata_t(e.edata_));
+          delta_edges_to_frag[dst_fid].Emplace(e.src, e.dst, edata_t(e.edata));
         }
       }
     }
@@ -391,11 +388,9 @@ class Rebalancer<
       auto data_iter = delta_edges_to_frag[fid].Buffer2().begin();
       auto src_end = delta_edges_to_frag[fid].Buffer0().end();
       while (src_iter != src_end) {
-        buf_ptr->SetEndpoint(*src_iter, *dst_iter);
-        buf_ptr->set_edata(*data_iter);
-        ++src_iter;
-        ++dst_iter;
-        ++data_iter;
+        buf_ptr->src = *src_iter++;
+        buf_ptr->dst = *dst_iter++;
+        buf_ptr->edata = *data_iter++;
         ++buf_ptr;
       }
     }
