@@ -66,7 +66,7 @@ class EVFragmentLoader {
                 "LineParser type is invalid");
 
  public:
-  explicit EVFragmentLoader(const CommSpec comm_spec)
+  explicit EVFragmentLoader(const CommSpec& comm_spec)
       : comm_spec_(comm_spec), basic_fragment_loader_(comm_spec) {}
 
   ~EVFragmentLoader() = default;

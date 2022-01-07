@@ -47,6 +47,13 @@ class ImmutableCSRBuild {
     degree_.resize(vnum, 0);
   }
 
+  void init(const VertexRange<VID_T> range) {
+    assert(range.begin_value() == 0);
+    vnum_ = range.size();
+    degree_.clear();
+    degree_.resize(vnum_, 0);
+  }
+
   void inc_degree(VID_T i) { ++degree_[i]; }
 
   void build_offsets() {
@@ -83,6 +90,10 @@ class ImmutableCSRBuild {
   }
 
   void finish(ImmutableCSR<VID_T, NBR_T>& ret) {
+    for (VID_T i = 0; i < vnum_; ++i) {
+      std::sort(offsets_[i], offsets_[i + 1]);
+    }
+
     ret.edges_.swap(edges_);
     ret.offsets_.swap(offsets_);
   }

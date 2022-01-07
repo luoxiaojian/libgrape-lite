@@ -35,7 +35,7 @@ limitations under the License.
 template <typename Key, typename Value>
 using HashMap = ska::flat_hash_map<Key, Value>;
 
-#define SORT_DISTINCT
+// #define SORT_DISTINCT
 namespace grape {
 
 /**
@@ -232,6 +232,44 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T> {
         thrd.join();
       }
     }
+  }
+
+  void SyncAddedVertices(const CommSpec& comm_spec, fid_t fid, size_t add_vnum) {
+    int worker_id = comm_spec.worker_id();
+    int worker_num = comm_spec.worker_num();
+    std::vector<size_t> frag_added_vnum(comm_spec.fnum());
+    MPI_Allgather(&add_vnum, sizeof(size_t), MPI_CHAR, frag_added_vnum.data(),
+                  sizeof(size_t), MPI_CHAR, comm_spec.comm());
+    std::thread recv_thread([&]() {
+      for (int i = 1; i < worker_num; ++i) {
+        int src_worker_id = (worker_id + i) % worker_num;
+        fid_t src_fid = comm_spec.WorkerToFrag(src_worker_id);
+        size_t old_size = l2o_[src_fid].size();
+        size_t new_size = old_size + frag_added_vnum[src_worker_id];
+        l2o_[src_fid].resize(new_size);
+        OID_T* ptr = l2o_[src_fid].data() + old_size;
+        recv_buffer(ptr, frag_added_vnum[src_worker_id], src_worker_id,
+                    comm_spec.comm(), 0);
+      }
+      for (int i = 1; i < worker_num; ++i) {
+        int src_worker_id = (worker_id + i) % worker_num;
+        fid_t src_fid = comm_spec.WorkerToFrag(src_worker_id);
+        size_t new_size = l2o_[src_fid].size();
+        size_t old_size = new_size - frag_added_vnum[src_worker_id];
+        for (size_t k = old_size; k < new_size; ++k) {
+          o2l_[src_fid].emplace(l2o_[src_fid][k], static_cast<VID_T>(k));
+        }
+      }
+    });
+    std::thread send_thread([&]() {
+      OID_T* ptr = l2o_[fid].data() + l2o_[fid].size() - add_vnum;
+      for (int i = 1; i < worker_num; ++i) {
+        int dst_worker_id = (worker_id + worker_num - i) % worker_num;
+        send_buffer(ptr, add_vnum, dst_worker_id, comm_spec.comm(), 0);
+      }
+    });
+    send_thread.join();
+    recv_thread.join();
   }
 
   template <typename IOADAPTOR_T>

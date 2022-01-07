@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef GRAPE_WORKER_AUTO_WORKER_H_
-#define GRAPE_WORKER_AUTO_WORKER_H_
+#ifndef GRAPE_WORKER_WORKER_H_
+#define GRAPE_WORKER_WORKER_H_
 
 #include <mpi.h>
 
@@ -26,47 +26,47 @@ limitations under the License.
 #include "grape/communication/communicator.h"
 #include "grape/config.h"
 #include "grape/parallel/auto_parallel_message_manager.h"
+#include "grape/parallel/batch_shuffle_message_manager.h"
+#include "grape/parallel/parallel_message_manager.h"
+
 #include "grape/parallel/parallel_engine.h"
 #include "grape/worker/comm_spec.h"
 
 namespace grape {
 
-template <typename FRAG_T, typename CONTEXT_T>
-class AutoAppBase;
-
 /**
- * @brief A Worker manages the computation cycle. AutoWorker is a kind of worker
- * for apps derived from AutoAppBase.
+ * @brief A Worker manages the computation cycle.
  *
  * @tparam APP_T
+ * @tparam MESSAGE_MANAGER_T
  */
-template <typename APP_T>
-class AutoWorker {
-  static_assert(std::is_base_of<AutoAppBase<typename APP_T::fragment_t,
-                                            typename APP_T::context_t>,
-                                APP_T>::value,
-                "AutoWorker should work with AutoApp");
-
+template <typename APP_T, typename MESSAGE_MANAGER_T>
+class Worker {
  public:
   using fragment_t = typename APP_T::fragment_t;
   using context_t = typename APP_T::context_t;
 
-  using message_manager_t =
-      AutoParallelMessageManager<typename APP_T::fragment_t>;
+  using message_manager_t = MESSAGE_MANAGER_T;
 
   static_assert(check_app_fragment_consistency<APP_T, fragment_t>(),
                 "The loaded graph is not valid for application");
 
-  AutoWorker(std::shared_ptr<APP_T> app, std::shared_ptr<fragment_t> graph)
+  Worker(std::shared_ptr<APP_T> app, std::shared_ptr<fragment_t> graph)
       : app_(app), context_(std::make_shared<context_t>(*graph)) {}
 
-  ~AutoWorker() = default;
+  ~Worker() = default;
 
   void Init(const CommSpec& comm_spec,
             const ParallelEngineSpec& pe_spec = DefaultParallelEngineSpec()) {
     auto& graph = const_cast<fragment_t&>(context_->fragment());
     // prepare for the query
-    graph.PrepareToRunApp(APP_T::message_strategy, APP_T::need_split_edges);
+    PrepareConf conf;
+    conf.message_strategy = APP_T::message_strategy;
+    conf.need_split_edges = APP_T::need_split_edges;
+    conf.need_split_edges_by_fragment = APP_T::need_split_edges_by_fragment;
+    conf.need_mirror_info =
+        std::is_same<message_manager_t, BatchShuffleMessageManager>::value;
+    graph.PrepareToRunApp(comm_spec, conf);
 
     comm_spec_ = comm_spec;
     MPI_Barrier(comm_spec_.comm());
@@ -81,8 +81,6 @@ class AutoWorker {
 
   template <class... Args>
   void Query(Args&&... args) {
-    auto& graph = context_->fragment();
-
     MPI_Barrier(comm_spec_.comm());
 
     context_->Init(messages_, std::forward<Args>(args)...);
@@ -93,7 +91,7 @@ class AutoWorker {
 
     messages_.StartARound();
 
-    app_->PEval(graph, *context_);
+    runPEval();
 
     messages_.FinishARound();
 
@@ -107,7 +105,7 @@ class AutoWorker {
       round++;
       messages_.StartARound();
 
-      app_->IncEval(graph, *context_);
+      runIncEval();
 
       messages_.FinishARound();
 
@@ -116,6 +114,7 @@ class AutoWorker {
       }
       ++step;
     }
+
     MPI_Barrier(comm_spec_.comm());
 
     messages_.Finalize();
@@ -130,6 +129,38 @@ class AutoWorker {
   void Output(std::ostream& os) { context_->Output(os); }
 
  private:
+  template <typename T = message_manager_t>
+  typename std::enable_if<
+      std::is_same<T, AutoParallelMessageManager<fragment_t>>::value>::type
+  runPEval() {
+    auto& graph = context_->fragment();
+    app_->PEval(graph, *context_);
+  }
+
+  template <typename T = message_manager_t>
+  typename std::enable_if<
+      !std::is_same<T, AutoParallelMessageManager<fragment_t>>::value>::type
+  runPEval() {
+    auto& graph = context_->fragment();
+    app_->PEval(graph, *context_, messages_);
+  }
+
+  template <typename T = message_manager_t>
+  typename std::enable_if<
+      std::is_same<T, AutoParallelMessageManager<fragment_t>>::value>::type
+  runIncEval() {
+    auto& graph = context_->fragment();
+    app_->IncEval(graph, *context_);
+  }
+
+  template <typename T = message_manager_t>
+  typename std::enable_if<
+      !std::is_same<T, AutoParallelMessageManager<fragment_t>>::value>::type
+  runIncEval() {
+    auto& graph = context_->fragment();
+    app_->IncEval(graph, *context_, messages_);
+  }
+
   std::shared_ptr<APP_T> app_;
   std::shared_ptr<context_t> context_;
   message_manager_t messages_;
@@ -137,6 +168,16 @@ class AutoWorker {
   CommSpec comm_spec_;
 };
 
+template <typename APP_T>
+using ParallelWorker = Worker<APP_T, ParallelMessageManager>;
+
+template <typename APP_T>
+using AutoWorker =
+    Worker<APP_T, AutoParallelMessageManager<typename APP_T::fragment_t>>;
+
+template <typename APP_T>
+using BatchShuffleWorker = Worker<APP_T, BatchShuffleMessageManager>;
+
 }  // namespace grape
 
-#endif  // GRAPE_WORKER_AUTO_WORKER_H_
+#endif  // GRAPE_WORKER_WORKER_H_

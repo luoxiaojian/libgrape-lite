@@ -53,6 +53,7 @@ limitations under the License.
 #include "sssp/sssp.h"
 #include "sssp/sssp_auto.h"
 #include "timer.h"
+#include "traverse/traverse.h"
 #include "wcc/wcc.h"
 #include "wcc/wcc_auto.h"
 
@@ -195,7 +196,13 @@ void Run() {
       LOG(FATAL) << "No avaiable application named [" << name << "].";
     }
   } else {
-    if (name == "bfs_auto") {
+    if (name == "traverse") {
+      using GraphType = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, double,
+                                                 LoadStrategy::kOnlyOut>;
+      using AppType = Traverse<GraphType>;
+      CreateAndQuery<GraphType, AppType>(comm_spec, efile, vfile, out_prefix,
+                                         fnum, spec);
+    } else if (name == "bfs_auto") {
       using GraphType = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
                                                  LoadStrategy::kOnlyOut>;
       using AppType = BFSAuto<GraphType>;

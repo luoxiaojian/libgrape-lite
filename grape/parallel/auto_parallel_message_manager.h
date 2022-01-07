@@ -232,7 +232,8 @@ class AutoParallelMessageManager : public DefaultMessageManager {
   inline void syncOnInnerVertexSend(const FRAG_T& frag, ISyncBuffer* buffer,
                                     int event_id,
                                     MessageStrategy message_strategy) {
-    auto* bptr = dynamic_cast<SyncBuffer<T, vid_t>*>(buffer);
+    auto* bptr =
+        dynamic_cast<SyncBuffer<typename FRAG_T::vertices_t, T>*>(buffer);
     auto inner_vertices = frag.InnerVertices();
     std::vector<size_t> message_num(Base::fnum(), 0);
 
@@ -306,7 +307,8 @@ class AutoParallelMessageManager : public DefaultMessageManager {
   template <typename T>
   inline void syncOnOuterVertexSend(const FRAG_T& frag, ISyncBuffer* buffer,
                                     int event_id) {
-    auto* bptr = dynamic_cast<SyncBuffer<T, vid_t>*>(buffer);
+    auto* bptr =
+        dynamic_cast<SyncBuffer<typename FRAG_T::vertices_t, T>*>(buffer);
     auto inner_vertices = frag.InnerVertices();
     auto outer_vertices = frag.OuterVertices();
     std::vector<size_t> message_num(Base::fnum(), 0);
@@ -339,7 +341,8 @@ class AutoParallelMessageManager : public DefaultMessageManager {
 
   template <typename T>
   inline void syncOnVertexRecv(const FRAG_T& frag, ISyncBuffer* buffer) {
-    auto* bptr = dynamic_cast<SyncBuffer<T, vid_t>*>(buffer);
+    auto* bptr =
+        dynamic_cast<SyncBuffer<typename FRAG_T::vertices_t, T>*>(buffer);
 
     size_t message_num = 0;
     T rhs;

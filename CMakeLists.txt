@@ -60,7 +60,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall")
 if (APPLE)
     set(CMAKE_MACOSX_RPATH ON)
 else ()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -Werror -Wl,-rpath,$ORIGIN")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -Werror")
 endif ()
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -fprofile-arcs -ftest-coverage")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -g")
@@ -149,6 +149,30 @@ else ()
     target_link_libraries(analytical_apps grape-lite ${MPI_CXX_LIBRARIES}
             ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS})
     install_libgrapelite_target(analytical_apps)
+
+    add_executable(run_mutable_app examples/analytical_apps/flags.cc
+            examples/analytical_apps/run_mutable_app.cc)
+    target_include_directories(run_mutable_app PRIVATE
+            examples/analytical_apps)
+    target_link_libraries(run_mutable_app grape-lite ${MPI_CXX_LIBRARIES}
+            ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS})
+
+    add_executable(run_mutable_app_int examples/analytical_apps/flags.cc
+            examples/analytical_apps/run_mutable_app_int.cc)
+    target_include_directories(run_mutable_app_int PRIVATE
+            examples/analytical_apps)
+    target_link_libraries(run_mutable_app_int grape-lite ${MPI_CXX_LIBRARIES}
+            ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS})
+
+    add_executable(benchmark_app examples/analytical_apps/benchmark_flags.cc
+            examples/analytical_apps/benchmark_app.cc)
+    target_include_directories(benchmark_app PRIVATE
+            examples/analytical_apps)
+    target_link_libraries(benchmark_app grape-lite ${MPI_CXX_LIBRARIES}
+            ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS})
+
+    add_executable(delta_generator misc/delta_generator.cc)
+    add_executable(delta_spliter misc/delta_spliter.cc)
 endif ()
 
 if (NOT GFLAGS_FOUND)
@@ -156,15 +180,15 @@ if (NOT GFLAGS_FOUND)
 elseif (NOT RDKAFKA_FOUND)
     message(WARNING "Disable gnn_sampler because rdkafka not found")
 else ()
-    add_executable(gnn_sampler examples/gnn_sampler/run_sampler.cc)
-    set_target_properties(gnn_sampler PROPERTIES OUTPUT_NAME run_sampler)
-    target_include_directories(gnn_sampler PRIVATE
-            examples/gnn_sampler
-            examples/gnn_sampler/thirdparty
-            ${RDKAFKA_INCLUDE_DIR})
-    target_link_libraries(gnn_sampler grape-lite  ${MPI_CXX_LIBRARIES}
-            ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS} ${RDKAFKA_LIBRARIES})
-    install_libgrapelite_target(gnn_sampler)
+    # add_executable(gnn_sampler examples/gnn_sampler/run_sampler.cc)
+    # set_target_properties(gnn_sampler PROPERTIES OUTPUT_NAME run_sampler)
+    # target_include_directories(gnn_sampler PRIVATE
+            # examples/gnn_sampler
+            # examples/gnn_sampler/thirdparty
+            # ${RDKAFKA_INCLUDE_DIR})
+    # target_link_libraries(gnn_sampler grape-lite  ${MPI_CXX_LIBRARIES}
+            # ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS} ${RDKAFKA_LIBRARIES})
+    # install_libgrapelite_target(gnn_sampler)
 endif ()
 
 set(EXAMPLES_DIR ${PROJECT_SOURCE_DIR}/examples)
@@ -197,11 +221,11 @@ install(DIRECTORY ${EXAMPLES_DIR}/analytical_apps/bfs
         FILES_MATCHING
         PATTERN "*.h"
 )
-install(DIRECTORY ${EXAMPLES_DIR}/gnn_sampler
-        DESTINATION include/grape/analytical_apps
-        FILES_MATCHING
-        PATTERN "*.h"
-)
+# install(DIRECTORY ${EXAMPLES_DIR}/gnn_sampler
+#         DESTINATION include/grape/analytical_apps
+#         FILES_MATCHING
+#         PATTERN "*.h"
+# )
 
 configure_file(libgrapelite-config.in.cmake
                "${PROJECT_BINARY_DIR}/libgrapelite-config.cmake" @ONLY

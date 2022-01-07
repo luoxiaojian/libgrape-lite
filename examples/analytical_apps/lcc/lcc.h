@@ -147,7 +147,8 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T>>,
       ctx.exec_time -= GetCurrentTime();
 #endif
 
-      std::vector<DenseVertexSet<vid_t>> vertexsets(thread_num());
+      std::vector<DenseVertexSet<typename FRAG_T::vertices_t>> vertexsets(
+          thread_num());
 
       ForEach(inner_vertices,
               [&vertexsets, &frag](int tid) {

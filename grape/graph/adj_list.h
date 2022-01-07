@@ -56,6 +56,11 @@ struct Nbr {
   EDATA_T data;
 };
 
+template <typename VID_T, typename EDATA_T>
+bool operator<(const Nbr<VID_T, EDATA_T>& lhs, const Nbr<VID_T, EDATA_T>& rhs) {
+  return lhs.neighbor.GetValue() < rhs.neighbor.GetValue();
+}
+
 /**
  * @brief A neighbor of a vertex in the graph. (partial specialization with
  * Empty edge data.)

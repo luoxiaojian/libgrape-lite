@@ -33,6 +33,7 @@ template <typename OID_T>
 class HashPartitioner {
  public:
   HashPartitioner() : fnum_(1) {}
+  explicit HashPartitioner(size_t frag_num) : fnum_(frag_num) {}
   HashPartitioner(size_t frag_num, std::vector<OID_T>&) : fnum_(frag_num) {}
 
   inline fid_t GetPartitionId(const OID_T& oid) {

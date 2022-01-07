@@ -627,8 +627,8 @@ class AppendOnlyEdgecutFragment
     extra_oe_.resize(ivnum_, -1);
   }
 
-  void PrepareToRunApp(MessageStrategy strategy,
-                       bool need_split_edge) override {}
+  void PrepareToRunApp(const CommSpec& comm_spec, MessageStrategy strategy,
+                       bool need_split_edge, bool need_mirror_info) override {}
 
   fid_t fid() const override { return fid_; }
 
@@ -699,8 +699,6 @@ class AppendOnlyEdgecutFragment
 
   int GetLocalInDegree(const vertex_t& v) const override { return 0; }
 
-  const std::vector<vid_t>& GetOuterVerticesGid() const { return ovgid_; }
-
   bool Gid2Vertex(const vid_t& gid, vertex_t& v) const override {
     return ((gid >> fid_offset_) == fid_) ? InnerVertexGid2Vertex(gid, v)
                                           : OuterVertexGid2Vertex(gid, v);
@@ -738,7 +736,7 @@ class AppendOnlyEdgecutFragment
 
   vertex_range_t OuterVertices(fid_t fid) const { return vertex_range_t(0, 0); }
 
-  vertex_range_t Vertices() const override { return vertex_range_t(0, 0); }
+  vertex_range_t Vertices() const { return vertex_range_t(0, 0); }
 
   bool IsInnerVertex(const vertex_t& v) const override {
     return (v.GetValue() < ivnum_);
@@ -803,6 +801,10 @@ class AppendOnlyEdgecutFragment
 
   vid_t GetInnerVertexGid(const vertex_t& v) const override {
     return (v.GetValue() | ((vid_t) fid_ << fid_offset_));
+  }
+
+  inline fid_t GetOuterVertexFid(const vertex_t& v) const override {
+    return GetOuterVertexGid(v) >> fid_offset_;
   }
 
   // AppendOnlyEdgecutFragment doesn't support along edge message strategy

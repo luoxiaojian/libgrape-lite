@@ -84,31 +84,35 @@ struct Vertex<VID_T, EmptyType> {
   };
 };
 
+}  // namespace internal
+
 template <typename VID_T, typename VDATA_T>
-InArchive& operator<<(InArchive& archive, const Vertex<VID_T, VDATA_T>& v) {
+InArchive& operator<<(InArchive& archive,
+                      const internal::Vertex<VID_T, VDATA_T>& v) {
   archive << v.vid << v.vdata;
   return archive;
 }
 
 template <typename VID_T, typename VDATA_T>
-OutArchive& operator>>(OutArchive& archive, Vertex<VID_T, VDATA_T>& v) {
-  archive >> v.vid << v.vdata;
+OutArchive& operator>>(OutArchive& archive,
+                       internal::Vertex<VID_T, VDATA_T>& v) {
+  archive >> v.vid >> v.vdata;
   return archive;
 }
 
 template <typename VID_T>
-InArchive& operator<<(InArchive& archive, const Vertex<VID_T, EmptyType>& v) {
+InArchive& operator<<(InArchive& archive,
+                      const internal::Vertex<VID_T, EmptyType>& v) {
   archive << v.vid;
   return archive;
 }
 
 template <typename VID_T>
-OutArchive& operator>>(OutArchive& archive, Vertex<VID_T, EmptyType>& v) {
+OutArchive& operator>>(OutArchive& archive,
+                       internal::Vertex<VID_T, EmptyType>& v) {
   archive >> v.vid;
   return archive;
 }
-
-}  // namespace internal
 
 }  // namespace grape
 

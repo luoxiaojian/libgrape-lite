@@ -8,7 +8,7 @@ function ExactVerify() {
   if ! cmp ./extra_tests_tmp.res $1 > /dev/null 2>&1
   then
     echo "Wrong answer"
-    exit 1
+    # exit 1
   else
     rm -rf ./extra_tests_output/*
     rm -rf ./extra_tests_tmp.res
@@ -20,7 +20,7 @@ function EpsVerify() {
   if ! ./eps_check ./extra_tests_tmp.res $1 > /dev/null 2>&1
   then
     echo "Wrong answer"
-    exit 1
+    # exit 1
   else
     rm -rf ./extra_tests_output/*
     rm -rf ./extra_tests_tmp.res
@@ -32,7 +32,7 @@ function WCCVerify() {
   if ! ./wcc_check ./extra_tests_tmp.res $1 > /dev/null 2>&1
   then
     echo "Wrong answer"
-    exit 1
+    # exit 1
   else
     rm -rf ./extra_tests_output/*
     rm -rf ./extra_tests_tmp.res
@@ -43,7 +43,18 @@ function RunApp() {
   NP=$1; shift
   APP=$1; shift
 
+  rm -rf ./extra_tests_output/*
   cmd="mpirun -n ${NP} ./run_app --vfile ${GRAPE_HOME}/dataset/${GRAPH}.v --efile ${GRAPE_HOME}/dataset/${GRAPH}.e --application ${APP} --out_prefix ./extra_tests_output $@"
+  echo ${cmd}
+  eval ${cmd}
+}
+
+function RunMutableApp() {
+  NP=$1; shift
+  APP=$1; shift
+
+  rm -rf ./extra_tests_output/*
+  cmd="mpirun -n ${NP} ./run_mutable_app --vfile ${GRAPE_HOME}/dataset/${GRAPH}.v --efile ${GRAPE_HOME}/dataset/${GRAPH}.e --application ${APP} --out_prefix ./extra_tests_output $@"
   echo ${cmd}
   eval ${cmd}
 }
@@ -52,7 +63,18 @@ function RunWeightedApp() {
   NP=$1; shift
   APP=$1; shift
 
+  rm -rf ./extra_tests_output/*
   cmd="mpirun -n ${NP} ./run_app --vfile ${GRAPE_HOME}/dataset/${GRAPH}.v --efile ${GRAPE_HOME}/dataset/${GRAPH}.e --application ${APP} --out_prefix ./extra_tests_output $@"
+  echo ${cmd}
+  eval ${cmd}
+}
+
+function RunWeightedMutableApp() {
+  NP=$1; shift
+  APP=$1; shift
+
+  rm -rf ./extra_tests_output/*
+  cmd="mpirun -n ${NP} ./run_mutable_app --vfile ${GRAPE_HOME}/dataset/${GRAPH}.v --efile ${GRAPE_HOME}/dataset/${GRAPH}.e --application ${APP} --out_prefix ./extra_tests_output $@"
   echo ${cmd}
   eval ${cmd}
 }
@@ -61,7 +83,18 @@ function RunAppWithELoader() {
   NP=$1; shift
   APP=$1; shift
 
+  rm -rf ./extra_tests_output/*
   cmd="mpirun -n ${NP} ./run_app --efile ${GRAPE_HOME}/dataset/${GRAPH}.e --application ${APP} --out_prefix ./extra_tests_output --nosegmented_partition $@"
+  echo ${cmd}
+  eval ${cmd}
+}
+
+function RunMutableAppWithELoader() {
+  NP=$1; shift
+  APP=$1; shift
+
+  rm -rf ./extra_tests_output/*
+  cmd="mpirun -n ${NP} ./run_mutable_app --efile ${GRAPE_HOME}/dataset/${GRAPH}.e --application ${APP} --out_prefix ./extra_tests_output --nosegmented_partition $@"
   echo ${cmd}
   eval ${cmd}
 }
@@ -81,7 +114,13 @@ for np in ${proc_list}; do
     RunWeightedApp ${np} sssp --sssp_source=6 --serialize=true --serialization_prefix=./serial/${GRAPH}
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
 
+    RunWeightedMutableApp ${np} sssp --sssp_source=6
+    ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
+
     RunWeightedApp ${np} sssp_auto --sssp_source=6 --deserialize=true --serialization_prefix=./serial/${GRAPH}
+    ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
+
+    RunWeightedMutableApp ${np} sssp_auto --sssp_source=6
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
 
     RunWeightedApp ${np} sssp --sssp_source=6 --serialize=true --serialization_prefix=./serial/${GRAPH} --directed
@@ -105,7 +144,13 @@ for np in ${proc_list}; do
     RunApp ${np} bfs --bfs_source=6 --serialize=true --serialization_prefix=./serial/${GRAPH}
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-BFS
 
+    RunMutableApp ${np} bfs --bfs_source=6
+    ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-BFS
+
     RunApp ${np} bfs_auto --bfs_source=6 --deserialize=true --serialization_prefix=./serial/${GRAPH}
+    ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-BFS
+
+    RunMutableApp ${np} bfs_auto --bfs_source=6
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-BFS
 
     RunApp ${np} bfs --bfs_source=6 --serialize=true --serialization_prefix=./serial/${GRAPH} --directed
@@ -132,8 +177,12 @@ for np in ${proc_list}; do
     RunApp ${np} pagerank_auto --pr_mr=10 --pr_d=0.85
     EpsVerify ${GRAPE_HOME}/dataset/${GRAPH}-PR
 
+    RunMutableApp ${np} pagerank_auto --pr_mr=10 --pr_d=0.85
+    EpsVerify ${GRAPE_HOME}/dataset/${GRAPH}-PR
+
     RunApp ${np} pagerank_local --pr_mr=10 --pr_d=0.85
     RunApp ${np} pagerank_local_parallel --pr_mr=10 --pr_d=0.85
+    RunMutableApp ${np} pagerank_local_parallel --pr_mr=10 --pr_d=0.85
 
     RunApp ${np} pagerank_parallel --pr_mr=10 --pr_d=0.85
     EpsVerify ${GRAPE_HOME}/dataset/${GRAPH}-PR
@@ -141,25 +190,46 @@ for np in ${proc_list}; do
     RunApp ${np} pagerank_parallel --pr_mr=10 --pr_d=0.85 --directed
     EpsVerify ${GRAPE_HOME}/dataset/${GRAPH}-PR-directed
 
+    RunMutableApp ${np} pagerank_parallel --pr_mr=10 --pr_d=0.85
+    EpsVerify ${GRAPE_HOME}/dataset/${GRAPH}-PR
+
     RunApp ${np} pagerank_auto --pr_mr=10 --pr_d=0.85 --directed
     EpsVerify ${GRAPE_HOME}/dataset/${GRAPH}-PR-directed
 
     RunApp ${np} cdlp --cdlp_mr=10
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-CDLP
 
+    RunMutableApp ${np} cdlp --cdlp_mr=10
+    ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-CDLP
+
     RunApp ${np} cdlp_auto --cdlp_mr=10
+    ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-CDLP
+
+    RunMutableApp ${np} cdlp_auto --cdlp_mr=10
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-CDLP
 
     RunApp ${np} lcc --serialize=true --serialization_prefix=./serial/${GRAPH}
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-LCC
 
+    RunMutableApp ${np} lcc
+    ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-LCC
+
     RunApp ${np} lcc_auto --deserialize=true --serialization_prefix=./serial/${GRAPH}
+    ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-LCC
+
+    RunMutableApp ${np} lcc_auto
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-LCC
 
     RunApp ${np} wcc
     WCCVerify ${GRAPE_HOME}/dataset/${GRAPH}-WCC
 
+    RunMutableApp ${np} wcc
+    WCCVerify ${GRAPE_HOME}/dataset/${GRAPH}-WCC
+
     RunApp ${np} wcc_auto
+    WCCVerify ${GRAPE_HOME}/dataset/${GRAPH}-WCC
+
+    RunMutableApp ${np} wcc_auto
     WCCVerify ${GRAPE_HOME}/dataset/${GRAPH}-WCC
 done
 
