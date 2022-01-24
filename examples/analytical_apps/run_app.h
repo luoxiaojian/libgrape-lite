@@ -209,7 +209,7 @@ void Run() {
     }
   } else {
     if (name == "traverse") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut, Traverse>(
+      CreateAndQuery<OID_T, VID_T, VDATA_T, double, LoadStrategy::kOnlyOut, Traverse>(
           comm_spec, efile, vfile, out_prefix, fnum, spec);
     } else if (name == "bfs_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut, BFSAuto, OID_T>(
