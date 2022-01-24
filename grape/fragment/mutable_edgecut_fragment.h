@@ -87,9 +87,6 @@ class MutableEdgecutFragment
       : FragmentBase<OID_T, VID_T, VDATA_T, EDATA_T, traits_t>(vm_ptr) {}
   virtual ~MutableEdgecutFragment() = default;
 
-  using base_t::vm_ptr_;
-  std::shared_ptr<vertex_map_t> GetVertexMap() { return vm_ptr_; }
-
   using base_t::buildCSR;
   using base_t::init;
   using base_t::IsInnerVertexGid;
@@ -167,6 +164,7 @@ class MutableEdgecutFragment
   using base_t::Gid2Lid;
   using base_t::ie_;
   using base_t::oe_;
+  using base_t::vm_ptr_;
   void Mutate(Mutation<vid_t, vdata_t, edata_t>& mutation) {
     vertex_t v;
     if (static_cast<double>(mutation.vertices_to_remove.size()) /

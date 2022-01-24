@@ -18,7 +18,9 @@ class MutationContext : public ContextBase {
   using vertex_t = typename FRAG_T::vertex_t;
 
  public:
-  explicit MutationContext(const fragment_t& fragment) : fragment_(fragment) {}
+  explicit MutationContext(const fragment_t& fragment)
+      : fragment_(fragment),
+        vm_ptr_(fragment.GetVertexMap()) {}
 
   void add_vertex(const oid_t& id, const vdata_t& data) {
     vid_to_add_.push_back(id);

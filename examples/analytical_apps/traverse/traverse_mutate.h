@@ -36,7 +36,6 @@ public:
    for (auto& v : inner_vertices) {
      ctx.add_edge(v, v, edata_t());
    }
-   messages.ForceContinue();
  }
 };
 

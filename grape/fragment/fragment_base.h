@@ -55,6 +55,9 @@ class FragmentBase {
   explicit FragmentBase(std::shared_ptr<vertex_map_t> vm_ptr)
       : vm_ptr_(vm_ptr) {}
 
+  std::shared_ptr<vertex_map_t> GetVertexMap() { return vm_ptr_; }
+  const std::shared_ptr<vertex_map_t> GetVertexMap() const { return vm_ptr_; }
+
  protected:
   void init(fid_t fid) {
     fid_ = fid;
