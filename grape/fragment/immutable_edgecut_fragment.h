@@ -240,7 +240,7 @@ class ImmutableEdgecutFragment
     if (sizeof(internal_vertex_t) > sizeof(VID_T)) {
       for (auto& v : vertices) {
         VID_T gid = v.vid;
-        if (id_parser_.get_fragment_id(gid)) {
+        if (id_parser_.get_fragment_id(gid) == fid_) {
           vdata_[id_parser_.get_local_id(gid)] = v.vdata;
         } else {
           auto iter = ovg2l_.find(gid);

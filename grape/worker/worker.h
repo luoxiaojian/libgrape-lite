@@ -28,6 +28,7 @@ limitations under the License.
 #include "grape/parallel/auto_parallel_message_manager.h"
 #include "grape/parallel/batch_shuffle_message_manager.h"
 #include "grape/parallel/parallel_message_manager.h"
+#include "grape/app/mutation_context.h"
 
 #include "grape/parallel/parallel_engine.h"
 #include "grape/worker/comm_spec.h"
@@ -52,7 +53,9 @@ class Worker {
                 "The loaded graph is not valid for application");
 
   Worker(std::shared_ptr<APP_T> app, std::shared_ptr<fragment_t> graph)
-      : app_(app), context_(std::make_shared<context_t>(*graph)) {}
+      : app_(app),
+        context_(std::make_shared<context_t>(*graph)),
+        fragment_(graph) {}
 
   ~Worker() = default;
 
@@ -84,6 +87,7 @@ class Worker {
     MPI_Barrier(comm_spec_.comm());
 
     context_->Init(messages_, std::forward<Args>(args)...);
+    processMutation();
 
     int round = 0;
 
@@ -92,6 +96,7 @@ class Worker {
     messages_.StartARound();
 
     runPEval();
+    processMutation();
 
     messages_.FinishARound();
 
@@ -106,6 +111,7 @@ class Worker {
       messages_.StartARound();
 
       runIncEval();
+      processMutation();
 
       messages_.FinishARound();
 
@@ -161,8 +167,21 @@ class Worker {
     app_->IncEval(graph, *context_, messages_);
   }
 
+  template <typename T = context_t>
+  typename std::enable_if<
+      std::is_base_of<MutationContext<fragment_t>, T>::value>::type
+  processMutation() {
+    context_->apply_mutation(fragment_, comm_spec_);
+  }
+
+  template <typename T = context_t>
+  typename std::enable_if<
+      !std::is_base_of<MutationContext<fragment_t>, T>::value>::type
+  processMutation() {}
+
   std::shared_ptr<APP_T> app_;
   std::shared_ptr<context_t> context_;
+  std::shared_ptr<fragment_t> fragment_;
   message_manager_t messages_;
 
   CommSpec comm_spec_;

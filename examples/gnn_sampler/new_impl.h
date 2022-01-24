@@ -521,9 +521,6 @@ class AppendOnlyEdgecutFragment
       this->outer_vertices_.SetRange(id_parser_.max_local_id() - ovnum_, id_parser_.max_local_id());
       this->vertices_.SetRange(0, ivnum_, id_parser_.max_local_id() - ovnum_, id_parser_.max_local_id());
       tvnum_ = ivnum_ + ovnum_;
-      if (old_ovnum != ovnum_) {
-        outer_vertices_of_frag_.clear();
-      }
       ovgid_.resize(ovnum_);
       memcpy(&ovgid_[old_ovnum], &ov_to_extend[0],
              sizeof(vid_t) * ov_to_extend.size());
@@ -654,11 +651,11 @@ class AppendOnlyEdgecutFragment
 
   void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) override {}
 
-  fid_t GetFragIdByGid(const vid_t& gid) const {
+  size_t GetEdgeNum() const override { return oenum_ + extra_oenum_; }
+
+  fid_t GetFragIdByGid(vid_t gid) const {
     return id_parser_.get_fragment_id(gid);
   }
-
-  size_t GetEdgeNum() const override { return oenum_ + extra_oenum_; }
 
   vid_t GetVerticesNum() const { return tvnum_; }
 
@@ -731,20 +728,6 @@ class AppendOnlyEdgecutFragment
     }
   }
 
-  bool Oid2Gid(const oid_t& oid, vid_t& gid) const {
-    return vm_ptr_->GetGid(oid, gid);
-  }
-
-  bool Oid2Gid(fid_t fid, const oid_t& oid, vid_t& gid) const {
-    return vm_ptr_->GetGid(fid, oid, gid);
-  }
-
-  oid_t Gid2Oid(const vid_t& gid) const {
-    OID_T oid;
-    vm_ptr_->GetOid(gid, oid);
-    return oid;
-  }
-
   using sub_vertices_t = typename traits_t::sub_vertices_t;
   const sub_vertices_t& OuterVertices(fid_t fid) const override {
     if (outer_vertices_of_frag_.empty()) {
@@ -810,7 +793,7 @@ class AppendOnlyEdgecutFragment
     return const_adj_list_t(NULL, NULL);
   }
 
-  adj_list_t GetOutgoingInnerVertexAdjList(const vertex_t& v) override {
+  adj_list_t GetOutgoingInnerVertexAdjList(const vertex_t & v) override{
     return (v.GetValue() < max_old_ilid_)
                ? adj_list_t(oeoffset_[v.GetValue()],
                             oeoffset_[v.GetValue() + 1])
@@ -877,6 +860,16 @@ class AppendOnlyEdgecutFragment
   const std::unique_ptr<FragmentIndicesBase<oid_t, vid_t, vdata_t, edata_t>>&
   GetFragmentIndices() const {
     return fragment_indices_;
+  }
+
+  OID_T Gid2Oid(vid_t gid) const {
+    OID_T oid;
+    vm_ptr_->GetOid(gid, oid);
+    return oid;
+  }
+
+  bool Oid2Gid(fid_t fid, const OID_T& oid, VID_T& gid) const {
+    return vm_ptr_->GetGid(fid, oid, gid);
   }
 
  private:

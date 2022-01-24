@@ -168,6 +168,17 @@ class BasicFragmentMutator {
     }
   }
 
+  void RemoveVertexGidList(std::vector<vid_t>&& gid_list) {
+    if (local_vertices_to_remove_.empty()) {
+      local_vertices_to_remove_ = std::move(gid_list);
+    } else {
+      local_vertices_to_remove_.reserve(local_vertices_to_remove_.size() + gid_list.size());
+      for (auto id : gid_list) {
+        local_vertices_to_remove_.push_back(id);
+      }
+    }
+  }
+
   void RemoveEdge(const oid_t& src, const oid_t& dst) {
     fid_t src_fid = partitioner_.GetPartitionId(src);
     fid_t dst_fid = partitioner_.GetPartitionId(dst);
@@ -189,9 +200,30 @@ class BasicFragmentMutator {
     }
   }
 
+  void RemoveEdgeGid(const vid_t& src_gid, const vid_t& dst_gid) {
+    fid_t src_fid = vm_ptr_->GetFidFromGid(src_gid);
+    fid_t dst_fid = vm_ptr_->GetFidFromGid(dst_gid);
+    if (load_strategy == LoadStrategy::kOnlyOut) {
+      edges_to_remove_[src_fid].Emplace(src_gid, dst_gid);
+    } else if (load_strategy == LoadStrategy::kOnlyIn) {
+      edges_to_remove_[dst_fid].Emplace(src_gid, dst_gid);
+    } else if (load_strategy == LoadStrategy::kBothOutIn) {
+      edges_to_remove_[src_fid].Emplace(src_gid, dst_gid);
+      if (src_fid != dst_fid) {
+        edges_to_remove_[dst_fid].Emplace(src_gid, dst_gid);
+      }
+    } else {
+      LOG(FATAL) << "invalid load_strategy";
+    }
+  }
+
   template <typename Q = vdata_t>
   typename std::enable_if<std::is_same<Q, EmptyType>::value>::type UpdateVertex(
       const oid_t& id, const vdata_t& data) {}
+
+  template <typename Q = vdata_t>
+  typename std::enable_if<std::is_same<Q, EmptyType>::value>::type UpdateVertexGidList(
+      std::vector<internal::Vertex<vid_t, vdata_t>>&& vertex_list) {}
 
   template <typename Q = vdata_t>
   typename std::enable_if<!std::is_same<Q, EmptyType>::value>::type
@@ -200,6 +232,20 @@ class BasicFragmentMutator {
     vid_t gid;
     if (vm_ptr_->GetGid(fid, id, gid)) {
       local_vertices_to_update_.emplace_back(gid, data);
+    }
+  }
+
+  template <typename Q = vdata_t>
+  typename std::enable_if<!std::is_same<Q, EmptyType>::value>::type
+  UpdateVertexGidList(
+      std::vector<internal::Vertex<vid_t, vdata_t>>&& vertex_list) {
+    if (local_vertices_to_update_.empty()) {
+      local_vertices_to_update_ = std::move(vertex_list);
+    } else {
+      local_vertices_to_update_.reserve(local_vertices_to_update_.size() + vertex_list.size());
+      for (auto& v : vertex_list) {
+        local_vertices_to_update_.emplace_back(std::move(v));
+      }
     }
   }
 
@@ -221,6 +267,23 @@ class BasicFragmentMutator {
       } else {
         LOG(FATAL) << "invalid load_strategy";
       }
+    }
+  }
+
+  void UpdateEdgeGid(const vid_t& src_gid, const vid_t& dst_gid, const edata_t& data) {
+    fid_t src_fid = vm_ptr_->GetFidFromGid(src_gid);
+    fid_t dst_fid = vm_ptr_->GetFidFromGid(dst_gid);
+    if (load_strategy == LoadStrategy::kOnlyOut) {
+      edges_to_update_[src_fid].Emplace(src_gid, dst_gid, data);
+    } else if (load_strategy == LoadStrategy::kOnlyIn) {
+      edges_to_update_[dst_fid].Emplace(src_gid, dst_gid, data);
+    } else if (load_strategy == LoadStrategy::kBothOutIn) {
+      edges_to_update_[src_fid].Emplace(src_gid, dst_gid, data);
+      if (src_fid != dst_fid) {
+        edges_to_update_[dst_fid].Emplace(src_gid, dst_gid, data);
+      }
+    } else {
+      LOG(FATAL) << "invalid load_strategy";
     }
   }
 

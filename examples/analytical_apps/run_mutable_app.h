@@ -52,6 +52,7 @@ limitations under the License.
 #include "sssp/sssp.h"
 #include "sssp/sssp_auto.h"
 #include "traverse/traverse.h"
+#include "traverse/traverse_mutate.h"
 #include "wcc/wcc.h"
 #include "wcc/wcc_auto.h"
 
@@ -191,6 +192,12 @@ void RunMutable() {
       using GraphType = MutableEdgecutFragment<OID_T, VID_T, VDATA_T, double,
                                                LoadStrategy::kOnlyOut>;
       using AppType = Traverse<GraphType>;
+      BuildGraphAndQuery<GraphType, AppType>(
+          comm_spec, efile, vfile, delta_efile, delta_vfile, out_prefix, spec);
+    } else if (name == "traverse_mutate") {
+      using GraphType = MutableEdgecutFragment<OID_T, VID_T, VDATA_T, double,
+          LoadStrategy::kOnlyOut>;
+      using AppType = TraverseMutate<GraphType>;
       BuildGraphAndQuery<GraphType, AppType>(
           comm_spec, efile, vfile, delta_efile, delta_vfile, out_prefix, spec);
     } else if (name == "bfs_auto") {

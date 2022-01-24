@@ -280,6 +280,9 @@ class MutableEdgecutFragment
                                id_parser_.max_local_id() - new_ovnum,
                                id_parser_.max_local_id());
       this->ivnum_ = new_ivnum;
+      if (ovnum_ != new_ovnum) {
+        outer_vertices_of_frag_.clear();
+      }
       ovnum_ = new_ovnum;
       ie_.add_vertices(new_ivnum - ivnum, new_ovnum - ovnum);
       ie_.add_reversed_edges(edges_to_add);
