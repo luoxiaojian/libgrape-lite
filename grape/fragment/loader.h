@@ -29,7 +29,6 @@ namespace grape {
  * @brief Loader manages graph loading from files.
  *
  * @tparam FRAG_T Type of Fragment
- * @tparam PARTITIONER_T, Type of partitioner, default is SegmentedPartitioner
  * @tparam IOADAPTOR_T, Type of IOAdaptor, default is LocalIOAdaptor
  * @tparam LINE_PARSER_T, Type of LineParser, default is TSVLineParser
  *
@@ -41,7 +40,6 @@ namespace grape {
  * @return std::shared_ptr<FRAG_T> Loadded Fragment.
  */
 template <typename FRAG_T,
-          typename PARTITIONER_T = SegmentedPartitioner<typename FRAG_T::oid_t>,
           typename IOADAPTOR_T = LocalIOAdaptor,
           typename LINE_PARSER_T =
               TSVLineParser<typename FRAG_T::oid_t, typename FRAG_T::vdata_t,
@@ -52,14 +50,14 @@ static std::shared_ptr<FRAG_T> LoadGraph(
     const LoadGraphSpec& spec = DefaultLoadGraphSpec()) {
   if (vfile.empty()) {
     std::unique_ptr<
-        EFragmentLoader<FRAG_T, PARTITIONER_T, IOADAPTOR_T, LINE_PARSER_T>>
-        loader(new EFragmentLoader<FRAG_T, PARTITIONER_T, IOADAPTOR_T,
+        EFragmentLoader<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>>
+        loader(new EFragmentLoader<FRAG_T, IOADAPTOR_T,
                                    LINE_PARSER_T>(comm_spec));
     return loader->LoadFragment(efile, vfile, spec);
   } else {
     std::unique_ptr<
-        EVFragmentLoader<FRAG_T, PARTITIONER_T, IOADAPTOR_T, LINE_PARSER_T>>
-        loader(new EVFragmentLoader<FRAG_T, PARTITIONER_T, IOADAPTOR_T,
+        EVFragmentLoader<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>>
+        loader(new EVFragmentLoader<FRAG_T, IOADAPTOR_T,
                                     LINE_PARSER_T>(comm_spec));
     return loader->LoadFragment(efile, vfile, spec);
   }

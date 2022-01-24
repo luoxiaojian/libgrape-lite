@@ -140,9 +140,7 @@ class MutationContext : public ContextBase {
         return;
       }
     }
-    BasicFragmentMutator<fragment_t, HashPartitioner<oid_t>> mutator(comm_spec, fragment);
-    HashPartitioner<oid_t> partitioner(fragment_.fnum());
-    mutator.SetPartitioner(partitioner);
+    BasicFragmentMutator<fragment_t> mutator(comm_spec, fragment);
     mutator.Start();
     size_t add_v_num = vid_to_add_.size();
     for (size_t i = 0; i < add_v_num; ++i) {

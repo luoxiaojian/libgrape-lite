@@ -28,7 +28,6 @@ class EVFragmentMutator {
   using vid_t = typename FRAG_T::vid_t;
   using vdata_t = typename FRAG_T::vdata_t;
   using edata_t = typename FRAG_T::edata_t;
-  using partitioner_t = HashPartitioner<oid_t>;
 
  public:
   explicit EVFragmentMutator(const CommSpec& comm_spec)
@@ -49,9 +48,7 @@ class EVFragmentMutator {
     }
     MPI_Barrier(comm_spec_.comm());
     t0_ -= GetCurrentTime();
-    BasicFragmentMutator<fragment_t, partitioner_t> mutator(comm_spec_, frag);
-    partitioner_t partitioner(comm_spec_.fnum());
-    mutator.SetPartitioner(partitioner);
+    BasicFragmentMutator<fragment_t> mutator(comm_spec_, frag);
     mutator.Start();
     if (!vfile.empty() || !std::is_same<vdata_t, EmptyType>::value) {
       auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(vfile));

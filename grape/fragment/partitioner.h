@@ -36,7 +36,7 @@ class HashPartitioner {
   explicit HashPartitioner(size_t frag_num) : fnum_(frag_num) {}
   HashPartitioner(size_t frag_num, std::vector<OID_T>&) : fnum_(frag_num) {}
 
-  inline fid_t GetPartitionId(const OID_T& oid) {
+  inline fid_t GetPartitionId(const OID_T& oid) const {
     return static_cast<fid_t>(static_cast<uint64_t>(oid) % fnum_);
   }
 
@@ -81,7 +81,7 @@ class SegmentedPartitioner {
     }
   }
 
-  inline fid_t GetPartitionId(const OID_T& oid) { return o2f_.at(oid); }
+  inline fid_t GetPartitionId(const OID_T& oid) const { return o2f_.at(oid); }
 
   SegmentedPartitioner& operator=(const SegmentedPartitioner& other) {
     if (this == &other) {

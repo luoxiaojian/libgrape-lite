@@ -102,8 +102,7 @@ std::shared_ptr<FRAG_T> BuildGraph(const CommSpec& comm_spec,
   graph_spec.set_deserialize(false, "");
   graph_spec.set_serialize(false, "");
   std::shared_ptr<FRAG_T> fragment;
-  fragment = LoadGraph<FRAG_T, HashPartitioner<typename FRAG_T::oid_t>>(
-      efile, vfile, comm_spec, graph_spec);
+  fragment = LoadGraph<FRAG_T>(efile, vfile, comm_spec, graph_spec);
   return fragment;
 }
 

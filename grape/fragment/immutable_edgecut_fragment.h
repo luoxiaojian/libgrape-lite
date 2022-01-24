@@ -49,7 +49,7 @@ namespace grape {
 class CommSpec;
 class OutArchive;
 
-template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
+template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T, typename VERTEX_MAP_T>
 struct ImmutableEdgecutFragmentTraits {
   using inner_vertices_t = VertexRange<VID_T>;
   using outer_vertices_t = VertexRange<VID_T>;
@@ -59,7 +59,7 @@ struct ImmutableEdgecutFragmentTraits {
   using csr_t = ImmutableCSR<VID_T, Nbr<VID_T, EDATA_T>>;
   using csr_builder_t = ImmutableCSRBuild<VID_T, Nbr<VID_T, EDATA_T>>;
   using mirror_vertices_t = std::vector<Vertex<VID_T>>;
-  using vertex_map_t = GlobalVertexMap<OID_T, VID_T>;
+  using vertex_map_t = VERTEX_MAP_T;
 };
 
 /**
@@ -110,14 +110,15 @@ struct ImmutableEdgecutFragmentTraits {
  *
  */
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
-          LoadStrategy _load_strategy = LoadStrategy::kOnlyOut>
+          LoadStrategy _load_strategy = LoadStrategy::kOnlyOut,
+          typename VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T>>
 class ImmutableEdgecutFragment
     : public CSREdgecutFragmentBase<
           OID_T, VID_T, VDATA_T, EDATA_T,
-          ImmutableEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T>> {
+          ImmutableEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T, VERTEX_MAP_T>> {
  public:
   using traits_t =
-      ImmutableEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T>;
+      ImmutableEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T, VERTEX_MAP_T>;
   using base_t =
       CSREdgecutFragmentBase<OID_T, VID_T, VDATA_T, EDATA_T, traits_t>;
   using internal_vertex_t = internal::Vertex<VID_T, VDATA_T>;
@@ -128,7 +129,7 @@ class ImmutableEdgecutFragment
   using oid_t = OID_T;
   using vdata_t = VDATA_T;
   using edata_t = EDATA_T;
-  using vertex_map_t = GlobalVertexMap<oid_t, vid_t>;
+  using vertex_map_t = typename traits_t::vertex_map_t;
 
   using IsEdgeCut = std::true_type;
   using IsVertexCut = std::false_type;

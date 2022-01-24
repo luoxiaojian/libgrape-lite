@@ -30,7 +30,7 @@ limitations under the License.
 
 namespace grape {
 
-template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
+template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T, typename VERTEX_MAP_T>
 struct MutableEdgecutFragmentTraits {
   using inner_vertices_t = VertexRange<VID_T>;
   using outer_vertices_t = VertexRange<VID_T>;
@@ -39,18 +39,19 @@ struct MutableEdgecutFragmentTraits {
   using sub_vertices_t = VertexVector<VID_T>;
   using csr_t = DeMutableCSR<VID_T, Nbr<VID_T, EDATA_T>>;
   using csr_builder_t = DeMutableCSRBuilder<VID_T, Nbr<VID_T, EDATA_T>>;
-  using vertex_map_t = GlobalVertexMap<OID_T, VID_T>;
+  using vertex_map_t = VERTEX_MAP_T;
   using mirror_vertices_t = std::vector<Vertex<VID_T>>;
 };
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
-          LoadStrategy _load_strategy = LoadStrategy::kOnlyOut>
+          LoadStrategy _load_strategy = LoadStrategy::kOnlyOut,
+          typename VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T, HashPartitioner<OID_T>>>
 class MutableEdgecutFragment
     : public CSREdgecutFragmentBase<
           OID_T, VID_T, VDATA_T, EDATA_T,
-          MutableEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T>> {
+          MutableEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T, VERTEX_MAP_T>> {
  public:
-  using traits_t = MutableEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T>;
+  using traits_t = MutableEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T, VERTEX_MAP_T>;
   using base_t =
       CSREdgecutFragmentBase<OID_T, VID_T, VDATA_T, EDATA_T, traits_t>;
   using internal_vertex_t = internal::Vertex<VID_T, VDATA_T>;

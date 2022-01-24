@@ -153,6 +153,26 @@ inline void RecvVector(std::vector<T>& vec, int src_worker_id, MPI_Comm comm,
   recv_buffer<T>(&vec[0], len, src_worker_id, comm, tag);
 }
 
+template <typename T>
+inline void SendVectorTail(const std::vector<T>& vec, size_t offset,
+                           int dst_worker_id, MPI_Comm comm, int tag = 0) {
+  offset = std::min(offset, vec.size());
+  size_t len = vec.size() - offset;
+  MPI_Send(&len, sizeof(size_t), MPI_CHAR, dst_worker_id, tag, comm);
+  send_buffer<T>(&vec[offset], len, dst_worker_id, comm, tag);
+}
+
+template <typename T>
+inline void RecvVectorTail(std::vector<T>& vec, int src_worker_id, MPI_Comm comm,
+                       int tag = 0) {
+  size_t len;
+  size_t offset = vec.size();
+  MPI_Recv(&len, sizeof(size_t), MPI_CHAR, src_worker_id, tag, comm,
+           MPI_STATUS_IGNORE);
+  vec.resize(offset + len);
+  recv_buffer<T>(&vec[offset], len, src_worker_id, comm, tag);
+}
+
 inline void SendArchive(const InArchive& archive, int dst_worker_id,
                         MPI_Comm comm, int tag = 0) {
   size_t len = archive.GetSize();

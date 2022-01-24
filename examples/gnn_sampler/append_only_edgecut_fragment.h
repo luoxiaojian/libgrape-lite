@@ -445,7 +445,7 @@ class AppendOnlyEdgecutFragment
     std::vector<edge_t> edges;
     edges.reserve(edge_messages.size());
     std::vector<oid_t> empty_id_list;
-    HashPartitioner<oid_t> partitioner(fnum_, empty_id_list);
+    auto& partitioner = vm_ptr_->GetPartitioner();
     {
       edata_t e_data;
       oid_t src, dst, src_gid, dst_gid;
@@ -464,8 +464,8 @@ class AppendOnlyEdgecutFragment
         }
         src_fid = partitioner.GetPartitionId(src);
         dst_fid = partitioner.GetPartitionId(dst);
-        vm_ptr_->AddVertex(src_fid, src, src_gid);
-        vm_ptr_->AddVertex(dst_fid, dst, dst_gid);
+        vm_ptr_->AddVertex(src, src_gid);
+        vm_ptr_->AddVertex(dst, dst_gid);
         if (src_fid == fid_ || dst_fid == fid_) {
           edges.emplace_back(src_gid, dst_gid, e_data);
         }
@@ -736,7 +736,12 @@ class AppendOnlyEdgecutFragment
   }
 
   bool Oid2Gid(fid_t fid, const oid_t& oid, vid_t& gid) const {
-    return vm_ptr_->GetGid(fid, oid, gid);
+    if (vm_ptr_->GetGid(oid, gid)) {
+      if (fid == vm_ptr_->GetFidFromGid(gid)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   oid_t Gid2Oid(const vid_t& gid) const {

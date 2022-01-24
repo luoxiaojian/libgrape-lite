@@ -141,11 +141,11 @@ class BasicFragmentLoader<
   ~BasicFragmentLoader() { Stop(); }
 
   void SetPartitioner(const PARTITIONER_T& partitioner) {
-    partitioner_ = partitioner;
+    vm_ptr_->SetPartitioner(partitioner);
   }
 
   void SetPartitioner(PARTITIONER_T&& partitioner) {
-    partitioner_ = std::move(partitioner);
+    vm_ptr_->SetPartitioner(std::move(partitioner));
   }
 
   void SetRebalance(bool rebalance, int rebalance_vertex_factor) {
@@ -176,14 +176,16 @@ class BasicFragmentLoader<
   }
 
   void AddVertex(const oid_t& id, const vdata_t& data) {
-    fid_t fid = partitioner_.GetPartitionId(id);
+    auto& partitioner = vm_ptr_->GetPartitioner();
+    fid_t fid = partitioner.GetPartitionId(id);
     vdata_t ref_data(data);
     vertices_to_frag_[fid].Emplace(id, ref_data);
   }
 
   void AddEdge(const oid_t& src, const oid_t& dst, const edata_t& data) {
-    fid_t src_fid = partitioner_.GetPartitionId(src);
-    fid_t dst_fid = partitioner_.GetPartitionId(dst);
+    auto& partitioner = vm_ptr_->GetPartitioner();
+    fid_t src_fid = partitioner.GetPartitionId(src);
+    fid_t dst_fid = partitioner.GetPartitionId(dst);
     edata_t ref_data(data);
     edges_to_frag_[src_fid].Emplace(src, dst, ref_data);
     if (src_fid != dst_fid) {
@@ -294,7 +296,6 @@ class BasicFragmentLoader<
       edge_num += ed.size();
     }
     to.resize(edge_num);
-    fid_t src_fid, dst_fid;
     vid_t src_gid, dst_gid;
     auto to_iter = to.begin();
     size_t buf_num = edge_data.size();
@@ -304,10 +305,8 @@ class BasicFragmentLoader<
       auto dst_iter = edge_dst[buf_id].begin();
       auto data_iter = edge_data[buf_id].begin();
       while (src_iter != src_end) {
-        src_fid = partitioner_.GetPartitionId(*src_iter);
-        vm_ptr_->GetGid(src_fid, oid_t(*src_iter), src_gid);
-        dst_fid = partitioner_.GetPartitionId(*dst_iter);
-        vm_ptr_->GetGid(dst_fid, oid_t(*dst_iter), dst_gid);
+        vm_ptr_->GetGid(oid_t(*src_iter), src_gid);
+        vm_ptr_->GetGid(oid_t(*dst_iter), dst_gid);
         to_iter->src = src_gid;
         to_iter->dst = dst_gid;
         to_iter->edata = std::move(*data_iter);
@@ -333,18 +332,20 @@ class BasicFragmentLoader<
       std::vector<internal::Vertex<vid_t, vdata_t>>& vertices) {
     vertices.clear();
     size_t buf_num = vertex_id.size();
+    auto builder = vm_ptr_->GetLocalBuilder();
     for (size_t buf_id = 0; buf_id < buf_num; ++buf_id) {
       auto& id_list = vertex_id[buf_id];
       auto& data_list = vertex_data[buf_id];
       size_t index = 0;
       vid_t gid;
       for (auto& id : id_list) {
-        if (vm_ptr_->AddVertex(fid, id, gid)) {
+        if (builder.add_vertex(id, gid)) {
           vertices.emplace_back(gid, data_list[index]);
         }
         ++index;
       }
     }
+    builder.finish(*vm_ptr_);
   }
 
   void sortDistinct() {
@@ -353,7 +354,6 @@ class BasicFragmentLoader<
                       processed_vertices_);
     got_vertices_id_.clear();
     got_vertices_data_.clear();
-    vm_ptr_->Construct();
   }
 
   void vertexRecvRoutine() {
@@ -480,8 +480,6 @@ class BasicFragmentLoader<
   static constexpr int vertex_tag = 5;
   static constexpr int edge_tag = 6;
 
-  PARTITIONER_T partitioner_;
-
   bool rebalance_;
   int rebalance_vertex_factor_;
 };
@@ -534,11 +532,11 @@ class BasicFragmentLoader<
   ~BasicFragmentLoader() { Stop(); }
 
   void SetPartitioner(const PARTITIONER_T& partitioner) {
-    partitioner_ = partitioner;
+    vm_ptr_->SetPartitioner(partitioner);
   }
 
   void SetPartitioner(PARTITIONER_T&& partitioner) {
-    partitioner_ = std::move(partitioner);
+    vm_ptr_->SetPartitioner(std::move(partitioner));
   }
 
   void SetRebalance(bool rebalance, int rebalance_vertex_factor) {
@@ -556,7 +554,7 @@ class BasicFragmentLoader<
     vm_ptr_->Init();
     construct_vm_thread_ =
         std::thread(&BasicFragmentLoader::constructVMThreadRoutine, this,
-                    comm_spec_.fid(), std::ref(got_edges_queues_));
+                    std::ref(got_edges_queues_));
   }
 
   void Stop() {
@@ -576,8 +574,9 @@ class BasicFragmentLoader<
   void AddVertex(const oid_t& id, const EmptyType& data) {}
 
   void AddEdge(const oid_t& src, const oid_t& dst, const edata_t& data) {
-    fid_t src_fid = partitioner_.GetPartitionId(src);
-    fid_t dst_fid = partitioner_.GetPartitionId(dst);
+    auto& partitioner = vm_ptr_->GetPartitioner();
+    fid_t src_fid = partitioner.GetPartitionId(src);
+    fid_t dst_fid = partitioner.GetPartitionId(dst);
 
     edata_t ref_data(data);
     edges_to_frag_[src_fid].Emplace(src, dst, ref_data);
@@ -648,8 +647,6 @@ class BasicFragmentLoader<
 
     construct_vm_thread_.join();
 
-    vm_ptr_->Construct();
-
     VLOG(1) << "[worker-" << comm_spec_.worker_id()
             << "]: finished construct vertex map and process vertices";
 
@@ -707,7 +704,6 @@ class BasicFragmentLoader<
       std::vector<std::thread> process_threads(thread_num);
       for (int tid = 0; tid < thread_num; ++tid) {
         process_threads[tid] = std::thread([&]() {
-          fid_t u_fid, v_fid;
           size_t got;
           while (true) {
             got = current_work_unit.fetch_add(1, std::memory_order_release);
@@ -726,10 +722,8 @@ class BasicFragmentLoader<
             auto src_end = src_buf.end();
 
             while (src_iter != src_end) {
-              u_fid = partitioner_.GetPartitionId(*src_iter);
-              v_fid = partitioner_.GetPartitionId(*dst_iter);
-              vm_ptr_->GetGid(u_fid, *src_iter, ptr->src);
-              vm_ptr_->GetGid(v_fid, *dst_iter, ptr->dst);
+              vm_ptr_->GetGid(*src_iter, ptr->src);
+              vm_ptr_->GetGid(*dst_iter, ptr->dst);
               ptr->edata = std::move(*data_iter);
               ++src_iter;
               ++dst_iter;
@@ -749,28 +743,21 @@ class BasicFragmentLoader<
   }
 
   void constructVMThreadRoutine(
-      fid_t fid,
       BlockingQueue<std::tuple<std::vector<oid_t>, std::vector<oid_t>,
                                std::vector<edata_t>>>& queue) {
     std::tuple<std::vector<oid_t>, std::vector<oid_t>, std::vector<edata_t>>
         in_tuple;
-
+    auto builder = vm_ptr_->GetLocalBuilder();
     while (queue.Get(in_tuple)) {
       auto& src_id = std::get<0>(in_tuple);
       auto& dst_id = std::get<1>(in_tuple);
       auto& edge_data = std::get<2>(in_tuple);
 
       for (auto& id : src_id) {
-        fid_t frag_id = partitioner_.GetPartitionId(id);
-        if (frag_id == fid) {
-          vm_ptr_->AddVertex(fid, id);
-        }
+        builder.add_vertex(id);
       }
       for (auto& id : dst_id) {
-        fid_t frag_id = partitioner_.GetPartitionId(id);
-        if (frag_id == fid) {
-          vm_ptr_->AddVertex(fid, id);
-        }
+        builder.add_vertex(id);
       }
 
       got_edges_src_.emplace_back(std::move(src_id));
@@ -778,6 +765,7 @@ class BasicFragmentLoader<
       got_edges_data_.emplace_back(
           std::move(std::vector<edata_t>(std::move(edge_data))));
     }
+    builder.finish(*vm_ptr_);
   }
 
   void edgeRecvRoutine() {
@@ -837,8 +825,6 @@ class BasicFragmentLoader<
   std::vector<Edge<vid_t, edata_t>> processed_edges_;
 
   static constexpr int edge_tag = 6;
-
-  PARTITIONER_T partitioner_;
 
   bool rebalance_;
   int rebalance_vertex_factor_;
