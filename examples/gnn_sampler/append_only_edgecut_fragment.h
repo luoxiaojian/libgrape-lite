@@ -736,12 +736,7 @@ class AppendOnlyEdgecutFragment
   }
 
   bool Oid2Gid(fid_t fid, const oid_t& oid, vid_t& gid) const {
-    if (vm_ptr_->GetGid(oid, gid)) {
-      if (fid == vm_ptr_->GetFidFromGid(gid)) {
-        return true;
-      }
-    }
-    return false;
+    return vm_ptr_->GetGid(fid, oid, gid);
   }
 
   oid_t Gid2Oid(const vid_t& gid) const {

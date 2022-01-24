@@ -230,8 +230,7 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     return true;
   }
 
-  bool GetGid(const OID_T& oid, VID_T& gid) const {
-    fid_t fid = partitioner_.GetPartitionId(oid);
+  bool GetGid(fid_t fid, const OID_T& oid, VID_T& gid) const {
     auto& rm = o2l_[fid];
     auto iter = rm.find(oid);
     if (iter == rm.end()) {
@@ -240,6 +239,11 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
       gid = Lid2Gid(fid, iter->second);
       return true;
     }
+  }
+
+  bool GetGid(const OID_T& oid, VID_T& gid) const {
+    fid_t fid = partitioner_.GetPartitionId(oid);
+    return GetGid(fid, oid, gid);
   }
 
   GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T> GetLocalBuilder() {
@@ -260,10 +264,8 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
         std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(fbuf)));
     io_adaptor->Open("wb");
 
+    base_t::serialize(io_adaptor);
     InArchive ia;
-    base_t::BaseSerialize(ia);
-    CHECK(io_adaptor->WriteArchive(ia));
-    ia.Clear();
     for (fid_t i = 0; i < comm_spec_.fnum(); ++i) {
       ia << l2o_[i].size();
     }
@@ -285,10 +287,9 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
         std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(fbuf)));
     io_adaptor->Open();
 
+    base_t::deserialize(io_adaptor);
+
     OutArchive oa;
-    CHECK(io_adaptor->ReadArchive(oa));
-    base_t::BaseDeserialize(oa);
-    oa.Clear();
 
     l2o_.clear();
     l2o_.resize(comm_spec_.fnum());

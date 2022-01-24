@@ -74,7 +74,11 @@ class EdgecutFragmentBase
 
   using base_t::GetVertex;
   bool GetInnerVertex(const OID_T& oid, Vertex<VID_T>& v) const {
-    return GetVertex(oid, v) && IsInnerVertex(v);
+    VID_T gid;
+    if (vm_ptr_->GetGid(fid(), oid, gid)) {
+      return InnerVertexGid2Vertex(gid, v);
+    }
+    return false;
   }
 
   using outer_vertices_t = typename TRAITS_T::outer_vertices_t;

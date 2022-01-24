@@ -56,6 +56,16 @@ class HashPartitioner {
     return *this;
   }
 
+  template <typename IOADAPTOR_T>
+  void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+    CHECK(writer->Write(&fnum_, sizeof(fid_t)));
+  }
+
+  template <typename IOADAPTOR_T>
+  void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+    CHECK(reader->Read(&fnum_, sizeof(fid_t)));
+  }
+
  private:
   fid_t fnum_;
 };
@@ -99,6 +109,20 @@ class SegmentedPartitioner {
     fnum_ = other.fnum_;
     o2f_ = std::move(other.o2f_);
     return *this;
+  }
+
+  template <typename IOADAPTOR_T>
+  void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+    InArchive arc;
+    arc << fnum_ << o2f_;
+    CHECK(writer->WriteArchive(arc));
+  }
+
+  template <typename IOADAPTOR_T>
+  void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+    OutArchive arc;
+    CHECK(reader->ReadArchive(arc));
+    arc >> fnum_ >> o2f_;
   }
 
  private:

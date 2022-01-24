@@ -96,14 +96,15 @@ class VertexMapBase {
 
   const CommSpec& GetCommSpec() const { return comm_spec_; }
 
-  void BaseSerialize(InArchive& in_archive) const {
-    in_archive << comm_spec_.fnum();
+  template <typename IOADAPTOR_T>
+  void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+    partitioner_.template serialize<IOADAPTOR_T>(writer);
   }
 
-  void BaseDeserialize(OutArchive& out_archive) {
-    fid_t fnum;
-    out_archive >> fnum;
-    id_parser_.init(fnum);
+  template <typename IOADAPTOR_T>
+  void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+    id_parser_.init(comm_spec_.fnum());
+    partitioner_.template deserialize<IOADAPTOR_T>(reader);
   }
 
   fid_t GetFragmentId(const OID_T& oid) const {
@@ -140,6 +141,8 @@ class VertexMapBase {
   virtual bool GetOid(const VID_T& vid, OID_T& oid) const = 0;
 
   virtual bool GetOid(fid_t fid, const VID_T& vid, OID_T& oid) const = 0;
+
+  virtual bool GetGid(fid_t fid, const OID_T& oid, VID_T& gid) const = 0;
 
   virtual bool GetGid(const OID_T& oid, VID_T& gid) const = 0;
 };
