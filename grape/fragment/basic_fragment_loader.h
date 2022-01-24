@@ -748,16 +748,22 @@ class BasicFragmentLoader<
     std::tuple<std::vector<oid_t>, std::vector<oid_t>, std::vector<edata_t>>
         in_tuple;
     auto builder = vm_ptr_->GetLocalBuilder();
+    auto& partitioner = vm_ptr_->GetPartitioner();
+    fid_t fid = comm_spec_.fid();
     while (queue.Get(in_tuple)) {
       auto& src_id = std::get<0>(in_tuple);
       auto& dst_id = std::get<1>(in_tuple);
       auto& edge_data = std::get<2>(in_tuple);
 
       for (auto& id : src_id) {
-        builder.add_vertex(id);
+        if (partitioner.GetPartitionId(id) == fid) {
+          builder.add_vertex(id);
+        }
       }
       for (auto& id : dst_id) {
-        builder.add_vertex(id);
+        if (partitioner.GetPartitionId(id) == fid) {
+          builder.add_vertex(id);
+        }
       }
 
       got_edges_src_.emplace_back(std::move(src_id));
