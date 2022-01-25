@@ -23,12 +23,12 @@ limitations under the License.
 #include <type_traits>
 #include <utility>
 
+#include "grape/app/mutation_context.h"
 #include "grape/communication/communicator.h"
 #include "grape/config.h"
 #include "grape/parallel/auto_parallel_message_manager.h"
 #include "grape/parallel/batch_shuffle_message_manager.h"
 #include "grape/parallel/parallel_message_manager.h"
-#include "grape/app/mutation_context.h"
 
 #include "grape/parallel/parallel_engine.h"
 #include "grape/worker/comm_spec.h"

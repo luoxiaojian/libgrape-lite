@@ -53,7 +53,8 @@ class FragmentBase {
   using vertex_map_t = typename TRAITS_T::vertex_map_t;
 
   using fragment_adj_list_t = typename TRAITS_T::fragment_adj_list_t;
-  using fragment_const_adj_list_t = typename TRAITS_T::fragment_const_adj_list_t;
+  using fragment_const_adj_list_t =
+      typename TRAITS_T::fragment_const_adj_list_t;
 
   explicit FragmentBase(std::shared_ptr<vertex_map_t> vm_ptr)
       : vm_ptr_(vm_ptr) {}
@@ -263,11 +264,11 @@ class FragmentBase {
   virtual ConstAdjList<VID_T, EDATA_T> GetIncomingAdjList(
       const Vertex<VID_T>& v) const = 0;
 
-  virtual fragment_adj_list_t GetIncomingAdjList(
-      const Vertex<VID_T>& v, fid_t fid) = 0;
+  virtual fragment_adj_list_t GetIncomingAdjList(const Vertex<VID_T>& v,
+                                                 fid_t fid) = 0;
 
-  virtual fragment_const_adj_list_t GetIncomingAdjList(
-      const Vertex<VID_T>& v, fid_t fid) const = 0;
+  virtual fragment_const_adj_list_t GetIncomingAdjList(const Vertex<VID_T>& v,
+                                                       fid_t fid) const = 0;
   /**
    * @brief Returns the outgoing adjacent vertices of v.
    *
@@ -281,11 +282,11 @@ class FragmentBase {
   virtual ConstAdjList<VID_T, EDATA_T> GetOutgoingAdjList(
       const Vertex<VID_T>& v) const = 0;
 
-  virtual fragment_adj_list_t GetOutgoingAdjList(
-      const Vertex<VID_T>& v, fid_t fid) = 0;
+  virtual fragment_adj_list_t GetOutgoingAdjList(const Vertex<VID_T>& v,
+                                                 fid_t fid) = 0;
 
-  virtual fragment_const_adj_list_t GetOutgoingAdjList(
-      const Vertex<VID_T>& v, fid_t fid) const = 0;
+  virtual fragment_const_adj_list_t GetOutgoingAdjList(const Vertex<VID_T>& v,
+                                                       fid_t fid) const = 0;
 
  protected:
   template <typename IOADAPTOR_T>

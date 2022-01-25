@@ -40,8 +40,7 @@ namespace grape {
  * @tparam IOADAPTOR_T IOAdaptor type.
  * @tparam LINE_PARSER_T LineParser type.
  */
-template <typename FRAG_T,
-          typename IOADAPTOR_T = LocalIOAdaptor,
+template <typename FRAG_T, typename IOADAPTOR_T = LocalIOAdaptor,
           typename LINE_PARSER_T =
               TSVLineParser<typename FRAG_T::oid_t, typename FRAG_T::vdata_t,
                             typename FRAG_T::edata_t>>

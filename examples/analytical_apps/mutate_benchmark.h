@@ -1,12 +1,27 @@
+/** Copyright 2020 Alibaba Group Holding Limited.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 #ifndef EXAMPLES_ANALYTICAL_APPS_MUTATE_BENCHMARK_H_
 #define EXAMPLES_ANALYTICAL_APPS_MUTATE_BENCHMARK_H_
 
 #include <sys/stat.h>
 
 #include <grape/fragment/ev_fragment_mutator.h>
+#include <grape/fragment/immutable_edgecut_fragment.h>
 #include <grape/fragment/loader.h>
 #include <grape/fragment/mutable_edgecut_fragment.h>
-#include <grape/fragment/immutable_edgecut_fragment.h>
 #include <grape/grape.h>
 #include <grape/util.h>
 
@@ -14,11 +29,11 @@
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
-#include "sssp/sssp.h"
-#include "pagerank/pagerank_local_parallel.h"
-#include "traverse/traverse.h"
 #include "mutate_benchmark_flags.h"
+#include "pagerank/pagerank_local_parallel.h"
+#include "sssp/sssp.h"
 #include "timer.h"
+#include "traverse/traverse.h"
 
 #ifndef __AFFINITY__
 #define __AFFINITY__ false
@@ -65,9 +80,9 @@ std::shared_ptr<FRAG_T> BuildGraph(const CommSpec& comm_spec,
 
 template <typename FRAG_T>
 std::shared_ptr<FRAG_T> MutateGraph(const CommSpec& comm_spec,
-                 const std::string& efile_prefix,
-                 int efile_num,
-                 std::shared_ptr<FRAG_T> fragment) {
+                                    const std::string& efile_prefix,
+                                    int efile_num,
+                                    std::shared_ptr<FRAG_T> fragment) {
   timer_next("mutate graph");
   EVFragmentMutator<FRAG_T, LocalIOAdaptor> mutator(comm_spec);
   for (int i = 0; i < efile_num; ++i) {
@@ -101,8 +116,7 @@ void RunQuery(std::shared_ptr<FRAG_T> fragment, const CommSpec& comm_spec,
 template <typename FRAG_T, typename APP_T, typename... Args>
 void BuildGraphAndQuery(const CommSpec& comm_spec, const std::string& efile,
                         const std::string& vfile,
-                        const std::string& efile_prefix,
-                        int efile_num,
+                        const std::string& efile_prefix, int efile_num,
                         const std::string& out_prefix,
                         const ParallelEngineSpec& spec, Args... args) {
   std::shared_ptr<FRAG_T> fragment =
@@ -113,11 +127,11 @@ void BuildGraphAndQuery(const CommSpec& comm_spec, const std::string& efile,
 }
 
 template <typename FRAG_T, typename APP_T, typename... Args>
-void BuildImmutableGraphAndQuery(
-    const CommSpec& comm_spec, const std::string& efile,
-    const std::string& vfile,
-    const std::string& out_prefix,
-    const ParallelEngineSpec& spec, Args... args) {
+void BuildImmutableGraphAndQuery(const CommSpec& comm_spec,
+                                 const std::string& efile,
+                                 const std::string& vfile,
+                                 const std::string& out_prefix,
+                                 const ParallelEngineSpec& spec, Args... args) {
   std::shared_ptr<FRAG_T> fragment =
       BuildGraph<FRAG_T>(comm_spec, efile, vfile);
   RunQuery<FRAG_T, APP_T, Args...>(fragment, comm_spec, out_prefix, spec,
@@ -143,14 +157,13 @@ void RunBenchmark() {
     using GraphType = MutableEdgecutFragment<OID_T, VID_T, VDATA_T, double>;
     using AppType = SSSP<GraphType>;
     BuildGraphAndQuery<GraphType, AppType, OID_T>(
-        comm_spec, efile, vfile, delta_efile_prefix, delta_efile_part_num, out_prefix, spec,
-        FLAGS_sssp_source);
+        comm_spec, efile, vfile, delta_efile_prefix, delta_efile_part_num,
+        out_prefix, spec, FLAGS_sssp_source);
   } else {
     using GraphType = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, double>;
     using AppType = SSSP<GraphType>;
     BuildImmutableGraphAndQuery<GraphType, AppType, OID_T>(
-        comm_spec, efile, vfile, out_prefix, spec,
-        FLAGS_sssp_source);
+        comm_spec, efile, vfile, out_prefix, spec, FLAGS_sssp_source);
   }
 }
 
@@ -170,17 +183,18 @@ void RunPageRankBenchmark() {
   auto spec = MultiProcessSpec(comm_spec, __AFFINITY__);
 
   if (delta_efile_part_num != 0) {
-    using GraphType = MutableEdgecutFragment<OID_T, VID_T, VDATA_T, double, LoadStrategy::kBothOutIn>;
+    using GraphType = MutableEdgecutFragment<OID_T, VID_T, VDATA_T, double,
+                                             LoadStrategy::kBothOutIn>;
     using AppType = PageRankLocalParallel<GraphType>;
     BuildGraphAndQuery<GraphType, AppType, double, int>(
-        comm_spec, efile, vfile, delta_efile_prefix, delta_efile_part_num, out_prefix, spec,
-        FLAGS_pr_d, FLAGS_pr_mr);
+        comm_spec, efile, vfile, delta_efile_prefix, delta_efile_part_num,
+        out_prefix, spec, FLAGS_pr_d, FLAGS_pr_mr);
   } else {
-    using GraphType = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, double, LoadStrategy::kBothOutIn>;
+    using GraphType = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, double,
+                                               LoadStrategy::kBothOutIn>;
     using AppType = PageRankLocalParallel<GraphType>;
     BuildImmutableGraphAndQuery<GraphType, AppType, double, int>(
-        comm_spec, efile, vfile, out_prefix, spec,
-        FLAGS_pr_d, FLAGS_pr_mr);
+        comm_spec, efile, vfile, out_prefix, spec, FLAGS_pr_d, FLAGS_pr_mr);
   }
 }
 
@@ -203,12 +217,13 @@ void RunTraverse() {
     using GraphType = MutableEdgecutFragment<OID_T, VID_T, VDATA_T, double>;
     using AppType = Traverse<GraphType>;
     BuildGraphAndQuery<GraphType, AppType>(
-        comm_spec, efile, vfile, delta_efile_prefix, delta_efile_part_num, out_prefix, spec);
+        comm_spec, efile, vfile, delta_efile_prefix, delta_efile_part_num,
+        out_prefix, spec);
   } else {
     using GraphType = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, double>;
     using AppType = Traverse<GraphType>;
-    BuildImmutableGraphAndQuery<GraphType, AppType>(
-        comm_spec, efile, vfile, out_prefix, spec);
+    BuildImmutableGraphAndQuery<GraphType, AppType>(comm_spec, efile, vfile,
+                                                    out_prefix, spec);
   }
 }
 

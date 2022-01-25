@@ -40,8 +40,7 @@ namespace grape {
  * @param spec Specification to load graph.
  * @return std::shared_ptr<FRAG_T> Loadded Fragment.
  */
-template <typename FRAG_T,
-          typename IOADAPTOR_T = LocalIOAdaptor,
+template <typename FRAG_T, typename IOADAPTOR_T = LocalIOAdaptor,
           typename LINE_PARSER_T =
               TSVLineParser<typename FRAG_T::oid_t, typename FRAG_T::vdata_t,
                             typename FRAG_T::edata_t>>
@@ -50,25 +49,21 @@ static std::shared_ptr<FRAG_T> LoadGraph(
     const CommSpec& comm_spec,
     const LoadGraphSpec& spec = DefaultLoadGraphSpec()) {
   if (vfile.empty()) {
-    std::unique_ptr<
-        EFragmentLoader<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>>
-        loader(new EFragmentLoader<FRAG_T, IOADAPTOR_T,
-                                   LINE_PARSER_T>(comm_spec));
+    std::unique_ptr<EFragmentLoader<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>> loader(
+        new EFragmentLoader<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>(comm_spec));
     return loader->LoadFragment(efile, vfile, spec);
   } else {
-    std::unique_ptr<
-        EVFragmentLoader<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>>
-        loader(new EVFragmentLoader<FRAG_T, IOADAPTOR_T,
-                                    LINE_PARSER_T>(comm_spec));
+    std::unique_ptr<EVFragmentLoader<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>>
+        loader(new EVFragmentLoader<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>(
+            comm_spec));
     return loader->LoadFragment(efile, vfile, spec);
   }
 }
 
-template <typename FRAG_T,
-    typename IOADAPTOR_T = LocalIOAdaptor,
-    typename LINE_PARSER_T =
-    TSVLineParser<typename FRAG_T::oid_t, typename FRAG_T::vdata_t,
-        typename FRAG_T::edata_t>>
+template <typename FRAG_T, typename IOADAPTOR_T = LocalIOAdaptor,
+          typename LINE_PARSER_T =
+              TSVLineParser<typename FRAG_T::oid_t, typename FRAG_T::vdata_t,
+                            typename FRAG_T::edata_t>>
 static std::shared_ptr<FRAG_T> LoadGraphAndMutate(
     const std::string& efile, const std::string& vfile,
     const std::string& delta_efile, const std::string& delta_vfile,

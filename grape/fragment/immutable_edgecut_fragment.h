@@ -49,7 +49,8 @@ namespace grape {
 class CommSpec;
 class OutArchive;
 
-template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T, typename VERTEX_MAP_T>
+template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
+          typename VERTEX_MAP_T>
 struct ImmutableEdgecutFragmentTraits {
   using inner_vertices_t = VertexRange<VID_T>;
   using outer_vertices_t = VertexRange<VID_T>;
@@ -118,10 +119,11 @@ template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
 class ImmutableEdgecutFragment
     : public CSREdgecutFragmentBase<
           OID_T, VID_T, VDATA_T, EDATA_T,
-          ImmutableEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T, VERTEX_MAP_T>> {
+          ImmutableEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T,
+                                         VERTEX_MAP_T>> {
  public:
-  using traits_t =
-      ImmutableEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T, VERTEX_MAP_T>;
+  using traits_t = ImmutableEdgecutFragmentTraits<OID_T, VID_T, VDATA_T,
+                                                  EDATA_T, VERTEX_MAP_T>;
   using base_t =
       CSREdgecutFragmentBase<OID_T, VID_T, VDATA_T, EDATA_T, traits_t>;
   using internal_vertex_t = internal::Vertex<VID_T, VDATA_T>;
@@ -456,7 +458,8 @@ class ImmutableEdgecutFragment
     return const_adj_list_t(oespliters_[0][v], get_oe_end(v));
   }
 
-  inline adj_list_t GetIncomingAdjList(const vertex_t& v, fid_t src_fid) override {
+  inline adj_list_t GetIncomingAdjList(const vertex_t& v,
+                                       fid_t src_fid) override {
     assert(IsInnerVertex(v));
     assert(!iespliters_.empty());
     assert(src_fid != fid_);
@@ -472,7 +475,8 @@ class ImmutableEdgecutFragment
                             iespliters_[src_fid + 1][v]);
   }
 
-  inline adj_list_t GetOutgoingAdjList(const vertex_t& v, fid_t dst_fid) override {
+  inline adj_list_t GetOutgoingAdjList(const vertex_t& v,
+                                       fid_t dst_fid) override {
     assert(IsInnerVertex(v));
     assert(!oespliters_.empty());
     assert(dst_fid != fid_);

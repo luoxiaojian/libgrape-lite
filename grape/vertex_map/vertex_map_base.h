@@ -20,10 +20,10 @@ limitations under the License.
 #include <vector>
 
 #include "grape/config.h"
+#include "grape/fragment/id_parser.h"
 #include "grape/serialization/in_archive.h"
 #include "grape/serialization/out_archive.h"
 #include "grape/worker/comm_spec.h"
-#include "grape/fragment/id_parser.h"
 
 namespace grape {
 
@@ -90,9 +90,7 @@ class VertexMapBase {
     return id_parser_.get_local_id(gid);
   }
 
-  VID_T MaxVertexNum() const {
-    return id_parser_.max_local_id();
-  }
+  VID_T MaxVertexNum() const { return id_parser_.max_local_id(); }
 
   const CommSpec& GetCommSpec() const { return comm_spec_; }
 
@@ -111,13 +109,9 @@ class VertexMapBase {
     return partitioner_.GetPartitionId(oid);
   }
 
-  const PARTITIONER_T& GetPartitioner() const {
-    return partitioner_;
-  }
+  const PARTITIONER_T& GetPartitioner() const { return partitioner_; }
 
-  PARTITIONER_T& GetPartitioner() {
-    return partitioner_;
-  }
+  PARTITIONER_T& GetPartitioner() { return partitioner_; }
 
  protected:
   CommSpec comm_spec_;

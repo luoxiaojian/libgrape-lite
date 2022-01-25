@@ -175,7 +175,8 @@ class BasicFragmentMutator {
     if (local_vertices_to_remove_.empty()) {
       local_vertices_to_remove_ = std::move(gid_list);
     } else {
-      local_vertices_to_remove_.reserve(local_vertices_to_remove_.size() + gid_list.size());
+      local_vertices_to_remove_.reserve(local_vertices_to_remove_.size() +
+                                        gid_list.size());
       for (auto id : gid_list) {
         local_vertices_to_remove_.push_back(id);
       }
@@ -184,8 +185,7 @@ class BasicFragmentMutator {
 
   void RemoveEdge(const oid_t& src, const oid_t& dst) {
     vid_t src_gid, dst_gid;
-    if (vm_ptr_->GetGid(src, src_gid) &&
-        vm_ptr_->GetGid(dst, dst_gid)) {
+    if (vm_ptr_->GetGid(src, src_gid) && vm_ptr_->GetGid(dst, dst_gid)) {
       if (load_strategy == LoadStrategy::kOnlyOut) {
         fid_t src_fid = vm_ptr_->GetFidFromGid(src_gid);
         edges_to_remove_[src_fid].Emplace(src_gid, dst_gid);
@@ -227,7 +227,8 @@ class BasicFragmentMutator {
       const oid_t& id, const vdata_t& data) {}
 
   template <typename Q = vdata_t>
-  typename std::enable_if<std::is_same<Q, EmptyType>::value>::type UpdateVertexGidList(
+  typename std::enable_if<std::is_same<Q, EmptyType>::value>::type
+  UpdateVertexGidList(
       std::vector<internal::Vertex<vid_t, vdata_t>>&& vertex_list) {}
 
   template <typename Q = vdata_t>
@@ -246,7 +247,8 @@ class BasicFragmentMutator {
     if (local_vertices_to_update_.empty()) {
       local_vertices_to_update_ = std::move(vertex_list);
     } else {
-      local_vertices_to_update_.reserve(local_vertices_to_update_.size() + vertex_list.size());
+      local_vertices_to_update_.reserve(local_vertices_to_update_.size() +
+                                        vertex_list.size());
       for (auto& v : vertex_list) {
         local_vertices_to_update_.emplace_back(std::move(v));
       }
@@ -255,8 +257,7 @@ class BasicFragmentMutator {
 
   void UpdateEdge(const oid_t& src, const oid_t& dst, const edata_t& data) {
     vid_t src_gid, dst_gid;
-    if (vm_ptr_->GetGid(src, src_gid) &&
-        vm_ptr_->GetGid(dst, dst_gid)) {
+    if (vm_ptr_->GetGid(src, src_gid) && vm_ptr_->GetGid(dst, dst_gid)) {
       if (load_strategy == LoadStrategy::kOnlyOut) {
         fid_t src_fid = vm_ptr_->GetFidFromGid(src_gid);
         edges_to_update_[src_fid].Emplace(src_gid, dst_gid, data);
@@ -276,7 +277,8 @@ class BasicFragmentMutator {
     }
   }
 
-  void UpdateEdgeGid(const vid_t& src_gid, const vid_t& dst_gid, const edata_t& data) {
+  void UpdateEdgeGid(const vid_t& src_gid, const vid_t& dst_gid,
+                     const edata_t& data) {
     fid_t src_fid = vm_ptr_->GetFidFromGid(src_gid);
     fid_t dst_fid = vm_ptr_->GetFidFromGid(dst_gid);
     if (load_strategy == LoadStrategy::kOnlyOut) {

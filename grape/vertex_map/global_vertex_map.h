@@ -27,11 +27,11 @@ limitations under the License.
 #include "flat_hash_map/flat_hash_map.hpp"
 
 #include "grape/config.h"
+#include "grape/fragment/partitioner.h"
 #include "grape/serialization/in_archive.h"
 #include "grape/serialization/out_archive.h"
 #include "grape/vertex_map/vertex_map_base.h"
 #include "grape/worker/comm_spec.h"
-#include "grape/fragment/partitioner.h"
 
 template <typename Key, typename Value>
 using HashMap = ska::flat_hash_map<Key, Value>;
@@ -48,8 +48,13 @@ class GlobalVertexMapBuilder {
                          std::vector<OID_T>& list,
                          const PARTITIONER_T& partitioner,
                          const IdParser<VID_T>& id_parser)
-      : fid_(fid), map_(hmap), list_(list),
-        partitioner_(partitioner), id_parser_(id_parser), init_size_(list.size()) {}
+      : fid_(fid),
+        map_(hmap),
+        list_(list),
+        partitioner_(partitioner),
+        id_parser_(id_parser),
+        init_size_(list.size()) {}
+
  public:
   ~GlobalVertexMapBuilder() {}
 
@@ -91,7 +96,8 @@ class GlobalVertexMapBuilder {
               continue;
             }
             init_sizes[fid] = vertex_map.l2o_[fid].size();
-            RecvVectorTail(vertex_map.l2o_[fid], src_worker_id, comm_spec.comm());
+            RecvVectorTail(vertex_map.l2o_[fid], src_worker_id,
+                           comm_spec.comm());
           }
           src_worker_id = (src_worker_id + 1) % worker_num;
         }
@@ -164,7 +170,8 @@ class GlobalVertexMapBuilder {
  * @tparam OID_T
  * @tparam VID_T
  */
-template <typename OID_T, typename VID_T, typename PARTITIONER_T = HashPartitioner<OID_T>>
+template <typename OID_T, typename VID_T,
+          typename PARTITIONER_T = HashPartitioner<OID_T>>
 class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   // TODO(lxj): to support shared-memory for workers on same host (auto apps)
 
@@ -248,10 +255,8 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
   GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T> GetLocalBuilder() {
     fid_t fid = comm_spec_.fid();
-    return GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T>(fid, o2l_[fid],
-                                                               l2o_[fid],
-                                                               partitioner_,
-                                                               id_parser_);
+    return GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T>(
+        fid, o2l_[fid], l2o_[fid], partitioner_, id_parser_);
   }
 
   template <typename IOADAPTOR_T>
@@ -310,8 +315,9 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     io_adaptor->Close();
 
     {
-      int thread_num = (std::thread::hardware_concurrency() +
-                        comm_spec_.local_num() - 1) / comm_spec_.local_num();
+      int thread_num =
+          (std::thread::hardware_concurrency() + comm_spec_.local_num() - 1) /
+          comm_spec_.local_num();
       std::vector<std::thread> construct_threads(thread_num);
       std::atomic<fid_t> current_fid(0);
       fid_t fnum = comm_spec_.fnum();
@@ -371,9 +377,9 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
   std::vector<HashMap<OID_T, VID_T>> o2l_;
   std::vector<std::vector<OID_T>> l2o_;
-  using base_t::partitioner_;
   using base_t::comm_spec_;
   using base_t::id_parser_;
+  using base_t::partitioner_;
 };
 
 }  // namespace grape

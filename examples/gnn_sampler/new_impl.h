@@ -282,8 +282,9 @@ struct AppendOnlyEdgecutFragmentTraits {
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
           LoadStrategy _load_strategy = LoadStrategy::kBothOutIn>
 class AppendOnlyEdgecutFragment
-    : public EdgecutFragmentBase<OID_T, VID_T, VDATA_T, EDATA_T,
-                                 AppendOnlyEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T>> {
+    : public EdgecutFragmentBase<
+          OID_T, VID_T, VDATA_T, EDATA_T,
+          AppendOnlyEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T>> {
  public:
   using internal_vertex_t = internal::Vertex<VID_T, VDATA_T>;
   using edge_t = Edge<VID_T, EDATA_T>;
@@ -310,9 +311,8 @@ class AppendOnlyEdgecutFragment
 
   static constexpr LoadStrategy load_strategy = LoadStrategy::kOnlyOut;
   using traits_t =
-    AppendOnlyEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T>;
-  using base_t =
-    EdgecutFragmentBase<OID_T, VID_T, VDATA_T, EDATA_T, traits_t>;
+      AppendOnlyEdgecutFragmentTraits<OID_T, VID_T, VDATA_T, EDATA_T>;
+  using base_t = EdgecutFragmentBase<OID_T, VID_T, VDATA_T, EDATA_T, traits_t>;
 
   AppendOnlyEdgecutFragment() {}
 
@@ -324,10 +324,10 @@ class AppendOnlyEdgecutFragment
 
   virtual ~AppendOnlyEdgecutFragment() {}
 
-  using base_t::init;
-  using base_t::IsInnerVertexGid;
   using base_t::Gid2Lid;
+  using base_t::init;
   using base_t::InnerVertexGid2Lid;
+  using base_t::IsInnerVertexGid;
   using base_t::IsInnerVertexLid;
   using base_t::OuterVertexGid2Lid;
   void Init(fid_t fid, std::vector<internal_vertex_t>& vertices,
@@ -368,8 +368,10 @@ class AppendOnlyEdgecutFragment
     max_old_ilid_ = ivnum_;
     min_old_olid_ = id_parser_.max_local_id() - ovnum_;
     this->inner_vertices_.SetRange(0, ivnum_);
-    this->outer_vertices_.SetRange(id_parser_.max_local_id() - ovnum_, id_parser_.max_local_id());
-    this->vertices_.SetRange(0, ivnum_, id_parser_.max_local_id() - ovnum_, id_parser_.max_local_id());
+    this->outer_vertices_.SetRange(id_parser_.max_local_id() - ovnum_,
+                                   id_parser_.max_local_id());
+    this->vertices_.SetRange(0, ivnum_, id_parser_.max_local_id() - ovnum_,
+                             id_parser_.max_local_id());
 
     {
       std::vector<int> odegree(ivnum_, 0);
@@ -518,8 +520,10 @@ class AppendOnlyEdgecutFragment
         }
       }
       this->inner_vertices_.SetRange(0, ivnum_);
-      this->outer_vertices_.SetRange(id_parser_.max_local_id() - ovnum_, id_parser_.max_local_id());
-      this->vertices_.SetRange(0, ivnum_, id_parser_.max_local_id() - ovnum_, id_parser_.max_local_id());
+      this->outer_vertices_.SetRange(id_parser_.max_local_id() - ovnum_,
+                                     id_parser_.max_local_id());
+      this->vertices_.SetRange(0, ivnum_, id_parser_.max_local_id() - ovnum_,
+                               id_parser_.max_local_id());
       tvnum_ = ivnum_ + ovnum_;
       ovgid_.resize(ovnum_);
       memcpy(&ovgid_[old_ovnum], &ov_to_extend[0],
@@ -645,8 +649,10 @@ class AppendOnlyEdgecutFragment
     extra_oe_.clear();
     extra_oe_.resize(ivnum_, -1);
     this->inner_vertices_.SetRange(0, ivnum_);
-    this->outer_vertices_.SetRange(id_parser_.max_local_id() - ovnum_, id_parser_.max_local_id());
-    this->vertices_.SetRange(0, ivnum_, id_parser_.max_local_id() - ovnum_, id_parser_.max_local_id());
+    this->outer_vertices_.SetRange(id_parser_.max_local_id() - ovnum_,
+                                   id_parser_.max_local_id());
+    this->vertices_.SetRange(0, ivnum_, id_parser_.max_local_id() - ovnum_,
+                             id_parser_.max_local_id());
   }
 
   void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) override {}
@@ -741,7 +747,6 @@ class AppendOnlyEdgecutFragment
     return outer_vertices_of_frag_[fid];
   }
 
-
   // AppendOnlyEdgecutFragment doesn't support along edge message strategy
   DestList IEDests(const vertex_t& v) const override {
     LOG(FATAL) << "Not implemented.";
@@ -793,7 +798,7 @@ class AppendOnlyEdgecutFragment
     return const_adj_list_t(NULL, NULL);
   }
 
-  adj_list_t GetOutgoingInnerVertexAdjList(const vertex_t & v) override{
+  adj_list_t GetOutgoingInnerVertexAdjList(const vertex_t& v) override {
     return (v.GetValue() < max_old_ilid_)
                ? adj_list_t(oeoffset_[v.GetValue()],
                             oeoffset_[v.GetValue() + 1])
@@ -919,8 +924,8 @@ class AppendOnlyEdgecutFragment
   size_t extra_oenum_;
   using base_t::fid_;
   using base_t::fnum_;
-  using base_t::ivnum_;
   using base_t::id_parser_;
+  using base_t::ivnum_;
   using base_t::vm_ptr_;
 
   ska::flat_hash_map<vid_t, vid_t> ovg2i_;

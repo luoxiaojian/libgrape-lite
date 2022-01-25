@@ -1,9 +1,24 @@
+/** Copyright 2020 Alibaba Group Holding Limited.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 #ifndef GRAPE_APP_MUTATION_CONTEXT_H_
 #define GRAPE_APP_MUTATION_CONTEXT_H_
 
 #include <grape/config.h>
-#include "grape/app/context_base.h"
 #include <grape/fragment/basic_fragment_mutator.h>
+#include "grape/app/context_base.h"
 
 namespace grape {
 
@@ -19,8 +34,7 @@ class MutationContext : public ContextBase {
 
  public:
   explicit MutationContext(const fragment_t& fragment)
-      : fragment_(fragment),
-        vm_ptr_(fragment.GetVertexMap()) {}
+      : fragment_(fragment), vm_ptr_(fragment.GetVertexMap()) {}
 
   void add_vertex(const oid_t& id, const vdata_t& data) {
     vid_to_add_.push_back(id);
@@ -66,19 +80,19 @@ class MutationContext : public ContextBase {
     }
   }
 
-  void update_edge(fid_t src_fid, const oid_t& src,
-                   fid_t dst_fid, const oid_t& dst,
-                   const edata_t& data) {
+  void update_edge(fid_t src_fid, const oid_t& src, fid_t dst_fid,
+                   const oid_t& dst, const edata_t& data) {
     vid_t src_gid, dst_gid;
-    if (vm_ptr_->GetGid(src_fid, src, src_gid)
-        && vm_ptr_->GetGid(dst_fid, dst, dst_gid)) {
+    if (vm_ptr_->GetGid(src_fid, src, src_gid) &&
+        vm_ptr_->GetGid(dst_fid, dst, dst_gid)) {
       esrc_to_update_.push_back(src_gid);
       edst_to_update_.push_back(dst_gid);
       edata_to_update_.push_back(data);
     }
   }
 
-  void update_edge(const vertex_t& src, const vertex_t& dst, const edata_t& data) {
+  void update_edge(const vertex_t& src, const vertex_t& dst,
+                   const edata_t& data) {
     esrc_to_update_.push_back(fragment_.Vertex2Gid(src));
     edst_to_update_.push_back(fragment_.Vertex2Gid(dst));
     edata_to_update_.push_back(data);
@@ -110,11 +124,11 @@ class MutationContext : public ContextBase {
     }
   }
 
-  void remove_edge(fid_t src_fid, const oid_t& src,
-                   fid_t dst_fid, const oid_t& dst) {
+  void remove_edge(fid_t src_fid, const oid_t& src, fid_t dst_fid,
+                   const oid_t& dst) {
     vid_t src_gid, dst_gid;
-    if (vm_ptr_->GetGid(src_fid, src, src_gid)
-        && vm_ptr_->GetGid(dst_fid, dst, dst_gid)) {
+    if (vm_ptr_->GetGid(src_fid, src, src_gid) &&
+        vm_ptr_->GetGid(dst_fid, dst, dst_gid)) {
       esrc_to_remove_.push_back(src_gid);
       edst_to_remove_.push_back(dst_gid);
     }
@@ -125,7 +139,8 @@ class MutationContext : public ContextBase {
     edst_to_remove_.push_back(fragment_.Vertex2Gid(dst));
   }
 
-  void apply_mutation(std::shared_ptr<fragment_t> fragment, const CommSpec& comm_spec) {
+  void apply_mutation(std::shared_ptr<fragment_t> fragment,
+                      const CommSpec& comm_spec) {
     {
       CommSpec dup_comm_spec(comm_spec);
       dup_comm_spec.Dup();
@@ -155,7 +170,8 @@ class MutationContext : public ContextBase {
     mutator.UpdateVertexGidList(std::move(vertices_to_update_));
     size_t update_e_num = esrc_to_update_.size();
     for (size_t i = 0; i < update_e_num; ++i) {
-      mutator.UpdateEdgeGid(esrc_to_update_[i], edst_to_update_[i], edata_to_update_[i]);
+      mutator.UpdateEdgeGid(esrc_to_update_[i], edst_to_update_[i],
+                            edata_to_update_[i]);
     }
     mutator.RemoveVertexGidList(std::move(vid_to_remove_));
     size_t remove_e_num = esrc_to_remove_.size();

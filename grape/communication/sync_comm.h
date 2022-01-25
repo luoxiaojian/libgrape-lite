@@ -163,8 +163,8 @@ inline void SendVectorTail(const std::vector<T>& vec, size_t offset,
 }
 
 template <typename T>
-inline void RecvVectorTail(std::vector<T>& vec, int src_worker_id, MPI_Comm comm,
-                       int tag = 0) {
+inline void RecvVectorTail(std::vector<T>& vec, int src_worker_id,
+                           MPI_Comm comm, int tag = 0) {
   size_t len;
   size_t offset = vec.size();
   MPI_Recv(&len, sizeof(size_t), MPI_CHAR, src_worker_id, tag, comm,

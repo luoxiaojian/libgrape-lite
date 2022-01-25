@@ -246,7 +246,8 @@ class FilterAdjList {
   using NbrT = Nbr<VID_T, EDATA_T>;
 
  public:
-  FilterAdjList(NbrT* b, NbrT* e, const PRED_T& pred) : begin_(b), end_(e), pred_(pred) {
+  FilterAdjList(NbrT* b, NbrT* e, const PRED_T& pred)
+      : begin_(b), end_(e), pred_(pred) {
     while (begin_ != end_ && !pred_(*begin_)) {
       ++begin_;
     }
@@ -267,11 +268,9 @@ class FilterAdjList {
     const PRED_T& pred_;
 
    public:
-    explicit iterator(const pointer_type& c,
-                      const pointer_type& end,
+    explicit iterator(const pointer_type& c, const pointer_type& end,
                       const PRED_T& pred) noexcept
-        : current_(c), end_(end), pred_(pred) {
-    }
+        : current_(c), end_(end), pred_(pred) {}
     reference_type operator*() const noexcept { return *current_; }
     pointer_type operator->() const noexcept { return current_; }
 
@@ -308,8 +307,7 @@ class FilterAdjList {
     const PRED_T& pred_;
 
    public:
-    explicit const_iterator(const pointer_type& c,
-                            const pointer_type& end,
+    explicit const_iterator(const pointer_type& c, const pointer_type& end,
                             const PRED_T& pred) noexcept
         : current_(c), end_(end), pred_(pred) {}
     reference_type operator*() const noexcept { return *current_; }
@@ -379,8 +377,7 @@ class FilterConstAdjList {
     const PRED_T& pred_;
 
    public:
-    explicit const_iterator(const pointer_type& c,
-                            const pointer_type& end,
+    explicit const_iterator(const pointer_type& c, const pointer_type& end,
                             const PRED_T& pred) noexcept
         : current_(c), end_(end), pred_(pred) {}
     reference_type operator*() const noexcept { return *current_; }
