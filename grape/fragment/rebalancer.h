@@ -309,7 +309,7 @@ class Rebalancer<
     gid_maps_.clear();
     gid_maps_.shrink_to_fit();
 
-    std::vector<ShuffleOutTriple<vid_t, vid_t, edata_t>> delta_edges_to_frag(
+    std::vector<ShuffleOut<vid_t, vid_t, edata_t>> delta_edges_to_frag(
         comm_spec_.fnum());
     for (fid_t fid = 0; fid < comm_spec_.fnum(); ++fid) {
       int worker_id = comm_spec_.FragToWorker(fid);
@@ -321,8 +321,8 @@ class Rebalancer<
     }
 
     std::thread deltaEdgesRecvThread([&]() {
-      ShuffleInTriple<vid_t, vid_t, edata_t> data_in(comm_spec_.fnum() - 1);
-      data_in.Init(comm_spec_.comm(), delta_edge_tag);
+      ShuffleIn<vid_t, vid_t, edata_t> data_in;
+      data_in.Init(comm_spec_.fnum(), comm_spec_.comm(), delta_edge_tag);
       int src_worker_id;
       fid_t dst_fid;
       while (!data_in.Finished()) {
@@ -331,14 +331,14 @@ class Rebalancer<
           break;
         }
         CHECK_EQ(dst_fid, comm_spec_.fid());
-        size_t to_append = data_in.Buffer0().size();
+        size_t to_append = get_buffer<0>(data_in).size();
         size_t old_size = edges.size();
         edges.resize(old_size + to_append);
         auto* buf_ptr = &edges[old_size];
-        auto src_iter = data_in.Buffer0().begin();
-        auto dst_iter = data_in.Buffer1().begin();
-        auto data_iter = data_in.Buffer2().begin();
-        auto src_end = data_in.Buffer0().end();
+        auto src_iter = get_buffer<0>(data_in).begin();
+        auto dst_iter = get_buffer<1>(data_in).begin();
+        auto data_iter = get_buffer<2>(data_in).begin();
+        auto src_end = get_buffer<0>(data_in).end();
         while (src_iter != src_end) {
           buf_ptr->src = *src_iter++;
           buf_ptr->dst = *dst_iter++;
@@ -379,14 +379,14 @@ class Rebalancer<
 
     {
       fid_t fid = comm_spec_.fid();
-      size_t to_append = delta_edges_to_frag[fid].Buffer0().size();
+      size_t to_append = get_buffer<0>(delta_edges_to_frag[fid]).size();
       size_t old_size = edges.size();
       edges.resize(old_size + to_append);
       auto* buf_ptr = &edges[old_size];
-      auto src_iter = delta_edges_to_frag[fid].Buffer0().begin();
-      auto dst_iter = delta_edges_to_frag[fid].Buffer1().begin();
-      auto data_iter = delta_edges_to_frag[fid].Buffer2().begin();
-      auto src_end = delta_edges_to_frag[fid].Buffer0().end();
+      auto src_iter = get_buffer<0>(delta_edges_to_frag[fid]).begin();
+      auto dst_iter = get_buffer<1>(delta_edges_to_frag[fid]).begin();
+      auto data_iter = get_buffer<2>(delta_edges_to_frag[fid]).begin();
+      auto src_end = get_buffer<0>(delta_edges_to_frag[fid]).end();
       while (src_iter != src_end) {
         buf_ptr->src = *src_iter++;
         buf_ptr->dst = *dst_iter++;

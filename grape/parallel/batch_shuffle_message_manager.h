@@ -211,6 +211,15 @@ class BatchShuffleMessageManager : public MessageManagerBase {
     comm_ = NULL_COMM;
   }
 
+  /**
+   * @brief Synchronize the inner vertices' data of a vertex array to their
+   * mirrors.
+   *
+   * @tparam GRAPH_T
+   * @tparam DATA_T
+   * @param frag
+   * @param data
+   */
   template <typename GRAPH_T, typename DATA_T>
   void SyncInnerVertices(
       const GRAPH_T& frag,
@@ -236,70 +245,21 @@ class BatchShuffleMessageManager : public MessageManagerBase {
   }
 
   /**
-   * @brief Synchronize the inner vertices' data of a vertex array to their
-   * mirrors.
-   *
-   * @tparam GRAPH_T
-   * @tparam DATA_T
-   * @param frag
-   * @param data
+   * @brief This function will block until all outer vertices are updated, that
+   * is, messages from all other fragments are received.
    */
-  template <typename GRAPH_T, typename DATA_T>
-  void SyncInnerVerticesLegacy(
-      const GRAPH_T& frag, VertexArray<DATA_T, typename GRAPH_T::vid_t>& data,
-      int thread_num = std::thread::hardware_concurrency()) {
-    to_terminate_ = false;
-
-    if (!send_reqs_.empty()) {
-      MPI_Waitall(send_reqs_.size(), &send_reqs_[0], MPI_STATUSES_IGNORE);
-      send_reqs_.clear();
-    }
-
-    if (!recv_reqs_.empty()) {
-      MPI_Waitall(recv_reqs_.size(), &recv_reqs_[0], MPI_STATUSES_IGNORE);
-      recv_reqs_.clear();
-      recv_from_.clear();
-    }
-
-    for (fid_t i = 1; i < fnum_; ++i) {
-      fid_t src_fid = (fid_ + fnum_ - i) % fnum_;
-      auto range = frag.OuterVertices(src_fid);
-      MPI_Request req;
-      MPI_Irecv(&data[range.begin()], range.size() * sizeof(DATA_T), MPI_CHAR,
-                comm_spec_.FragToWorker(src_fid), 0, comm_, &req);
-      recv_reqs_.push_back(req);
-      recv_from_.push_back(src_fid);
-    }
-
-    remaining_reqs_ = fnum_ - 1;
-
-    for (fid_t i = 1; i < fnum_; ++i) {
-      fid_t dst_fid = (i + fid_) % fnum_;
-      auto& id_vec = frag.MirrorVertices(dst_fid);
-      auto& vec = shuffle_out_buffers_[dst_fid];
-      vec.clear();
-      vec.resize(id_vec.size() * sizeof(DATA_T));
-      DATA_T* buf = reinterpret_cast<DATA_T*>(vec.data());
-      size_t num = id_vec.size();
-#pragma omp parallel for num_threads(thread_num)
-      for (size_t k = 0; k < num; ++k) {
-        buf[k] = data[id_vec[k]];
-      }
-
-      MPI_Request req;
-      MPI_Isend(vec.data(), vec.size(), MPI_CHAR,
-                comm_spec_.FragToWorker(dst_fid), 0, comm_, &req);
-      msg_size_ += vec.size();
-      send_reqs_.push_back(req);
-    }
-  }
-
   void UpdateOuterVertices() {
     while (remaining_reqs_ != 0) {
       UpdatePartialOuterVertices();
     }
   }
 
+  /**
+   * @brief This function will block until a set of messages from one fragment
+   * are received.
+   *
+   * @return Source fragment id.
+   */
   fid_t UpdatePartialOuterVertices() {
     int index;
     fid_t ret;
@@ -309,36 +269,6 @@ class BatchShuffleMessageManager : public MessageManagerBase {
     if (post_process_handle_ != nullptr) {
       post_process_handle_->exec(ret);
     }
-    if (remaining_reqs_ == 0) {
-      recv_reqs_.clear();
-      recv_from_.clear();
-    }
-    return ret;
-  }
-
-  /**
-   * @brief This function will block until all outer vertices are updated, that
-   * is, messages from all other fragments are received.
-   */
-  void UpdateOuterVerticesLegacy() {
-    MPI_Waitall(recv_reqs_.size(), &recv_reqs_[0], MPI_STATUSES_IGNORE);
-    remaining_reqs_ = 0;
-    recv_reqs_.clear();
-    recv_from_.clear();
-  }
-
-  /**
-   * @brief This function will block until a set of messages from one fragment
-   * are received.
-   *
-   * @return Source fragment id.
-   */
-  fid_t UpdatePartialOuterVerticesLegacy() {
-    int index;
-    fid_t ret;
-    MPI_Waitany(recv_reqs_.size(), &recv_reqs_[0], &index, MPI_STATUS_IGNORE);
-    remaining_reqs_--;
-    ret = recv_from_[index];
     if (remaining_reqs_ == 0) {
       recv_reqs_.clear();
       recv_from_.clear();

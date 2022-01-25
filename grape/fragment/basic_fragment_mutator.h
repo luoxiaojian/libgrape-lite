@@ -18,7 +18,7 @@ limitations under the License.
 
 #include <vector>
 
-#include <grape/communication/shuffle_beta.h>
+#include <grape/communication/shuffle.h>
 #include <grape/graph/edge.h>
 #include <grape/graph/vertex.h>
 #include <grape/utils/concurrent_queue.h>

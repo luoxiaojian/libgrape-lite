@@ -27,7 +27,6 @@ limitations under the License.
 #include <vector>
 
 #include "grape/communication/shuffle.h"
-#include "grape/communication/shuffle_beta.h"
 #include "grape/config.h"
 #include "grape/fragment/rebalancer.h"
 #include "grape/graph/edge.h"
@@ -35,8 +34,6 @@ limitations under the License.
 #include "grape/utils/concurrent_queue.h"
 #include "grape/utils/vertex_array.h"
 #include "grape/worker/comm_spec.h"
-
-#define USE_SHUFFLE_BETA
 
 namespace grape {
 struct EmptyType;
@@ -244,7 +241,6 @@ class BasicFragmentLoader<
 
     MPI_Barrier(comm_spec_.comm());
 
-#ifdef USE_SHUFFLE_BETA
     got_vertices_id_.emplace_back(
         std::move(get_buffer<0>(vertices_to_frag_[comm_spec_.fid()])));
     got_vertices_data_.emplace_back(
@@ -257,18 +253,7 @@ class BasicFragmentLoader<
     got_edges_data_.emplace_back(
         std::move(get_buffer<2>(edges_to_frag_[comm_spec_.fid()])));
     edges_to_frag_[comm_spec_.fid()].Clear();
-#else
-    got_vertices_id_.emplace_back(
-        std::move(vertices_to_frag_[comm_spec_.fid()].Buffer0()));
-    got_vertices_data_.emplace_back(std::move(std::vector<vdata_t>(
-        std::move(vertices_to_frag_[comm_spec_.fid()].Buffer1()))));
-    got_edges_src_.emplace_back(
-        std::move(edges_to_frag_[comm_spec_.fid()].Buffer0()));
-    got_edges_dst_.emplace_back(
-        std::move(edges_to_frag_[comm_spec_.fid()].Buffer1()));
-    got_edges_data_.emplace_back(std::move(std::vector<edata_t>(
-        std::move(edges_to_frag_[comm_spec_.fid()].Buffer2()))));
-#endif
+
     sortDistinct();
 
     VLOG(1) << "[worker-" << comm_spec_.worker_id()
@@ -357,13 +342,8 @@ class BasicFragmentLoader<
   }
 
   void vertexRecvRoutine() {
-#ifdef USE_SHUFFLE_BETA
     ShuffleIn<oid_t, vdata_t> data_in;
     data_in.Init(comm_spec_.fnum(), comm_spec_.comm(), vertex_tag);
-#else
-    ShuffleInPair<oid_t, vdata_t> data_in(comm_spec_.fnum() - 1);
-    data_in.Init(comm_spec_.comm(), vertex_tag);
-#endif
     fid_t dst_fid;
     int src_worker_id;
     while (!data_in.Finished()) {
@@ -373,25 +353,15 @@ class BasicFragmentLoader<
       }
       auto& dst_buf0 = got_vertices_id_;
       auto& dst_buf1 = got_vertices_data_;
-#ifdef USE_SHUFFLE_BETA
       dst_buf0.emplace_back(std::move(get_buffer<0>(data_in)));
       dst_buf1.emplace_back(std::move(get_buffer<1>(data_in)));
       data_in.Clear();
-#else
-      dst_buf0.emplace_back(std::move(data_in.Buffer0()));
-      dst_buf1.emplace_back(std::move(data_in.Buffer1()));
-#endif
     }
   }
 
   void edgeRecvRoutine() {
-#ifdef USE_SHUFFLE_BETA
     ShuffleIn<oid_t, oid_t, edata_t> data_in;
     data_in.Init(comm_spec_.fnum(), comm_spec_.comm(), edge_tag);
-#else
-    ShuffleInTriple<oid_t, oid_t, edata_t> data_in(comm_spec_.fnum() - 1);
-    data_in.Init(comm_spec_.comm(), edge_tag);
-#endif
     fid_t dst_fid;
     int src_worker_id;
     while (!data_in.Finished()) {
@@ -400,16 +370,10 @@ class BasicFragmentLoader<
         break;
       }
       CHECK_EQ(dst_fid, comm_spec_.fid());
-#ifdef USE_SHUFFLE_BETA
       got_edges_src_.emplace_back(std::move(get_buffer<0>(data_in)));
       got_edges_dst_.emplace_back(std::move(get_buffer<1>(data_in)));
       got_edges_data_.emplace_back(std::move(get_buffer<2>(data_in)));
       data_in.Clear();
-#else
-      got_edges_src_.emplace_back(std::move(data_in.Buffer0()));
-      got_edges_dst_.emplace_back(std::move(data_in.Buffer1()));
-      got_edges_data_.emplace_back(std::move(data_in.Buffer2()));
-#endif
     }
   }
 
@@ -455,13 +419,8 @@ class BasicFragmentLoader<
   CommSpec comm_spec_;
   std::shared_ptr<vertex_map_t> vm_ptr_;
 
-#ifdef USE_SHUFFLE_BETA
   std::vector<ShuffleOut<oid_t, vdata_t>> vertices_to_frag_;
   std::vector<ShuffleOut<oid_t, oid_t, edata_t>> edges_to_frag_;
-#else
-  std::vector<ShuffleOutPair<oid_t, vdata_t>> vertices_to_frag_;
-  std::vector<ShuffleOutTriple<oid_t, oid_t, edata_t>> edges_to_frag_;
-#endif
 
   std::thread vertex_recv_thread_;
   std::thread edge_recv_thread_;
@@ -629,18 +588,12 @@ class BasicFragmentLoader<
 
     MPI_Barrier(comm_spec_.comm());
 
-#ifdef USE_SHUFFLE_BETA
     std::tuple<std::vector<oid_t>, std::vector<oid_t>, std::vector<edata_t>>
         item(std::move(get_buffer<0>(edges_to_frag_[comm_spec_.fid()])),
              std::move(get_buffer<1>(edges_to_frag_[comm_spec_.fid()])),
              std::move(get_buffer<2>(edges_to_frag_[comm_spec_.fid()])));
     edges_to_frag_[comm_spec_.fid()].Clear();
-#else
-    std::tuple<std::vector<oid_t>, std::vector<oid_t>, std::vector<edata_t>>
-        item(std::move(edges_to_frag_[comm_spec_.fid()].Buffer0()),
-             std::move(edges_to_frag_[comm_spec_.fid()].Buffer1()),
-             std::move(edges_to_frag_[comm_spec_.fid()].Buffer2()));
-#endif
+
     got_edges_queues_.Put(std::move(item));
 
     got_edges_queues_.DecProducerNum();
@@ -775,13 +728,8 @@ class BasicFragmentLoader<
   }
 
   void edgeRecvRoutine() {
-#ifdef USE_SHUFFLE_BETA
     ShuffleIn<oid_t, oid_t, edata_t> data_in;
     data_in.Init(comm_spec_.fnum(), comm_spec_.comm(), edge_tag);
-#else
-    ShuffleInTriple<oid_t, oid_t, edata_t> data_in(comm_spec_.fnum() - 1);
-    data_in.Init(comm_spec_.comm(), edge_tag);
-#endif
     fid_t dst_fid;
     int src_worker_id;
     while (!data_in.Finished()) {
@@ -790,17 +738,11 @@ class BasicFragmentLoader<
         break;
       }
       CHECK_EQ(dst_fid, comm_spec_.fid());
-#ifdef USE_SHUFFLE_BETA
       std::tuple<std::vector<oid_t>, std::vector<oid_t>, std::vector<edata_t>>
           item(std::move(get_buffer<0>(data_in)),
                std::move(get_buffer<1>(data_in)),
                std::move(get_buffer<2>(data_in)));
       data_in.Clear();
-#else
-      std::tuple<std::vector<oid_t>, std::vector<oid_t>, std::vector<edata_t>>
-          item(std::move(data_in.Buffer0()), std::move(data_in.Buffer1()),
-               std::move(data_in.Buffer2()));
-#endif
       got_edges_queues_.Put(std::move(item));
     }
 
@@ -811,11 +753,7 @@ class BasicFragmentLoader<
   CommSpec comm_spec_;
   std::shared_ptr<vertex_map_t> vm_ptr_;
 
-#ifdef USE_SHUFFLE_BETA
   std::vector<ShuffleOut<oid_t, oid_t, edata_t>> edges_to_frag_;
-#else
-  std::vector<ShuffleOutTriple<oid_t, oid_t, edata_t>> edges_to_frag_;
-#endif
   std::thread edge_recv_thread_;
   bool recv_thread_running_;
 
