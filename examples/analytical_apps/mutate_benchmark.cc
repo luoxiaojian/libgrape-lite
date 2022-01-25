@@ -1,4 +1,4 @@
-#include "benchmark_app.h"
+#include "mutate_benchmark.h"
 
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
@@ -21,9 +21,13 @@ int main(int argc, char* argv[]) {
 
   grape::Init();
 
-  grape::RunPageRankBenchmark<int64_t, uint32_t, grape::EmptyType, grape::EmptyType>();
-  // grape::RunBenchmark<int64_t, uint32_t, grape::EmptyType, double>();
-  // grape::RunTraverse<int64_t, uint32_t, grape::EmptyType, double>();
+  if (FLAGS_application == "pagerank") {
+    grape::RunPageRankBenchmark<int64_t, uint32_t, grape::EmptyType, grape::EmptyType>();
+  } else if (FLAGS_application == "sssp") {
+    grape::RunBenchmark<int64_t, uint32_t, grape::EmptyType, double>();
+  } else if (FLAGS_application == "traverse") {
+    grape::RunTraverse<int64_t, uint32_t, grape::EmptyType, double>();
+  }
 
   grape::Finalize();
 

@@ -1,5 +1,5 @@
-#ifndef EXAMPLES_ANALYTICAL_APPS_BENCHMARK_APP_H_
-#define EXAMPLES_ANALYTICAL_APPS_BENCHMARK_APP_H_
+#ifndef EXAMPLES_ANALYTICAL_APPS_MUTATE_BENCHMARK_H_
+#define EXAMPLES_ANALYTICAL_APPS_MUTATE_BENCHMARK_H_
 
 #include <sys/stat.h>
 
@@ -17,7 +17,7 @@
 #include "sssp/sssp.h"
 #include "pagerank/pagerank_local_parallel.h"
 #include "traverse/traverse.h"
-#include "benchmark_flags.h"
+#include "mutate_benchmark_flags.h"
 #include "timer.h"
 
 #ifndef __AFFINITY__
@@ -214,4 +214,4 @@ void RunTraverse() {
 
 }  // namespace grape
 
-#endif  // EXAMPLES_ANALYTICAL_APPS_BENCHMARK_APP_H_
+#endif  // EXAMPLES_ANALYTICAL_APPS_MUTATE_BENCHMARK_H_

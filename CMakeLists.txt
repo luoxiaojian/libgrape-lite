@@ -150,8 +150,8 @@ else ()
             ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS})
     install_libgrapelite_target(analytical_apps)
 
-    add_executable(benchmark_app examples/analytical_apps/benchmark_flags.cc
-            examples/analytical_apps/benchmark_app.cc)
+    add_executable(benchmark_app examples/analytical_apps/mutate_benchmark_flags.cc
+            examples/analytical_apps/mutate_benchmark.cc)
     target_include_directories(benchmark_app PRIVATE
             examples/analytical_apps)
     target_link_libraries(benchmark_app grape-lite ${MPI_CXX_LIBRARIES}
