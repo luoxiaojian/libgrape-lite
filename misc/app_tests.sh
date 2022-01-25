@@ -54,27 +54,10 @@ function RunMutableApp() {
   APP=$1; shift
 
   rm -rf ./extra_tests_output/*
-  cmd="mpirun -n ${NP} ./run_mutable_app --vfile ${GRAPE_HOME}/dataset/${GRAPH}.v --efile ${GRAPE_HOME}/dataset/${GRAPH}.e --application ${APP} --out_prefix ./extra_tests_output $@"
-  echo ${cmd}
-  eval ${cmd}
-}
-
-function RunWeightedApp() {
-  NP=$1; shift
-  APP=$1; shift
-
-  rm -rf ./extra_tests_output/*
-  cmd="mpirun -n ${NP} ./run_app --vfile ${GRAPE_HOME}/dataset/${GRAPH}.v --efile ${GRAPE_HOME}/dataset/${GRAPH}.e --application ${APP} --out_prefix ./extra_tests_output $@"
-  echo ${cmd}
-  eval ${cmd}
-}
-
-function RunWeightedMutableApp() {
-  NP=$1; shift
-  APP=$1; shift
-
-  rm -rf ./extra_tests_output/*
-  cmd="mpirun -n ${NP} ./run_mutable_app --vfile ${GRAPE_HOME}/dataset/${GRAPH}.v --efile ${GRAPE_HOME}/dataset/${GRAPH}.e --application ${APP} --out_prefix ./extra_tests_output $@"
+  cmd="mpirun -n ${NP} ./run_app --vfile ${GRAPE_HOME}/dataset/${GRAPH}.v \
+                                 --efile ${GRAPE_HOME}/dataset/${GRAPH}.e.mutable_base \
+                                 --delta_efile ${GRAPE_HOME}/dataset/${GRAPH}.e.mutable_delta \
+                                 --application ${APP} --out_prefix ./extra_tests_output --nosegmented_partition --norebalance $@"
   echo ${cmd}
   eval ${cmd}
 }
@@ -85,16 +68,6 @@ function RunAppWithELoader() {
 
   rm -rf ./extra_tests_output/*
   cmd="mpirun -n ${NP} ./run_app --efile ${GRAPE_HOME}/dataset/${GRAPH}.e --application ${APP} --out_prefix ./extra_tests_output --nosegmented_partition $@"
-  echo ${cmd}
-  eval ${cmd}
-}
-
-function RunMutableAppWithELoader() {
-  NP=$1; shift
-  APP=$1; shift
-
-  rm -rf ./extra_tests_output/*
-  cmd="mpirun -n ${NP} ./run_mutable_app --efile ${GRAPE_HOME}/dataset/${GRAPH}.e --application ${APP} --out_prefix ./extra_tests_output --nosegmented_partition $@"
   echo ${cmd}
   eval ${cmd}
 }
@@ -111,22 +84,22 @@ fi
 proc_list="1 $(seq 2 2 ${nproc})"
 
 for np in ${proc_list}; do
-    RunWeightedApp ${np} sssp --sssp_source=6 --serialize=true --serialization_prefix=./serial/${GRAPH}
+    RunApp ${np} sssp --sssp_source=6 --serialize=true --serialization_prefix=./serial/${GRAPH}
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
 
-    RunWeightedMutableApp ${np} sssp --sssp_source=6
+    RunMutableApp ${np} sssp --sssp_source=6
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
 
-    RunWeightedApp ${np} sssp_auto --sssp_source=6 --deserialize=true --serialization_prefix=./serial/${GRAPH}
+    RunApp ${np} sssp_auto --sssp_source=6 --deserialize=true --serialization_prefix=./serial/${GRAPH}
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
 
-    RunWeightedMutableApp ${np} sssp_auto --sssp_source=6
+    RunMutableApp ${np} sssp_auto --sssp_source=6
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
 
-    RunWeightedApp ${np} sssp --sssp_source=6 --serialize=true --serialization_prefix=./serial/${GRAPH} --directed
+    RunApp ${np} sssp --sssp_source=6 --serialize=true --serialization_prefix=./serial/${GRAPH} --directed
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP-directed
 
-    RunWeightedApp ${np} sssp_auto --sssp_source=6 --deserialize=true --serialization_prefix=./serial/${GRAPH} --directed
+    RunApp ${np} sssp_auto --sssp_source=6 --deserialize=true --serialization_prefix=./serial/${GRAPH} --directed
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP-directed
 
     RunAppWithELoader ${np} sssp --sssp_source=6 --serialize=true --serialization_prefix=./serial/${GRAPH}

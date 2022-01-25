@@ -35,8 +35,11 @@ struct MutableEdgecutFragmentTraits {
   using inner_vertices_t = VertexRange<VID_T>;
   using outer_vertices_t = VertexRange<VID_T>;
   using vertices_t = DualVertexRange<VID_T>;
-
   using sub_vertices_t = VertexVector<VID_T>;
+
+  using fragment_adj_list_t = FilterAdjList<VID_T, EDATA_T, std::function<bool (const Nbr<VID_T, EDATA_T>&)>>;
+  using fragment_const_adj_list_t = FilterConstAdjList<VID_T, EDATA_T, std::function<bool (const Nbr<VID_T, EDATA_T>&)>>;
+
   using csr_t = DeMutableCSR<VID_T, Nbr<VID_T, EDATA_T>>;
   using csr_builder_t = DeMutableCSRBuilder<VID_T, Nbr<VID_T, EDATA_T>>;
   using vertex_map_t = VERTEX_MAP_T;
@@ -73,6 +76,8 @@ class MutableEdgecutFragment
   using inner_vertices_t = typename traits_t::inner_vertices_t;
   using outer_vertices_t = typename traits_t::outer_vertices_t;
   using vertices_t = typename traits_t::vertices_t;
+  using fragment_adj_list_t = typename traits_t::fragment_adj_list_t;
+  using fragment_const_adj_list_t = typename traits_t::fragment_const_adj_list_t;
 
   template <typename T>
   using inner_vertex_array_t = VertexArrayBeta<inner_vertices_t, T>;
@@ -311,32 +316,6 @@ class MutableEdgecutFragment
       }
     }
   }
-  /*
-  void AddEdges(std::vector<edge_t>& edges) {
-    if (load_strategy == LoadStrategy::kOnlyIn) {
-      for (auto& e : edges) {
-        parseEdgeIn(e);
-      }
-    } else if (load_strategy == LoadStrategy::kOnlyOut) {
-      for (auto& e : edges) {
-        parseEdgeOut(e);
-      }
-    } else if (load_strategy == LoadStrategy::kBothOutIn) {
-      for (auto& e : edges) {
-        parseEdgeOutIn(e);
-      }
-    } else {
-      LOG(FATAL) << "Invalid load strategy";
-    }
-
-    this->outer_vertices_.SetRange(id_parser_.max_local_id() - ovnum_,
-  id_parser_.max_local_id()); this->vertices_.SetRange(0, ivnum_,
-  id_parser_.max_local_id() - ovnum_, id_parser_.max_local_id());
-
-    oe_.add_edges(edges);
-    ie_.add_reversed_edges(edges);
-  }
-   */
 
   template <typename IOADAPTOR_T>
   void Serialize(const std::string& prefix) {
@@ -484,6 +463,34 @@ class MutableEdgecutFragment
  public:
   using base_t::GetIncomingAdjList;
   using base_t::GetOutgoingAdjList;
+
+  fragment_adj_list_t GetOutgoingAdjList(const vertex_t& v, fid_t dst_fid) override {
+    return fragment_adj_list_t(get_oe_begin(v), get_oe_end(v),
+                               [this, dst_fid](const nbr_t& nbr) {
+                                 return this->GetFragId(nbr.get_neighbor()) == dst_fid;
+                               });
+  }
+
+  fragment_const_adj_list_t GetOutgoingAdjList(const vertex_t& v, fid_t dst_fid) const override {
+    return fragment_const_adj_list_t(get_oe_begin(v), get_oe_end(v),
+                               [this, dst_fid](const nbr_t& nbr) {
+                                 return this->GetFragId(nbr.get_neighbor()) == dst_fid;
+                               });
+  }
+
+  fragment_adj_list_t GetIncomingAdjList(const vertex_t& v, fid_t dst_fid) override {
+    return fragment_adj_list_t(get_ie_begin(v), get_ie_end(v),
+                               [this, dst_fid](const nbr_t& nbr) {
+                                 return this->GetFragId(nbr.get_neighbor()) == dst_fid;
+                               });
+  }
+
+  fragment_const_adj_list_t GetIncomingAdjList(const vertex_t& v, fid_t dst_fid) const override {
+    return fragment_const_adj_list_t(get_ie_begin(v), get_ie_end(v),
+                               [this, dst_fid](const nbr_t& nbr) {
+                                 return this->GetFragId(nbr.get_neighbor()) == dst_fid;
+                               });
+  }
 
  protected:
   using base_t::get_ie_begin;

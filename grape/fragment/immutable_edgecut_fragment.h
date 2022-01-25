@@ -56,6 +56,9 @@ struct ImmutableEdgecutFragmentTraits {
   using vertices_t = VertexRange<VID_T>;
   using sub_vertices_t = VertexRange<VID_T>;
 
+  using fragment_adj_list_t = AdjList<VID_T, EDATA_T>;
+  using fragment_const_adj_list_t = ConstAdjList<VID_T, EDATA_T>;
+
   using csr_t = ImmutableCSR<VID_T, Nbr<VID_T, EDATA_T>>;
   using csr_builder_t = ImmutableCSRBuild<VID_T, Nbr<VID_T, EDATA_T>>;
   using mirror_vertices_t = std::vector<Vertex<VID_T>>;
@@ -453,7 +456,7 @@ class ImmutableEdgecutFragment
     return const_adj_list_t(oespliters_[0][v], get_oe_end(v));
   }
 
-  inline adj_list_t GetIncomingAdjList(const vertex_t& v, fid_t src_fid) {
+  inline adj_list_t GetIncomingAdjList(const vertex_t& v, fid_t src_fid) override {
     assert(IsInnerVertex(v));
     assert(!iespliters_.empty());
     assert(src_fid != fid_);
@@ -461,7 +464,7 @@ class ImmutableEdgecutFragment
   }
 
   inline const_adj_list_t GetIncomingAdjList(const vertex_t& v,
-                                             fid_t src_fid) const {
+                                             fid_t src_fid) const override {
     assert(IsInnerVertex(v));
     assert(!iespliters_.empty());
     assert(src_fid != fid_);
@@ -469,7 +472,7 @@ class ImmutableEdgecutFragment
                             iespliters_[src_fid + 1][v]);
   }
 
-  inline adj_list_t GetOutgoingAdjList(const vertex_t& v, fid_t dst_fid) {
+  inline adj_list_t GetOutgoingAdjList(const vertex_t& v, fid_t dst_fid) override {
     assert(IsInnerVertex(v));
     assert(!oespliters_.empty());
     assert(dst_fid != fid_);
@@ -477,7 +480,7 @@ class ImmutableEdgecutFragment
   }
 
   inline const_adj_list_t GetOutgoingAdjList(const vertex_t& v,
-                                             fid_t dst_fid) const {
+                                             fid_t dst_fid) const override {
     assert(IsInnerVertex(v));
     assert(!oespliters_.empty());
     assert(dst_fid != fid_);

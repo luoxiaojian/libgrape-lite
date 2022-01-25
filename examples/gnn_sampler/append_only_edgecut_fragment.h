@@ -275,6 +275,8 @@ struct AppendOnlyEdgecutFragmentTraits {
   using vertices_t = DualVertexRange<VID_T>;
 
   using sub_vertices_t = VertexVector<VID_T>;
+  using fragment_adj_list_t = AdjList<VID_T, EDATA_T>;
+  using fragment_const_adj_list_t = ConstAdjList<VID_T, EDATA_T>;
   using vertex_map_t = GlobalVertexMap<OID_T, VID_T>;
   using mirror_vertices_t = std::vector<Vertex<VID_T>>;
 };
@@ -797,6 +799,24 @@ class AppendOnlyEdgecutFragment
                ? const_adj_list_t(oeoffset_[v.GetValue()],
                                   oeoffset_[v.GetValue() + 1])
                : const_adj_list_t(NULL, NULL);
+  }
+
+  inline adj_list_t GetIncomingAdjList(const vertex_t& v, fid_t src_fid) override {
+    return adj_list_t(NULL, NULL);
+  }
+
+  inline const_adj_list_t GetIncomingAdjList(const vertex_t& v,
+                                             fid_t src_fid) const override {
+    return const_adj_list_t(NULL, NULL);
+  }
+
+  inline adj_list_t GetOutgoingAdjList(const vertex_t& v, fid_t dst_fid) override {
+    return adj_list_t(NULL, NULL);
+  }
+
+  inline const_adj_list_t GetOutgoingAdjList(const vertex_t& v,
+                                             fid_t dst_fid) const override {
+    return const_adj_list_t(NULL, NULL);
   }
 
   adj_list_t GetIncomingInnerVertexAdjList(const vertex_t& v) override {
