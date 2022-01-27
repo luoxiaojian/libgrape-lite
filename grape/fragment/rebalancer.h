@@ -135,16 +135,16 @@ class Rebalancer<
         int src_worker_id = (worker_id + 1) % worker_num;
         while (src_worker_id != worker_id) {
           fid_t src_fid = comm_spec_.WorkerToFrag(src_worker_id);
-          RecvVector(degree_lists_[src_fid], src_worker_id, comm_spec_.comm(),
-                     degree_tag);
+          sync_comm::Recv(degree_lists_[src_fid], src_worker_id,
+                          comm_spec_.comm(), degree_tag);
           src_worker_id = (src_worker_id + 1) % worker_num;
         }
       });
       std::thread send_thread([&]() {
         int dst_worker_id = (worker_id + worker_num - 1) % worker_num;
         while (dst_worker_id != worker_id) {
-          SendVector(degree_lists_[comm_spec_.fid()], dst_worker_id,
-                     comm_spec_.comm(), degree_tag);
+          sync_comm::Send(degree_lists_[comm_spec_.fid()],
+                          dst_worker_id, comm_spec_.comm(), degree_tag);
           dst_worker_id = (dst_worker_id + worker_num - 1) % worker_num;
         }
       });

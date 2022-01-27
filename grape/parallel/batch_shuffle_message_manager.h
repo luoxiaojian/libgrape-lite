@@ -175,7 +175,7 @@ class BatchShuffleMessageManager : public MessageManagerBase {
     MPI_Allreduce(&flag, &ret, 1, MPI_INT, MPI_SUM, comm_);
     if (ret > 0) {
       terminate_info_.success = false;
-      AllGather(terminate_info_.info, comm_);
+      sync_comm::AllGather(terminate_info_.info, comm_);
       return true;
     }
     return to_terminate_;

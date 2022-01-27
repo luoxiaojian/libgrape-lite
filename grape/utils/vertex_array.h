@@ -36,16 +36,10 @@ namespace grape {
 template <typename T>
 class Vertex {
  public:
-  Vertex() noexcept {}
+  Vertex() = default;
   explicit Vertex(const T& value) noexcept : value_(value) {}
-  Vertex(const Vertex& rhs) noexcept : value_(rhs.value_) {}
 
-  ~Vertex() {}
-
-  inline Vertex& operator=(const Vertex& rhs) noexcept {
-    value_ = rhs.value_;
-    return *this;
-  }
+  ~Vertex() = default;
 
   inline Vertex& operator=(const T& value) noexcept {
     value_ = value;

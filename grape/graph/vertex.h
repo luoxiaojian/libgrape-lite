@@ -41,7 +41,7 @@ struct Vertex {
   Vertex(const VID_T& vid, const VDATA_T& vdata) : vid(vid), vdata(vdata) {}
   Vertex(const Vertex& vert) : vid(vert.vid), vdata(vert.vdata) {}
 
-  ~Vertex() {}
+  ~Vertex() =default;
 
   Vertex& operator=(const Vertex& rhs) {
     if (this == &rhs) {
@@ -62,13 +62,13 @@ struct Vertex {
  */
 template <typename VID_T>
 struct Vertex<VID_T, EmptyType> {
-  Vertex() : vid() {}
+  Vertex() = default;
 
   explicit Vertex(const VID_T& vid) : vid(vid) {}
   Vertex(const VID_T& vid, const EmptyType&) : vid(vid) {}
   Vertex(const Vertex& vert) : vid(vert.vid) {}
 
-  ~Vertex() {}
+  ~Vertex() = default;
 
   Vertex& operator=(const Vertex& rhs) {
     if (this == &rhs) {

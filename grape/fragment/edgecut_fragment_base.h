@@ -368,31 +368,23 @@ class EdgecutFragmentBase
         int dst_worker_id = (worker_id + i) % worker_num;
         fid_t dst_fid = comm_spec.WorkerToFrag(dst_worker_id);
         auto& range = OuterVertices(dst_fid);
-        size_t range_size = range.size();
-        MPI_Send(&range_size, sizeof(size_t), MPI_CHAR, dst_worker_id, 0,
-                 comm_spec.comm());
         gid_list.clear();
-        gid_list.reserve(range_size);
+        gid_list.reserve(range.size());
         for (auto& v : range) {
           gid_list.emplace_back(id_parser_.get_local_id(Vertex2Gid(v)));
         }
-        MPI_Send(&gid_list[0], sizeof(vertex_t) * gid_list.size(), MPI_CHAR,
-                 dst_worker_id, 0, comm_spec.comm());
+        sync_comm::Send<std::vector<vertex_t>>(gid_list, dst_worker_id,
+                                               comm_spec.comm(), 0);
       }
     });
 
     std::thread recv_thread([&]() {
-      std::vector<vertex_t> gid_list;
       for (int i = 1; i < worker_num; ++i) {
         int src_worker_id = (worker_id + worker_num - i) % worker_num;
         fid_t src_fid = comm_spec.WorkerToFrag(src_worker_id);
         auto& mirror_vec = mirrors_of_frag_[src_fid];
-        size_t range_size;
-        MPI_Recv(&range_size, sizeof(size_t), MPI_CHAR, src_worker_id, 0,
-                 comm_spec.comm(), MPI_STATUS_IGNORE);
-        mirror_vec.resize(range_size);
-        MPI_Recv(&mirror_vec[0], range_size * sizeof(vertex_t), MPI_CHAR,
-                 src_worker_id, 0, comm_spec.comm(), MPI_STATUS_IGNORE);
+        sync_comm::Recv<std::vector<vertex_t>>(mirror_vec, src_worker_id,
+                                               comm_spec.comm(), 0);
       }
     });
 

@@ -337,7 +337,7 @@ class DefaultMessageManager : public MessageManagerBase {
                   comm_);
     if (terminate_flag_sum > 0) {
       terminate_info_.success = false;
-      AllGather(terminate_info_.info, comm_);
+      sync_comm::AllGather(terminate_info_.info, comm_);
       return true;
     } else {
       MPI_Allgather(&lengths_out_[0], fnum_ * sizeof(size_t), MPI_CHAR,

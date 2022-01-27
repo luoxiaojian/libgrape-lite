@@ -81,13 +81,13 @@ class BasicFragmentMutator {
     }
     recv_thread_.join();
 
-    AllGatherList<vid_t>(local_vertices_to_remove_, global_vertices_to_remove_,
-                         comm_spec_.comm());
+    sync_comm::FlatAllGather<vid_t>(local_vertices_to_remove_, global_vertices_to_remove_,
+                                    comm_spec_.comm());
     processToSelfMessages();
     if (!std::is_same<vdata_t, EmptyType>::value) {
       std::vector<oid_t> global_added_vertices_id;
-      AllGatherList<oid_t>(local_added_vertices_id_, global_added_vertices_id,
-                           comm_spec_.comm());
+      sync_comm::FlatAllGather<oid_t>(local_added_vertices_id_,
+                                      global_added_vertices_id, comm_spec_.comm());
       extendVertexMap(global_added_vertices_id);
       size_t local_add_vnum = local_vertices_to_add_.size();
       CHECK_EQ(local_add_vnum, local_added_vertices_id_.size());
@@ -95,14 +95,15 @@ class BasicFragmentMutator {
         auto& oid = local_added_vertices_id_[i];
         CHECK(vm_ptr_->GetGid(oid, local_vertices_to_add_[i].vid));
       }
-      AllGatherList<internal::Vertex<vid_t, vdata_t>>(
+      sync_comm::FlatAllGather<internal::Vertex<vid_t, vdata_t>>(
           local_vertices_to_add_, global_vertices_to_add_, comm_spec_.comm());
-      AllGatherList<internal::Vertex<vid_t, vdata_t>>(
+      sync_comm::FlatAllGather<internal::Vertex<vid_t, vdata_t>>(
           local_vertices_to_update_, global_vertices_to_update_,
           comm_spec_.comm());
     } else {
       global_vertices_to_add_.clear();
       global_vertices_to_update_.clear();
+      LOG(INFO) << "[worker-" << comm_spec_.worker_id() << "] before extend vertex map with edges...";
       extendVertexMapWithEdges();
     }
 
@@ -463,11 +464,11 @@ class BasicFragmentMutator {
   std::vector<vid_t> global_vertices_to_remove_;
 
   std::vector<ShuffleOut<oid_t, oid_t, edata_t>> edges_to_add_;
-  static constexpr int ea_tag = 0;
+  static constexpr int ea_tag = 1;
   std::vector<ShuffleOut<vid_t, vid_t>> edges_to_remove_;
-  static constexpr int er_tag = 1;
+  static constexpr int er_tag = 2;
   std::vector<ShuffleOut<vid_t, vid_t, edata_t>> edges_to_update_;
-  static constexpr int eu_tag = 2;
+  static constexpr int eu_tag = 3;
 
   std::vector<Edge<oid_t, edata_t>> got_edges_to_add_;
   std::vector<Edge<vid_t, edata_t>> parsed_edges_to_add_;
