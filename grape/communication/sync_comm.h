@@ -45,7 +45,6 @@ inline void FinalizeMPIComm() { MPI_Finalize(); }
 
 namespace sync_comm {
 
-// static const int chunk_size = 409600;
 static constexpr int chunk_size = 536870912;
 
 template <typename T>
@@ -564,71 +563,22 @@ class WorkerIterator {
   int num_;
 };
 
-class ReversedWorkerIterator {
- public:
-  ReversedWorkerIterator(int cur, int num) noexcept : cur_(cur), num_(num) {}
-
-  ReversedWorkerIterator& operator++() noexcept {
-    cur_ = (cur_ + num_ - 1) % num_;
-    return *this;
-  }
-
-  ReversedWorkerIterator operator++(int) noexcept {
-    int prev = cur_;
-    cur_ = (cur_ + num_ - 1) % num_;
-    return ReversedWorkerIterator(prev, num_);
-  }
-
-  int operator*() const noexcept {
-    return cur_;
-  }
-
-  bool operator==(const ReversedWorkerIterator& rhs) noexcept {
-    return cur_ == rhs.cur_;
-  }
-
-  bool operator!=(const ReversedWorkerIterator& rhs) noexcept {
-    return cur_ != rhs.cur_;
-  }
-
- private:
-  int cur_;
-  int num_;
-};
-
 template <class T>
-inline void AllToAll(const std::vector<T>& out, std::vector<T>& objects,
-                     MPI_Comm comm) {
-  MPI_Barrier(comm);
-  int worker_id, worker_num;
-  MPI_Comm_rank(comm, &worker_id);
-  MPI_Comm_size(comm, &worker_num);
-  std::thread send_thread([&]() {
-    InArchive arc;
-    for (int i = 1; i < worker_num; ++i) {
-      int dst_worker_id = (worker_id + i) % worker_num;
-      Send<T>(out[dst_worker_id], dst_worker_id, comm, 0);
-    }
-  });
-  std::thread recv_thread([&]() {
-    for (int i = 1; i < worker_num; ++i) {
-      int src_worker_id = (worker_id + worker_num - i) % worker_num;
-      Recv<T>(objects[src_worker_id], src_worker_id, comm, 0);
-    }
-  });
-
-  send_thread.join();
-  recv_thread.join();
+typename std::enable_if<std::is_pod<T>::value>::type
+AllGather(std::vector<T>& objects, MPI_Comm comm) {
+  MPI_Allgather(MPI_IN_PLACE, sizeof(T), MPI_CHAR, objects.data(), sizeof(T), MPI_CHAR, comm);
 }
 
 template <class T>
-inline void AllGather(std::vector<T>& objects, MPI_Comm comm) {
+typename std::enable_if<!std::is_pod<T>::value>::type
+AllGather(std::vector<T>& objects, MPI_Comm comm) {
   MPI_Barrier(comm);
   int worker_id, worker_num;
   MPI_Comm_rank(comm, &worker_id);
   MPI_Comm_size(comm, &worker_num);
   std::thread send_thread([&]() {
-    CommImpl<T>::multiple_send(objects[worker_id], WorkerIterator((worker_id + 1) % worker_num, worker_num),
+    CommImpl<T>::multiple_send(objects[worker_id],
+                               WorkerIterator((worker_id + 1) % worker_num, worker_num),
                                WorkerIterator(worker_id, worker_num), comm, 0);
   });
   std::thread recv_thread([&]() {
@@ -643,8 +593,53 @@ inline void AllGather(std::vector<T>& objects, MPI_Comm comm) {
 }
 
 template <typename T>
-inline void FlatAllGather(const std::vector<T>& local, std::vector<T>& global, MPI_Comm comm) {
-  MPI_Barrier(comm);
+typename std::enable_if<std::is_pod<T>::value>::type
+FlatAllGather(const std::vector<T>& local, std::vector<T>& global, MPI_Comm comm) {
+  int worker_id, worker_num;
+  MPI_Comm_rank(comm, &worker_id);
+  MPI_Comm_size(comm, &worker_num);
+  std::vector<int64_t> sizes(worker_num);
+  sizes[worker_id] = local.size();
+  AllGather<int64_t>(sizes, comm);
+  int64_t total_size = 0;
+  for (auto size : sizes) {
+    total_size += size;
+  }
+  global.resize(total_size);
+  if (total_size * sizeof(T) <= chunk_size) {
+    std::vector<int> counts(worker_num), displs(worker_num);
+    int sum = 0;
+    for (int i = 0; i < worker_num; ++i) {
+      displs[i] = sum;
+      counts[i] = sizes[i] * sizeof(T);
+      sum += counts[i];
+    }
+    MPI_Allgatherv(local.data(), local.size() * sizeof(T), MPI_CHAR,
+                   global.data(), counts.data(), displs.data(), MPI_CHAR, comm);
+  } else {
+    std::vector<MPI_Request> reqs;
+    std::vector<int64_t> offsets;
+    int64_t sum = 0;
+    for (int i = 0; i < worker_num; ++i) {
+      offsets[i] = sum;
+      sum += sizes[i];
+    }
+    for (int i = 1; i < worker_num; ++i) {
+      int dst_worker_id = (worker_id + i) % worker_num;
+      isend_buffer<T>(local.data(), local.size(), dst_worker_id, comm, 0, reqs);
+    }
+    for (int i = 1; i < worker_num; ++i) {
+      int src_worker_id = (worker_id + worker_num - i) % worker_num;
+      irecv_buffer<T>(&global[offsets[src_worker_id]], sizes[src_worker_id], src_worker_id, comm, 0, reqs);
+    }
+    memcpy(&global[offsets[worker_id]], local.data(), sizes[worker_id] * sizeof(T));
+    MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
+  }
+}
+
+template <typename T>
+typename std::enable_if<!std::is_pod<T>::value>::type
+FlatAllGather(const std::vector<T>& local, std::vector<T>& global, MPI_Comm comm) {
   int worker_id, worker_num;
   MPI_Comm_rank(comm, &worker_id);
   MPI_Comm_size(comm, &worker_num);
@@ -674,45 +669,6 @@ inline void FlatAllGather(const std::vector<T>& local, std::vector<T>& global, M
 
   send_thread.join();
   recv_thread.join();
-}
-
-bool ArchiveAllToAll(std::vector<InArchive>& out, std::vector<OutArchive>& in, MPI_Comm comm) {
-  MPI_Barrier(comm);
-  int worker_id, worker_num;
-  MPI_Comm_rank(comm, &worker_id);
-  MPI_Comm_size(comm, &worker_num);
-  std::vector<int64_t> lengths_out(worker_num);
-  int64_t total_lengths_out = 0;
-  for (int i = 0; i < worker_num; ++i) {
-    lengths_out[i] = out[i].GetSize();
-    total_lengths_out += lengths_out[i];
-  }
-  int64_t total_comm_bytes;
-  MPI_Allreduce(&total_lengths_out, &total_comm_bytes, 1, MPI_INT64_T, MPI_SUM, comm);
-  if (total_comm_bytes == 0) {
-    return false;
-  }
-  std::vector<int64_t> lengths_in(worker_num);
-  MPI_Alltoall(lengths_out.data(), 1, MPI_INT64_T, lengths_in.data(), 1, MPI_INT64_T, comm);
-
-  std::vector<MPI_Request> reqs;
-  for (int i = 1; i < worker_num; ++i) {
-    int dst_worker_id = (worker_id + i) % worker_num;
-    isend_buffer(out[dst_worker_id].GetBuffer(), lengths_out[dst_worker_id],
-                 dst_worker_id, comm, 0, reqs);
-  }
-  in.resize(worker_num);
-  for (int i = 1; i < worker_num; ++i) {
-    int src_worker_id = (worker_id + worker_num - i) % worker_num;
-    in[src_worker_id].Allocate(lengths_in[src_worker_id]);
-    irecv_buffer(in[src_worker_id].GetBuffer(), lengths_in[src_worker_id],
-                 src_worker_id, comm, 0, reqs);
-  }
-  in[worker_id] = std::move(out[worker_id]);
-  if (!reqs.empty()) {
-    MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
-  }
-  return true;
 }
 
 }  // namespace sync_comm
