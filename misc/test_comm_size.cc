@@ -1,7 +1,7 @@
 #include <mpi.h>
 
 #include <iostream>
-#include <numeric>
+#include <limits>
 #include <vector>
 
 int main(int argc, char** argv) {
