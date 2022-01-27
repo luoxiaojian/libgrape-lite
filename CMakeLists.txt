@@ -156,6 +156,9 @@ else ()
             examples/analytical_apps)
     target_link_libraries(benchmark_app grape-lite ${MPI_CXX_LIBRARIES}
             ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS})
+
+    add_executable(test_comm_size misc/test_comm_size.cc)
+    target_link_libraries(test_comm_size ${MPI_CXX_LIBRARIES})
 endif ()
 
 if (NOT GFLAGS_FOUND)
