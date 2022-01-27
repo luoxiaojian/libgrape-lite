@@ -45,13 +45,23 @@ inline void FinalizeMPIComm() { MPI_Finalize(); }
 
 namespace sync_comm {
 
-static const int chunk_size = 409600;
+// static const int chunk_size = 409600;
+static constexpr int chunk_size = 536870912;
 
 template <typename T>
 static inline void send_small_buffer(const T* ptr, size_t len, int dst_worker_id, MPI_Comm comm, int tag) {
   size_t len_in_bytes = len * sizeof(T);
   assert(len_in_bytes <= chunk_size);
   MPI_Send(ptr, len_in_bytes, MPI_CHAR, dst_worker_id, tag, comm);
+}
+
+template <typename T>
+static inline void isend_small_buffer(const T* ptr, size_t len, int dst_worker_id,
+                                      MPI_Comm comm, int tag,
+                                      MPI_Request& req) {
+  size_t len_in_bytes = len * sizeof(T);
+  assert(len_in_bytes <= chunk_size);
+  MPI_Isend(ptr, len_in_bytes, MPI_CHAR, dst_worker_id, tag, comm, &req);
 }
 
 template <typename T>
@@ -62,14 +72,27 @@ static inline void recv_small_buffer(T* ptr, size_t len, int src_worker_id, MPI_
 }
 
 template <typename T>
+static inline void irecv_small_buffer(T* ptr, size_t len, int src_worker_id, MPI_Comm comm, int tag, MPI_Request& req) {
+  size_t len_in_bytes = len * sizeof(T);
+  assert(len_in_bytes <= chunk_size);
+  MPI_Irecv(ptr, len_in_bytes, MPI_CHAR, src_worker_id, tag, comm, &req);
+}
+
+template <typename T>
 static inline void send_buffer(const T* ptr, size_t len, int dst_worker_id,
                                MPI_Comm comm, int tag) {
-  const size_t chunk_size_in_bytes = chunk_size * sizeof(T);
-  int iter = len / chunk_size;
-  size_t remaining = (len % chunk_size) * sizeof(T);
+  static constexpr size_t chunk_num = chunk_size / sizeof(T);
+  if (len <= chunk_num) {
+    send_small_buffer(ptr, len, dst_worker_id, comm, tag);
+    return ;
+  }
+  const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
+  int iter = len / chunk_num;
+  size_t remaining = (len % chunk_num) * sizeof(T);
+  LOG(INFO) << "sending large buffer in " << iter + (remaining != 0) << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Send(ptr, chunk_size_in_bytes, MPI_CHAR, dst_worker_id, tag, comm);
-    ptr += chunk_size;
+    ptr += chunk_num;
   }
   if (remaining != 0) {
     MPI_Send(ptr, remaining, MPI_CHAR, dst_worker_id, tag, comm);
@@ -80,14 +103,22 @@ template <typename T>
 static inline void isend_buffer(const T* ptr, size_t len, int dst_worker_id,
                                 MPI_Comm comm, int tag,
                                 std::vector<MPI_Request>& reqs) {
-  const size_t chunk_size_in_bytes = chunk_size * sizeof(T);
-  int iter = len / chunk_size;
-  size_t remaining = (len % chunk_size) * sizeof(T);
+  static constexpr size_t chunk_num = chunk_size / sizeof(T);
+  if (len <= chunk_num) {
+    MPI_Request req;
+    isend_small_buffer(ptr, len, dst_worker_id, comm, tag, req);
+    reqs.push_back(req);
+    return ;
+  }
+  const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
+  int iter = len / chunk_num;
+  size_t remaining = (len % chunk_num) * sizeof(T);
+  LOG(INFO) << "isending large buffer in " << iter + (remaining != 0) << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Request req;
     MPI_Isend(ptr, chunk_size_in_bytes, MPI_CHAR, dst_worker_id, tag, comm, &req);
     reqs.push_back(req);
-    ptr += chunk_size;
+    ptr += chunk_num;
   }
   if (remaining != 0) {
     MPI_Request req;
@@ -99,13 +130,19 @@ static inline void isend_buffer(const T* ptr, size_t len, int dst_worker_id,
 template <typename T>
 static inline void recv_buffer(T* ptr, size_t len, int src_worker_id,
                                MPI_Comm comm, int tag) {
-  const size_t chunk_size_in_bytes = chunk_size * sizeof(T);
-  int iter = len / chunk_size;
-  size_t remaining = (len % chunk_size) * sizeof(T);
+  static constexpr size_t chunk_num = chunk_size / sizeof(T);
+  if (len <= chunk_num) {
+    recv_small_buffer(ptr, len, src_worker_id, comm, tag);
+    return ;
+  }
+  const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
+  int iter = len / chunk_num;
+  size_t remaining = (len % chunk_num) * sizeof(T);
+  LOG(INFO) << "recving large buffer in " << iter + (remaining != 0) << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Recv(ptr, chunk_size_in_bytes, MPI_CHAR, src_worker_id, tag, comm,
              MPI_STATUS_IGNORE);
-    ptr += chunk_size;
+    ptr += chunk_num;
   }
   if (remaining != 0) {
     MPI_Recv(ptr, remaining, MPI_CHAR, src_worker_id, tag, comm,
@@ -117,15 +154,23 @@ template <typename T>
 static inline void irecv_buffer(T* ptr, size_t len, int src_worker_id,
                                 MPI_Comm comm, int tag,
                                 std::vector<MPI_Request>& reqs) {
-  const size_t chunk_size_in_bytes = chunk_size * sizeof(T);
-  int iter = len / chunk_size;
-  size_t remaining = (len % chunk_size) * sizeof(T);
+  static constexpr size_t chunk_num = chunk_size / sizeof(T);
+  if (len <= chunk_num) {
+    MPI_Request req;
+    irecv_small_buffer(ptr, len, src_worker_id, comm, tag, req);
+    reqs.push_back(req);
+    return ;
+  }
+  const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
+  int iter = len / chunk_num;
+  size_t remaining = (len % chunk_num) * sizeof(T);
+  LOG(INFO) << "irecving large buffer in " << iter + (remaining != 0) << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Request req;
     MPI_Irecv(ptr, chunk_size_in_bytes, MPI_CHAR, src_worker_id, tag, comm,
              &req);
     reqs.push_back(req);
-    ptr += chunk_size;
+    ptr += chunk_num;
   }
   if (remaining != 0) {
     MPI_Request req;
@@ -144,18 +189,23 @@ static inline void bcast_small_buffer(T* ptr, size_t len, int root, MPI_Comm com
 
 template <typename T>
 static inline void bcast_buffer(T* ptr, size_t len, int root, MPI_Comm comm) {
-  const size_t chunk_size_in_bytes = chunk_size * sizeof(T);
-  int iter = len / chunk_size;
-  size_t remaining = (len % chunk_size) * sizeof(T);
+  static constexpr size_t chunk_num = chunk_size / sizeof(T);
+  if (len <= chunk_num) {
+    bcast_small_buffer(ptr, len, root, comm);
+    return ;
+  }
+  const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
+  int iter = len / chunk_num;
+  size_t remaining = (len % chunk_num) * sizeof(T);
+  LOG(INFO) << "bcast large buffer in " << iter + (remaining != 0) << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Bcast(ptr, chunk_size_in_bytes, MPI_CHAR, root, comm);
-    ptr += chunk_size;
+    ptr += chunk_num;
   }
   if (remaining != 0) {
     MPI_Bcast(ptr, remaining, MPI_CHAR, root, comm);
   }
 }
-
 
 template <class T, class Enable = void>
 struct CommImpl {

@@ -101,10 +101,8 @@ class DefaultMessageManager : public MessageManagerBase {
       auto& arc = to_recv_[src_fid];
       arc.Clear();
       arc.Allocate(length);
-      MPI_Request req;
-      MPI_Irecv(arc.GetBuffer(), length, MPI_CHAR,
-                comm_spec_.FragToWorker(src_fid), 0, comm_, &req);
-      reqs_.push_back(req);
+      sync_comm::irecv_buffer<char>(arc.GetBuffer(), length,
+                                    comm_spec_.FragToWorker(src_fid), comm_, 0, reqs_);
     }
 
     for (fid_t i = 1; i < fnum_; ++i) {
@@ -113,10 +111,8 @@ class DefaultMessageManager : public MessageManagerBase {
       if (arc.Empty()) {
         continue;
       }
-      MPI_Request req;
-      MPI_Isend(arc.GetBuffer(), arc.GetSize(), MPI_CHAR,
-                comm_spec_.FragToWorker(dst_fid), 0, comm_, &req);
-      reqs_.push_back(req);
+      sync_comm::isend_buffer<char>(arc.GetBuffer(), arc.GetSize(),
+                comm_spec_.FragToWorker(dst_fid), comm_, 0, reqs_);
     }
     to_recv_[fid_].Clear();
     if (!to_send_[fid_].Empty()) {

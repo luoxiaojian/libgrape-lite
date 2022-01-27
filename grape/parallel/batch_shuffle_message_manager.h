@@ -138,14 +138,13 @@ class BatchShuffleMessageManager : public MessageManagerBase {
     fid_ = comm_spec_.fid();
     fnum_ = comm_spec_.fnum();
 
+    remaining_reqs_.resize(fnum_);
+
     force_terminate_ = false;
     terminate_info_.Init(fnum_);
 
     shuffle_out_buffers_.resize(fnum_);
     shuffle_in_buffers_.resize(fnum_);
-
-    recv_thread_ =
-        std::thread(&BatchShuffleMessageManager::recvThreadRoutine, this);
   }
 
   /**
@@ -200,13 +199,6 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       recv_reqs_.clear();
     }
 
-    {
-      size_t v = 1;
-      MPI_Send(&v, sizeof(size_t), MPI_CHAR, comm_spec_.FragToWorker(fid_), 1,
-               comm_);
-      recv_thread_.join();
-    }
-
     MPI_Comm_free(&comm_);
     comm_ = NULL_COMM;
   }
@@ -239,7 +231,7 @@ class BatchShuffleMessageManager : public MessageManagerBase {
 
     startRecv<GRAPH_T, DATA_T>(frag, data, thread_num);
 
-    remaining_reqs_ = fnum_ - 1;
+    remaining_frags_ = fnum_ - 1;
 
     startSend<GRAPH_T, DATA_T>(frag, data, thread_num);
   }
@@ -249,7 +241,7 @@ class BatchShuffleMessageManager : public MessageManagerBase {
    * is, messages from all other fragments are received.
    */
   void UpdateOuterVertices() {
-    while (remaining_reqs_ != 0) {
+    while (remaining_frags_ != 0) {
       UpdatePartialOuterVertices();
     }
   }
@@ -263,15 +255,21 @@ class BatchShuffleMessageManager : public MessageManagerBase {
   fid_t UpdatePartialOuterVertices() {
     int index;
     fid_t ret;
-    MPI_Waitany(recv_reqs_.size(), &recv_reqs_[0], &index, MPI_STATUS_IGNORE);
-    remaining_reqs_--;
-    ret = recv_from_[index];
+    while (true) {
+      MPI_Waitany(recv_reqs_.size(), &recv_reqs_[0], &index, MPI_STATUS_IGNORE);
+      ret = recv_from_[index];
+      --remaining_reqs_[ret];
+      if (remaining_reqs_[ret] == 0) {
+        --remaining_frags_;
+        if (remaining_frags_ == 0) {
+          recv_reqs_.clear();
+          recv_from_.clear();
+        }
+        break;
+      }
+    }
     if (post_process_handle_ != nullptr) {
       post_process_handle_->exec(ret);
-    }
-    if (remaining_reqs_ == 0) {
-      recv_reqs_.clear();
-      recv_from_.clear();
     }
     return ret;
   }
@@ -297,24 +295,6 @@ class BatchShuffleMessageManager : public MessageManagerBase {
   }
 
  private:
-  void recvThreadRoutine() {
-    std::vector<MPI_Request> recv_thread_reqs(fnum_);
-    std::vector<size_t> numbers(fnum_);
-    for (fid_t src_fid = 0; src_fid < fnum_; ++src_fid) {
-      MPI_Irecv(&numbers[src_fid], sizeof(size_t), MPI_CHAR,
-                comm_spec_.FragToWorker(src_fid), 1, comm_,
-                &recv_thread_reqs[src_fid]);
-    }
-    int index;
-    MPI_Waitany(fnum_, &recv_thread_reqs[0], &index, MPI_STATUS_IGNORE);
-    CHECK(index == static_cast<int>(fid_));
-    for (fid_t src_fid = 0; src_fid < fnum_; ++src_fid) {
-      if (src_fid != fid_) {
-        MPI_Cancel(&recv_thread_reqs[src_fid]);
-      }
-    }
-  }
-
   template <typename GRAPH_T, typename DATA_T>
   typename std::enable_if<archive_shuffle_t<DATA_T>::value>::type startRecv(
       const GRAPH_T& frag,
@@ -349,13 +329,13 @@ class BatchShuffleMessageManager : public MessageManagerBase {
 
     for (fid_t i = 1; i < fnum_; ++i) {
       fid_t src_fid = (fid_ + fnum_ - i) % fnum_;
-      MPI_Request req;
       auto& buffer = shuffle_in_buffers_[src_fid];
       buffer.resize(in_archive_sizes[src_fid]);
-      MPI_Irecv(buffer.data(), buffer.size(), MPI_CHAR,
-                comm_spec_.FragToWorker(src_fid), 0, comm_, &req);
-      recv_reqs_.push_back(req);
-      recv_from_.push_back(src_fid);
+      int old_req_num = recv_reqs_.size();
+      sync_comm::irecv_buffer<char>(buffer.data(), buffer.size(), comm_spec_.FragToWorker(src_fid), comm_, 0, recv_reqs_);
+      int new_req_num = recv_reqs_.size();
+      recv_from_.resize(new_req_num, src_fid);
+      remaining_reqs_[src_fid] = new_req_num - old_req_num;
     }
 
     post_process_handle_ = std::make_shared<
@@ -371,11 +351,13 @@ class BatchShuffleMessageManager : public MessageManagerBase {
     for (fid_t i = 1; i < fnum_; ++i) {
       fid_t src_fid = (fid_ + fnum_ - i) % fnum_;
       auto range = frag.OuterVertices(src_fid);
-      MPI_Request req;
-      MPI_Irecv(&data[*range.begin()], range.size() * sizeof(DATA_T), MPI_CHAR,
-                comm_spec_.FragToWorker(src_fid), 0, comm_, &req);
-      recv_reqs_.push_back(req);
-      recv_from_.push_back(src_fid);
+      int old_req_num = recv_reqs_.size();
+      sync_comm::irecv_buffer<char>(reinterpret_cast<char*>(&data[*range.begin()]),
+                                    range.size() * sizeof(DATA_T), comm_spec_.FragToWorker(src_fid),
+                                    comm_, 0, recv_reqs_);
+      int new_req_num = recv_reqs_.size();
+      recv_from_.resize(new_req_num, src_fid);
+      remaining_reqs_[src_fid] = new_req_num - old_req_num;
     }
   }
 
@@ -386,13 +368,14 @@ class BatchShuffleMessageManager : public MessageManagerBase {
             int thread_num) {
     for (fid_t i = 1; i < fnum_; ++i) {
       fid_t src_fid = (fid_ + fnum_ - i) % fnum_;
-      MPI_Request req;
       auto& buffer = shuffle_in_buffers_[src_fid];
       buffer.resize(frag.OuterVertices(src_fid).size() * sizeof(DATA_T));
-      MPI_Irecv(buffer.data(), buffer.size(), MPI_CHAR,
-                comm_spec_.FragToWorker(src_fid), 0, comm_, &req);
-      recv_reqs_.push_back(req);
-      recv_from_.push_back(src_fid);
+      int old_req_num = recv_reqs_.size();
+      sync_comm::irecv_buffer<char>(buffer.data(), buffer.size(),
+                comm_spec_.FragToWorker(src_fid), comm_, 0, recv_reqs_);
+      int new_req_num = recv_reqs_.size();
+      recv_from_.resize(new_req_num, src_fid);
+      remaining_reqs_[src_fid] = new_req_num - old_req_num;
     }
     post_process_handle_ = std::make_shared<
         batch_shuffle_message_manager_impl::PostProcess<GRAPH_T, DATA_T>>(
@@ -417,11 +400,9 @@ class BatchShuffleMessageManager : public MessageManagerBase {
         buf[k] = data[id_vec[k]];
       }
 
-      MPI_Request req;
-      MPI_Isend(vec.data(), vec.size(), MPI_CHAR,
-                comm_spec_.FragToWorker(dst_fid), 0, comm_, &req);
+      sync_comm::isend_buffer<char>(vec.data(), vec.size(), comm_spec_.FragToWorker(dst_fid),
+                              comm_, 0, send_reqs_);
       msg_size_ += vec.size();
-      send_reqs_.push_back(req);
     }
   }
 
@@ -432,12 +413,10 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       int thread_num) {
     for (fid_t i = 1; i < fnum_; ++i) {
       fid_t dst_fid = (i + fid_) % fnum_;
-      MPI_Request req;
       auto& arc = shuffle_out_archives_[dst_fid];
-      MPI_Isend(arc.GetBuffer(), arc.GetSize(), MPI_CHAR,
-                comm_spec_.FragToWorker(dst_fid), 0, comm_, &req);
+      sync_comm::isend_buffer<char>(arc.GetBuffer(), arc.GetSize(), comm_spec_.FragToWorker(dst_fid),
+                                    comm_, 0, send_reqs_);
       msg_size_ += arc.GetSize();
-      send_reqs_.push_back(req);
     }
   }
 
@@ -479,12 +458,12 @@ class BatchShuffleMessageManager : public MessageManagerBase {
 
   std::vector<MPI_Request> recv_reqs_;
   std::vector<fid_t> recv_from_;
-  fid_t remaining_reqs_;
+  std::vector<int> remaining_reqs_;
+  fid_t remaining_frags_;
 
   std::vector<MPI_Request> send_reqs_;
 
   size_t msg_size_;
-  std::thread recv_thread_;
 
   bool to_terminate_;
 
