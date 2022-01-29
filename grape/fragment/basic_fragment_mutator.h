@@ -105,8 +105,6 @@ class BasicFragmentMutator {
     } else {
       global_vertices_to_add_.clear();
       global_vertices_to_update_.clear();
-      LOG(INFO) << "[worker-" << comm_spec_.worker_id()
-                << "] before extend vertex map with edges...";
       extendVertexMapWithEdges();
     }
 
@@ -387,7 +385,7 @@ class BasicFragmentMutator {
       }
     }
     size_t ivnum_after = vm_ptr_->GetInnerVertexSize(fid);
-    LOG(INFO) << "[frag-" << fid << "] added " << ivnum_after - ivnum_before
+    VLOG(1) << "[frag-" << fid << "] added " << ivnum_after - ivnum_before
               << " vertices";
     builder.finish(*vm_ptr_);
   }
@@ -443,8 +441,8 @@ class BasicFragmentMutator {
       auto& eo = parsed_edges_to_add_[i];
       if (!(vm_ptr_->GetGid(ei.src, eo.src) &&
             vm_ptr_->GetGid(ei.dst, eo.dst))) {
-        LOG(INFO) << "edge parse failed: " << ei.src << " " << ei.dst << " "
-                  << ei.edata;
+        VLOG(10) << "edge parse failed: " << ei.src << " " << ei.dst << " "
+                 << ei.edata;
         eo.src = std::numeric_limits<vid_t>::max();
       } else {
         eo.edata = std::move(ei.edata);

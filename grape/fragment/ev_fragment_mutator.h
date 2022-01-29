@@ -34,7 +34,7 @@ class EVFragmentMutator {
       : comm_spec_(comm_spec), t0_(0), t1_(0) {}
   ~EVFragmentMutator() {
     if (comm_spec_.worker_id() == 0) {
-      LOG(INFO) << "mutating graph: " << t0_ << " s + " << t1_ << " s";
+      VLOG(1) << "mutating graph: " << t0_ << " s + " << t1_ << " s";
     }
   }
 
@@ -42,7 +42,7 @@ class EVFragmentMutator {
                                              const std::string& vfile,
                                              std::shared_ptr<fragment_t> frag,
                                              bool directed) {
-    LOG(INFO) << "delta efile = " << efile << ", vfile = " << vfile;
+    VLOG(1) << "delta efile = " << efile << ", vfile = " << vfile;
     if (efile == "" && vfile == "") {
       return frag;
     }
@@ -86,7 +86,7 @@ class EVFragmentMutator {
           mutator.UpdateVertex(id, data);
         }
       }
-      LOG(INFO) << "read vertices to add: " << count;
+      VLOG(1) << "read vertices to add: " << count;
     }
     {
       auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(efile));
@@ -131,7 +131,7 @@ class EVFragmentMutator {
           }
         }
       }
-      LOG(INFO) << "read edges to add: " << count;
+      VLOG(1) << "read edges to add: " << count;
     }
     MPI_Barrier(comm_spec_.comm());
     t0_ += GetCurrentTime();
