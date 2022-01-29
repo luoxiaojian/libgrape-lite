@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef GRAPE_COMMUNICATION_SYNC_COMM_H_
 #define GRAPE_COMMUNICATION_SYNC_COMM_H_
 
+#include <assert.h>
 #include <mpi.h>
 
 #include <limits>
