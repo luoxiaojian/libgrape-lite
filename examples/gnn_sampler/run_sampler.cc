@@ -107,7 +107,8 @@ int main(int argc, char* argv[]) {
         if (is_coordinator) {
           consumer->ConsumeMessages(query_vertices, edge_msgs);
         }
-        grape::sync_comm::Bcast(query_vertices, grape::kCoordinatorRank, comm_spec.comm());
+        grape::sync_comm::Bcast(query_vertices, grape::kCoordinatorRank,
+                                comm_spec.comm());
 
         fragment->ExtendFragment(edge_msgs, comm_spec, graph_spec);
         if (!query_vertices.empty()) {

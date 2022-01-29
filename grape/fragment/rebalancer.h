@@ -143,8 +143,8 @@ class Rebalancer<
       std::thread send_thread([&]() {
         int dst_worker_id = (worker_id + worker_num - 1) % worker_num;
         while (dst_worker_id != worker_id) {
-          sync_comm::Send(degree_lists_[comm_spec_.fid()],
-                          dst_worker_id, comm_spec_.comm(), degree_tag);
+          sync_comm::Send(degree_lists_[comm_spec_.fid()], dst_worker_id,
+                          comm_spec_.comm(), degree_tag);
           dst_worker_id = (dst_worker_id + worker_num - 1) % worker_num;
         }
       });

@@ -81,13 +81,15 @@ class BasicFragmentMutator {
     }
     recv_thread_.join();
 
-    sync_comm::FlatAllGather<vid_t>(local_vertices_to_remove_, global_vertices_to_remove_,
+    sync_comm::FlatAllGather<vid_t>(local_vertices_to_remove_,
+                                    global_vertices_to_remove_,
                                     comm_spec_.comm());
     processToSelfMessages();
     if (!std::is_same<vdata_t, EmptyType>::value) {
       std::vector<oid_t> global_added_vertices_id;
       sync_comm::FlatAllGather<oid_t>(local_added_vertices_id_,
-                                      global_added_vertices_id, comm_spec_.comm());
+                                      global_added_vertices_id,
+                                      comm_spec_.comm());
       extendVertexMap(global_added_vertices_id);
       size_t local_add_vnum = local_vertices_to_add_.size();
       CHECK_EQ(local_add_vnum, local_added_vertices_id_.size());
@@ -103,7 +105,8 @@ class BasicFragmentMutator {
     } else {
       global_vertices_to_add_.clear();
       global_vertices_to_update_.clear();
-      LOG(INFO) << "[worker-" << comm_spec_.worker_id() << "] before extend vertex map with edges...";
+      LOG(INFO) << "[worker-" << comm_spec_.worker_id()
+                << "] before extend vertex map with edges...";
       extendVertexMapWithEdges();
     }
 

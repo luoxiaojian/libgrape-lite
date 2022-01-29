@@ -41,7 +41,7 @@ struct Vertex {
   Vertex(const VID_T& vid, const VDATA_T& vdata) : vid(vid), vdata(vdata) {}
   Vertex(const Vertex& vert) : vid(vert.vid), vdata(vert.vdata) {}
 
-  ~Vertex() =default;
+  ~Vertex() = default;
 
   Vertex& operator=(const Vertex& rhs) {
     if (this == &rhs) {

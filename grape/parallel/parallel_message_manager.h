@@ -397,10 +397,9 @@ class ParallelMessageManager : public MessageManagerBase {
               to_self_.emplace_back(std::move(item.second));
             } else {
               MPI_Request req;
-              sync_comm::isend_small_buffer<char>(item.second.GetBuffer(),
-                                                  item.second.GetSize(),
-                                                  comm_spec_.FragToWorker(item.first),
-                                                  comm_, msg_round, req);
+              sync_comm::isend_small_buffer<char>(
+                  item.second.GetBuffer(), item.second.GetSize(),
+                  comm_spec_.FragToWorker(item.first), comm_, msg_round, req);
               reqs.push_back(req);
               to_others_.emplace_back(std::move(item.second));
             }
@@ -410,8 +409,8 @@ class ParallelMessageManager : public MessageManagerBase {
               continue;
             }
             MPI_Request req;
-            sync_comm::isend_small_buffer<char>(NULL, 0, comm_spec_.FragToWorker(i),
-                                                comm_, msg_round, req);
+            sync_comm::isend_small_buffer<char>(
+                NULL, 0, comm_spec_.FragToWorker(i), comm_, msg_round, req);
             reqs.push_back(req);
           }
           MPI_Waitall(reqs.size(), &reqs[0], MPI_STATUSES_IGNORE);
@@ -425,19 +424,21 @@ class ParallelMessageManager : public MessageManagerBase {
     while (true) {
       MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, comm_, &status);
       if (status.MPI_SOURCE == comm_spec_.worker_id()) {
-        sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, comm_, 0);
+        sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, comm_,
+                                           0);
         return;
       }
       int tag = status.MPI_TAG;
       int count;
       MPI_Get_count(&status, MPI_CHAR, &count);
       if (count == 0) {
-        sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, comm_, tag);
+        sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, comm_,
+                                           tag);
         recv_queues_[tag % 2].DecProducerNum();
       } else {
         OutArchive arc(count);
-        sync_comm::recv_small_buffer<char>(arc.GetBuffer(), count, status.MPI_SOURCE,
-                                           comm_, tag);
+        sync_comm::recv_small_buffer<char>(arc.GetBuffer(), count,
+                                           status.MPI_SOURCE, comm_, tag);
         recv_queues_[tag % 2].Put(std::move(arc));
       }
     }
@@ -451,7 +452,8 @@ class ParallelMessageManager : public MessageManagerBase {
       MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, comm_, &flag, &status);
       if (flag) {
         if (status.MPI_SOURCE == comm_spec_.worker_id()) {
-          sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, comm_, 0);
+          sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, comm_,
+                                             0);
           return -1;
         }
         gotMessage = 1;
@@ -459,13 +461,13 @@ class ParallelMessageManager : public MessageManagerBase {
         int count;
         MPI_Get_count(&status, MPI_CHAR, &count);
         if (count == 0) {
-          sync_comm::recv_small_buffer<char>(NULL, 0,
-                                             status.MPI_SOURCE, comm_, tag);
+          sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, comm_,
+                                             tag);
           recv_queues_[tag % 2].DecProducerNum();
         } else {
           OutArchive arc(count);
-          sync_comm::recv_small_buffer<char>(arc.GetBuffer(), count, status.MPI_SOURCE,
-                                             comm_, tag);
+          sync_comm::recv_small_buffer<char>(arc.GetBuffer(), count,
+                                             status.MPI_SOURCE, comm_, tag);
           recv_queues_[tag % 2].Put(std::move(arc));
         }
       } else {
@@ -503,7 +505,8 @@ class ParallelMessageManager : public MessageManagerBase {
   }
 
   void stopRecvThread() {
-    sync_comm::send_small_buffer<char>(NULL, 0, comm_spec_.worker_id(), comm_, 0);
+    sync_comm::send_small_buffer<char>(NULL, 0, comm_spec_.worker_id(), comm_,
+                                       0);
     recv_thread_.join();
   }
 

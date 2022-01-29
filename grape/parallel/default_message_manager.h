@@ -102,7 +102,8 @@ class DefaultMessageManager : public MessageManagerBase {
       arc.Clear();
       arc.Allocate(length);
       sync_comm::irecv_buffer<char>(arc.GetBuffer(), length,
-                                    comm_spec_.FragToWorker(src_fid), comm_, 0, reqs_);
+                                    comm_spec_.FragToWorker(src_fid), comm_, 0,
+                                    reqs_);
     }
 
     for (fid_t i = 1; i < fnum_; ++i) {
@@ -112,7 +113,8 @@ class DefaultMessageManager : public MessageManagerBase {
         continue;
       }
       sync_comm::isend_buffer<char>(arc.GetBuffer(), arc.GetSize(),
-                comm_spec_.FragToWorker(dst_fid), comm_, 0, reqs_);
+                                    comm_spec_.FragToWorker(dst_fid), comm_, 0,
+                                    reqs_);
     }
     to_recv_[fid_].Clear();
     if (!to_send_[fid_].Empty()) {

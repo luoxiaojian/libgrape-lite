@@ -48,15 +48,17 @@ namespace sync_comm {
 static constexpr int chunk_size = 536870912;
 
 template <typename T>
-static inline void send_small_buffer(const T* ptr, size_t len, int dst_worker_id, MPI_Comm comm, int tag) {
+static inline void send_small_buffer(const T* ptr, size_t len,
+                                     int dst_worker_id, MPI_Comm comm,
+                                     int tag) {
   size_t len_in_bytes = len * sizeof(T);
   assert(len_in_bytes <= chunk_size);
   MPI_Send(ptr, len_in_bytes, MPI_CHAR, dst_worker_id, tag, comm);
 }
 
 template <typename T>
-static inline void isend_small_buffer(const T* ptr, size_t len, int dst_worker_id,
-                                      MPI_Comm comm, int tag,
+static inline void isend_small_buffer(const T* ptr, size_t len,
+                                      int dst_worker_id, MPI_Comm comm, int tag,
                                       MPI_Request& req) {
   size_t len_in_bytes = len * sizeof(T);
   assert(len_in_bytes <= chunk_size);
@@ -64,14 +66,18 @@ static inline void isend_small_buffer(const T* ptr, size_t len, int dst_worker_i
 }
 
 template <typename T>
-static inline void recv_small_buffer(T* ptr, size_t len, int src_worker_id, MPI_Comm comm, int tag) {
+static inline void recv_small_buffer(T* ptr, size_t len, int src_worker_id,
+                                     MPI_Comm comm, int tag) {
   size_t len_in_bytes = len * sizeof(T);
   assert(len_in_bytes <= chunk_size);
-  MPI_Recv(ptr, len_in_bytes, MPI_CHAR, src_worker_id, tag, comm, MPI_STATUS_IGNORE);
+  MPI_Recv(ptr, len_in_bytes, MPI_CHAR, src_worker_id, tag, comm,
+           MPI_STATUS_IGNORE);
 }
 
 template <typename T>
-static inline void irecv_small_buffer(T* ptr, size_t len, int src_worker_id, MPI_Comm comm, int tag, MPI_Request& req) {
+static inline void irecv_small_buffer(T* ptr, size_t len, int src_worker_id,
+                                      MPI_Comm comm, int tag,
+                                      MPI_Request& req) {
   size_t len_in_bytes = len * sizeof(T);
   assert(len_in_bytes <= chunk_size);
   MPI_Irecv(ptr, len_in_bytes, MPI_CHAR, src_worker_id, tag, comm, &req);
@@ -83,12 +89,13 @@ static inline void send_buffer(const T* ptr, size_t len, int dst_worker_id,
   static constexpr size_t chunk_num = chunk_size / sizeof(T);
   if (len <= chunk_num) {
     send_small_buffer(ptr, len, dst_worker_id, comm, tag);
-    return ;
+    return;
   }
   const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
   int iter = len / chunk_num;
   size_t remaining = (len % chunk_num) * sizeof(T);
-  LOG(INFO) << "sending large buffer in " << iter + (remaining != 0) << " iterations";
+  LOG(INFO) << "sending large buffer in " << iter + (remaining != 0)
+            << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Send(ptr, chunk_size_in_bytes, MPI_CHAR, dst_worker_id, tag, comm);
     ptr += chunk_num;
@@ -107,15 +114,17 @@ static inline void isend_buffer(const T* ptr, size_t len, int dst_worker_id,
     MPI_Request req;
     isend_small_buffer(ptr, len, dst_worker_id, comm, tag, req);
     reqs.push_back(req);
-    return ;
+    return;
   }
   const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
   int iter = len / chunk_num;
   size_t remaining = (len % chunk_num) * sizeof(T);
-  LOG(INFO) << "isending large buffer in " << iter + (remaining != 0) << " iterations";
+  LOG(INFO) << "isending large buffer in " << iter + (remaining != 0)
+            << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Request req;
-    MPI_Isend(ptr, chunk_size_in_bytes, MPI_CHAR, dst_worker_id, tag, comm, &req);
+    MPI_Isend(ptr, chunk_size_in_bytes, MPI_CHAR, dst_worker_id, tag, comm,
+              &req);
     reqs.push_back(req);
     ptr += chunk_num;
   }
@@ -132,12 +141,13 @@ static inline void recv_buffer(T* ptr, size_t len, int src_worker_id,
   static constexpr size_t chunk_num = chunk_size / sizeof(T);
   if (len <= chunk_num) {
     recv_small_buffer(ptr, len, src_worker_id, comm, tag);
-    return ;
+    return;
   }
   const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
   int iter = len / chunk_num;
   size_t remaining = (len % chunk_num) * sizeof(T);
-  LOG(INFO) << "recving large buffer in " << iter + (remaining != 0) << " iterations";
+  LOG(INFO) << "recving large buffer in " << iter + (remaining != 0)
+            << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Recv(ptr, chunk_size_in_bytes, MPI_CHAR, src_worker_id, tag, comm,
              MPI_STATUS_IGNORE);
@@ -158,29 +168,30 @@ static inline void irecv_buffer(T* ptr, size_t len, int src_worker_id,
     MPI_Request req;
     irecv_small_buffer(ptr, len, src_worker_id, comm, tag, req);
     reqs.push_back(req);
-    return ;
+    return;
   }
   const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
   int iter = len / chunk_num;
   size_t remaining = (len % chunk_num) * sizeof(T);
-  LOG(INFO) << "irecving large buffer in " << iter + (remaining != 0) << " iterations";
+  LOG(INFO) << "irecving large buffer in " << iter + (remaining != 0)
+            << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Request req;
     MPI_Irecv(ptr, chunk_size_in_bytes, MPI_CHAR, src_worker_id, tag, comm,
-             &req);
+              &req);
     reqs.push_back(req);
     ptr += chunk_num;
   }
   if (remaining != 0) {
     MPI_Request req;
-    MPI_Irecv(ptr, remaining, MPI_CHAR, src_worker_id, tag, comm,
-             &req);
+    MPI_Irecv(ptr, remaining, MPI_CHAR, src_worker_id, tag, comm, &req);
     reqs.push_back(req);
   }
 }
 
 template <typename T>
-static inline void bcast_small_buffer(T* ptr, size_t len, int root, MPI_Comm comm) {
+static inline void bcast_small_buffer(T* ptr, size_t len, int root,
+                                      MPI_Comm comm) {
   size_t len_in_bytes = len * sizeof(T);
   assert(len_in_bytes <= chunk_size);
   MPI_Bcast(ptr, len_in_bytes, MPI_CHAR, root, comm);
@@ -191,12 +202,13 @@ static inline void bcast_buffer(T* ptr, size_t len, int root, MPI_Comm comm) {
   static constexpr size_t chunk_num = chunk_size / sizeof(T);
   if (len <= chunk_num) {
     bcast_small_buffer(ptr, len, root, comm);
-    return ;
+    return;
   }
   const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
   int iter = len / chunk_num;
   size_t remaining = (len % chunk_num) * sizeof(T);
-  LOG(INFO) << "bcast large buffer in " << iter + (remaining != 0) << " iterations";
+  LOG(INFO) << "bcast large buffer in " << iter + (remaining != 0)
+            << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Bcast(ptr, chunk_size_in_bytes, MPI_CHAR, root, comm);
     ptr += chunk_num;
@@ -219,10 +231,9 @@ struct CommImpl {
   }
 
   template <typename ITER_T>
-  static void multiple_send(const T& value,
-                            const ITER_T& worker_id_begin,
-                            const ITER_T& worker_id_end,
-                            MPI_Comm comm, int tag) {
+  static void multiple_send(const T& value, const ITER_T& worker_id_begin,
+                            const ITER_T& worker_id_end, MPI_Comm comm,
+                            int tag) {
     InArchive arc;
     arc << value;
     int64_t len = arc.GetSize();
@@ -275,10 +286,9 @@ struct CommImpl<T, typename std::enable_if<std::is_pod<T>::value>::type> {
   }
 
   template <typename ITER_T>
-  static void multiple_send(const T& value,
-                            const ITER_T& worker_id_begin,
-                            const ITER_T& worker_id_end,
-                            MPI_Comm comm, int tag) {
+  static void multiple_send(const T& value, const ITER_T& worker_id_begin,
+                            const ITER_T& worker_id_end, MPI_Comm comm,
+                            int tag) {
     for (ITER_T iter = worker_id_begin; iter != worker_id_end; ++iter) {
       int dst_worker_id = *iter;
       send(value, dst_worker_id, comm, tag);
@@ -291,8 +301,10 @@ struct CommImpl<T, typename std::enable_if<std::is_pod<T>::value>::type> {
 };
 
 template <class T>
-struct CommImpl<std::vector<T>, typename std::enable_if<std::is_pod<T>::value>::type> {
-  static void send(const std::vector<T>& vec, int dst_worker_id, MPI_Comm comm, int tag) {
+struct CommImpl<std::vector<T>,
+                typename std::enable_if<std::is_pod<T>::value>::type> {
+  static void send(const std::vector<T>& vec, int dst_worker_id, MPI_Comm comm,
+                   int tag) {
     int64_t len = vec.size();
     CommImpl<int64_t>::send(len, dst_worker_id, comm, tag);
     if (len > 0) {
@@ -309,7 +321,8 @@ struct CommImpl<std::vector<T>, typename std::enable_if<std::is_pod<T>::value>::
     }
   }
 
-  static void recv(std::vector<T>& vec, int src_worker_id, MPI_Comm comm, int tag) {
+  static void recv(std::vector<T>& vec, int src_worker_id, MPI_Comm comm,
+                   int tag) {
     int64_t len;
     CommImpl<int64_t>::recv(len, src_worker_id, comm, tag);
     vec.resize(len);
@@ -318,7 +331,8 @@ struct CommImpl<std::vector<T>, typename std::enable_if<std::is_pod<T>::value>::
     }
   }
 
-  static void recv_at(std::vector<T>& vec, size_t offset, int src_worker_id, MPI_Comm comm, int tag) {
+  static void recv_at(std::vector<T>& vec, size_t offset, int src_worker_id,
+                      MPI_Comm comm, int tag) {
     int64_t len;
     CommImpl<int64_t>::recv(len, src_worker_id, comm, tag);
     if (offset + len > vec.size()) {
@@ -332,8 +346,8 @@ struct CommImpl<std::vector<T>, typename std::enable_if<std::is_pod<T>::value>::
   template <typename ITER_T>
   static void multiple_send(const std::vector<T>& vec,
                             const ITER_T& worker_id_begin,
-                            const ITER_T& worker_id_end,
-                            MPI_Comm comm, int tag) {
+                            const ITER_T& worker_id_end, MPI_Comm comm,
+                            int tag) {
     for (ITER_T iter = worker_id_begin; iter != worker_id_end; ++iter) {
       int dst_worker_id = *iter;
       send(vec, dst_worker_id, comm, tag);
@@ -350,11 +364,13 @@ struct CommImpl<std::vector<T>, typename std::enable_if<std::is_pod<T>::value>::
 
 template <>
 struct CommImpl<InArchive, void> {
-  static void send(const InArchive& arc, int dst_worker_id, MPI_Comm comm, int tag) {
+  static void send(const InArchive& arc, int dst_worker_id, MPI_Comm comm,
+                   int tag) {
     int64_t len = arc.GetSize();
     CommImpl<int64_t>::send(len, dst_worker_id, comm, tag);
     if (len > 0) {
-      send_buffer<char>(arc.GetBuffer(), arc.GetSize(), dst_worker_id, comm, tag);
+      send_buffer<char>(arc.GetBuffer(), arc.GetSize(), dst_worker_id, comm,
+                        tag);
     }
   }
 
@@ -368,10 +384,9 @@ struct CommImpl<InArchive, void> {
   }
 
   template <typename ITER_T>
-  static void multiple_send(const InArchive& arc,
-                            const ITER_T& worker_id_begin,
-                            const ITER_T& worker_id_end,
-                            MPI_Comm comm, int tag) {
+  static void multiple_send(const InArchive& arc, const ITER_T& worker_id_begin,
+                            const ITER_T& worker_id_end, MPI_Comm comm,
+                            int tag) {
     for (ITER_T iter = worker_id_begin; iter != worker_id_end; ++iter) {
       int dst_worker_id = *iter;
       send(arc, dst_worker_id, comm, tag);
@@ -388,11 +403,13 @@ struct CommImpl<InArchive, void> {
 
 template <>
 struct CommImpl<OutArchive, void> {
-  static void send(const OutArchive& arc, int dst_worker_id, MPI_Comm comm, int tag) {
+  static void send(const OutArchive& arc, int dst_worker_id, MPI_Comm comm,
+                   int tag) {
     int64_t len = arc.GetSize();
     CommImpl<int64_t>::send(len, dst_worker_id, comm, tag);
     if (len > 0) {
-      send_buffer<char>(arc.GetBuffer(), arc.GetSize(), dst_worker_id, comm, tag);
+      send_buffer<char>(arc.GetBuffer(), arc.GetSize(), dst_worker_id, comm,
+                        tag);
     }
   }
 
@@ -409,8 +426,8 @@ struct CommImpl<OutArchive, void> {
   template <typename ITER_T>
   static void multiple_send(const OutArchive& arc,
                             const ITER_T& worker_id_begin,
-                            const ITER_T& worker_id_end,
-                            MPI_Comm comm, int tag) {
+                            const ITER_T& worker_id_end, MPI_Comm comm,
+                            int tag) {
     for (ITER_T iter = worker_id_begin; iter != worker_id_end; ++iter) {
       int dst_worker_id = *iter;
       send(arc, dst_worker_id, comm, tag);
@@ -431,8 +448,10 @@ struct CommImpl<OutArchive, void> {
 };
 
 template <class T>
-struct CommImpl<std::vector<T>, typename std::enable_if<!std::is_pod<T>::value>::type> {
-  static void send(const std::vector<T>& vec, int dst_worker_id, MPI_Comm comm, int tag) {
+struct CommImpl<std::vector<T>,
+                typename std::enable_if<!std::is_pod<T>::value>::type> {
+  static void send(const std::vector<T>& vec, int dst_worker_id, MPI_Comm comm,
+                   int tag) {
     InArchive arc;
     arc << vec;
     CommImpl<InArchive>::send(arc, dst_worker_id, comm, tag);
@@ -448,13 +467,15 @@ struct CommImpl<std::vector<T>, typename std::enable_if<!std::is_pod<T>::value>:
     CommImpl<InArchive>::send(arc, dst_worker_id, comm, tag);
   }
 
-  static void recv(std::vector<T>& vec, int src_worker_id, MPI_Comm comm, int tag) {
+  static void recv(std::vector<T>& vec, int src_worker_id, MPI_Comm comm,
+                   int tag) {
     OutArchive arc;
     CommImpl<OutArchive>::recv(arc, src_worker_id, comm, tag);
     arc >> vec;
   }
 
-  static void recv_at(std::vector<T>& vec, size_t offset, int src_worker_id, MPI_Comm comm, int tag) {
+  static void recv_at(std::vector<T>& vec, size_t offset, int src_worker_id,
+                      MPI_Comm comm, int tag) {
     OutArchive arc;
     CommImpl<OutArchive>::recv(arc, src_worker_id, comm, tag);
     size_t num;
@@ -470,8 +491,8 @@ struct CommImpl<std::vector<T>, typename std::enable_if<!std::is_pod<T>::value>:
   template <typename ITER_T>
   static void multiple_send(const std::vector<T>& vec,
                             const ITER_T& worker_id_begin,
-                            const ITER_T& worker_id_end,
-                            MPI_Comm comm, int tag) {
+                            const ITER_T& worker_id_end, MPI_Comm comm,
+                            int tag) {
     InArchive arc;
     arc << vec;
     int64_t len = arc.GetSize();
@@ -516,12 +537,13 @@ void Recv(T& obj, int src_worker_id, MPI_Comm comm, int tag) {
 template <typename T>
 void SendPartial(const std::vector<T>& vec, size_t from, size_t to,
                  int dst_worker_id, MPI_Comm comm, int tag) {
-  CommImpl<std::vector<T>>::send_partial(vec, from, to, dst_worker_id, comm, tag);
+  CommImpl<std::vector<T>>::send_partial(vec, from, to, dst_worker_id, comm,
+                                         tag);
 }
 
 template <typename T>
-void RecvAt(std::vector<T>& vec, size_t offset,
-            int src_worker_id, MPI_Comm comm, int tag) {
+void RecvAt(std::vector<T>& vec, size_t offset, int src_worker_id,
+            MPI_Comm comm, int tag) {
   CommImpl<std::vector<T>>::recv_at(vec, offset, src_worker_id, comm, tag);
 }
 
@@ -546,9 +568,7 @@ class WorkerIterator {
     return WorkerIterator(prev, num_);
   }
 
-  int operator*() const noexcept {
-    return cur_;
-  }
+  int operator*() const noexcept { return cur_; }
 
   bool operator==(const WorkerIterator& rhs) noexcept {
     return cur_ == rhs.cur_;
@@ -564,22 +584,24 @@ class WorkerIterator {
 };
 
 template <class T>
-typename std::enable_if<std::is_pod<T>::value>::type
-AllGather(std::vector<T>& objects, MPI_Comm comm) {
-  MPI_Allgather(MPI_IN_PLACE, sizeof(T), MPI_CHAR, objects.data(), sizeof(T), MPI_CHAR, comm);
+typename std::enable_if<std::is_pod<T>::value>::type AllGather(
+    std::vector<T>& objects, MPI_Comm comm) {
+  MPI_Allgather(MPI_IN_PLACE, sizeof(T), MPI_CHAR, objects.data(), sizeof(T),
+                MPI_CHAR, comm);
 }
 
 template <class T>
-typename std::enable_if<!std::is_pod<T>::value>::type
-AllGather(std::vector<T>& objects, MPI_Comm comm) {
+typename std::enable_if<!std::is_pod<T>::value>::type AllGather(
+    std::vector<T>& objects, MPI_Comm comm) {
   MPI_Barrier(comm);
   int worker_id, worker_num;
   MPI_Comm_rank(comm, &worker_id);
   MPI_Comm_size(comm, &worker_num);
   std::thread send_thread([&]() {
-    CommImpl<T>::multiple_send(objects[worker_id],
-                               WorkerIterator((worker_id + 1) % worker_num, worker_num),
-                               WorkerIterator(worker_id, worker_num), comm, 0);
+    CommImpl<T>::multiple_send(
+        objects[worker_id],
+        WorkerIterator((worker_id + 1) % worker_num, worker_num),
+        WorkerIterator(worker_id, worker_num), comm, 0);
   });
   std::thread recv_thread([&]() {
     for (int i = 1; i < worker_num; ++i) {
@@ -593,8 +615,8 @@ AllGather(std::vector<T>& objects, MPI_Comm comm) {
 }
 
 template <typename T>
-typename std::enable_if<std::is_pod<T>::value>::type
-FlatAllGather(const std::vector<T>& local, std::vector<T>& global, MPI_Comm comm) {
+typename std::enable_if<std::is_pod<T>::value>::type FlatAllGather(
+    const std::vector<T>& local, std::vector<T>& global, MPI_Comm comm) {
   int worker_id, worker_num;
   MPI_Comm_rank(comm, &worker_id);
   MPI_Comm_size(comm, &worker_num);
@@ -630,16 +652,18 @@ FlatAllGather(const std::vector<T>& local, std::vector<T>& global, MPI_Comm comm
     }
     for (int i = 1; i < worker_num; ++i) {
       int src_worker_id = (worker_id + worker_num - i) % worker_num;
-      irecv_buffer<T>(&global[offsets[src_worker_id]], sizes[src_worker_id], src_worker_id, comm, 0, reqs);
+      irecv_buffer<T>(&global[offsets[src_worker_id]], sizes[src_worker_id],
+                      src_worker_id, comm, 0, reqs);
     }
-    memcpy(&global[offsets[worker_id]], local.data(), sizes[worker_id] * sizeof(T));
+    memcpy(&global[offsets[worker_id]], local.data(),
+           sizes[worker_id] * sizeof(T));
     MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
   }
 }
 
 template <typename T>
-typename std::enable_if<!std::is_pod<T>::value>::type
-FlatAllGather(const std::vector<T>& local, std::vector<T>& global, MPI_Comm comm) {
+typename std::enable_if<!std::is_pod<T>::value>::type FlatAllGather(
+    const std::vector<T>& local, std::vector<T>& global, MPI_Comm comm) {
   int worker_id, worker_num;
   MPI_Comm_rank(comm, &worker_id);
   MPI_Comm_size(comm, &worker_num);
@@ -662,8 +686,8 @@ FlatAllGather(const std::vector<T>& local, std::vector<T>& global, MPI_Comm comm
   std::thread recv_thread([&]() {
     for (int i = 1; i < worker_num; ++i) {
       int src_worker_id = (worker_id + worker_num - i) % worker_num;
-      CommImpl<std::vector<T>>::recv_at(
-          global, offsets[src_worker_id], src_worker_id, comm, 0);
+      CommImpl<std::vector<T>>::recv_at(global, offsets[src_worker_id],
+                                        src_worker_id, comm, 0);
     }
   });
 

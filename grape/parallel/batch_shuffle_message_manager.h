@@ -146,7 +146,8 @@ class BatchShuffleMessageManager : public MessageManagerBase {
     shuffle_out_buffers_.resize(fnum_);
     shuffle_in_buffers_.resize(fnum_);
 
-    recv_thread_ = std::thread(&BatchShuffleMessageManager::recvThreadRoutine, this);
+    recv_thread_ =
+        std::thread(&BatchShuffleMessageManager::recvThreadRoutine, this);
   }
 
   /**
@@ -204,7 +205,7 @@ class BatchShuffleMessageManager : public MessageManagerBase {
     {
       size_t v = 1;
       MPI_Send(&v, sizeof(size_t), MPI_CHAR, comm_spec_.FragToWorker(fid_), 1,
-              comm_);
+               comm_);
       recv_thread_.join();
     }
 
@@ -321,7 +322,7 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       }
     }
   }
-  
+
   template <typename GRAPH_T, typename DATA_T>
   typename std::enable_if<archive_shuffle_t<DATA_T>::value>::type startRecv(
       const GRAPH_T& frag,
@@ -359,7 +360,9 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       auto& buffer = shuffle_in_buffers_[src_fid];
       buffer.resize(in_archive_sizes[src_fid]);
       int old_req_num = recv_reqs_.size();
-      sync_comm::irecv_buffer<char>(buffer.data(), buffer.size(), comm_spec_.FragToWorker(src_fid), comm_, 0, recv_reqs_);
+      sync_comm::irecv_buffer<char>(buffer.data(), buffer.size(),
+                                    comm_spec_.FragToWorker(src_fid), comm_, 0,
+                                    recv_reqs_);
       int new_req_num = recv_reqs_.size();
       recv_from_.resize(new_req_num, src_fid);
       remaining_reqs_[src_fid] = new_req_num - old_req_num;
@@ -379,9 +382,10 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       fid_t src_fid = (fid_ + fnum_ - i) % fnum_;
       auto range = frag.OuterVertices(src_fid);
       int old_req_num = recv_reqs_.size();
-      sync_comm::irecv_buffer<char>(reinterpret_cast<char*>(&data[*range.begin()]),
-                                    range.size() * sizeof(DATA_T), comm_spec_.FragToWorker(src_fid),
-                                    comm_, 0, recv_reqs_);
+      sync_comm::irecv_buffer<char>(
+          reinterpret_cast<char*>(&data[*range.begin()]),
+          range.size() * sizeof(DATA_T), comm_spec_.FragToWorker(src_fid),
+          comm_, 0, recv_reqs_);
       int new_req_num = recv_reqs_.size();
       recv_from_.resize(new_req_num, src_fid);
       remaining_reqs_[src_fid] = new_req_num - old_req_num;
@@ -399,7 +403,8 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       buffer.resize(frag.OuterVertices(src_fid).size() * sizeof(DATA_T));
       int old_req_num = recv_reqs_.size();
       sync_comm::irecv_buffer<char>(buffer.data(), buffer.size(),
-                comm_spec_.FragToWorker(src_fid), comm_, 0, recv_reqs_);
+                                    comm_spec_.FragToWorker(src_fid), comm_, 0,
+                                    recv_reqs_);
       int new_req_num = recv_reqs_.size();
       recv_from_.resize(new_req_num, src_fid);
       remaining_reqs_[src_fid] = new_req_num - old_req_num;
@@ -427,8 +432,9 @@ class BatchShuffleMessageManager : public MessageManagerBase {
         buf[k] = data[id_vec[k]];
       }
 
-      sync_comm::isend_buffer<char>(vec.data(), vec.size(), comm_spec_.FragToWorker(dst_fid),
-                              comm_, 0, send_reqs_);
+      sync_comm::isend_buffer<char>(vec.data(), vec.size(),
+                                    comm_spec_.FragToWorker(dst_fid), comm_, 0,
+                                    send_reqs_);
       msg_size_ += vec.size();
     }
   }
@@ -441,8 +447,9 @@ class BatchShuffleMessageManager : public MessageManagerBase {
     for (fid_t i = 1; i < fnum_; ++i) {
       fid_t dst_fid = (i + fid_) % fnum_;
       auto& arc = shuffle_out_archives_[dst_fid];
-      sync_comm::isend_buffer<char>(arc.GetBuffer(), arc.GetSize(), comm_spec_.FragToWorker(dst_fid),
-                                    comm_, 0, send_reqs_);
+      sync_comm::isend_buffer<char>(arc.GetBuffer(), arc.GetSize(),
+                                    comm_spec_.FragToWorker(dst_fid), comm_, 0,
+                                    send_reqs_);
       msg_size_ += arc.GetSize();
     }
   }

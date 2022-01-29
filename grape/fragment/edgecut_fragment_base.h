@@ -206,7 +206,7 @@ class EdgecutFragmentBase
    */
   VID_T GetInnerVertexGid(vertex_t v) const {
     return id_parser_.generate_global_id(fid(), v.GetValue());
-    }
+  }
 
   /**
    * @brief Return the incoming edge destination fragment ID list of a inner

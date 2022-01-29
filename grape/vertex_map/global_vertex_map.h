@@ -96,8 +96,9 @@ class GlobalVertexMapBuilder {
               continue;
             }
             init_sizes[fid] = vertex_map.l2o_[fid].size();
-            sync_comm::RecvAt<OID_T>(vertex_map.l2o_[fid], vertex_map.l2o_[fid].size(),
-                                     src_worker_id, comm_spec.comm(), 0);
+            sync_comm::RecvAt<OID_T>(vertex_map.l2o_[fid],
+                                     vertex_map.l2o_[fid].size(), src_worker_id,
+                                     comm_spec.comm(), 0);
           }
           src_worker_id = (src_worker_id + 1) % worker_num;
         }
@@ -110,7 +111,7 @@ class GlobalVertexMapBuilder {
               continue;
             }
             sync_comm::SendPartial<OID_T>(list_, init_size_, list_.size(),
-                                   dst_worker_id, comm_spec.comm(), 0);
+                                          dst_worker_id, comm_spec.comm(), 0);
           }
           dst_worker_id = (dst_worker_id + worker_num - 1) % worker_num;
         }

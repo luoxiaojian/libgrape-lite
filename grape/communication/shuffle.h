@@ -207,7 +207,8 @@ class ShuffleIn {
         return -1;
       }
       MPI_Probe(MPI_ANY_SOURCE, tag_, comm_, &status);
-      sync_comm::Recv<frag_shuffle_header>(header, status.MPI_SOURCE, comm_, tag_);
+      sync_comm::Recv<frag_shuffle_header>(header, status.MPI_SOURCE, comm_,
+                                           tag_);
       if (header.size == 0) {
         --remaining_frag_num_;
       } else {
