@@ -30,7 +30,7 @@ limitations under the License.
 #include "grape/config.h"
 #include "grape/cuda/fragment/coo_fragment.h"
 #include "grape/cuda/fragment/device_fragment.h"
-#include "grape/cuda/fragment/id_parser.h"
+#include "grape/fragment/id_parser.h"
 #include "grape/cuda/utils/cuda_utils.h"
 #include "grape/cuda/utils/dev_utils.h"
 #include "grape/cuda/utils/stream.h"
@@ -64,7 +64,8 @@ inline void CalculateOffsetWithPrefixSum(const Stream& stream,
 }
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
-          grape::LoadStrategy _load_strategy = grape::LoadStrategy::kOnlyOut>
+          grape::LoadStrategy _load_strategy = grape::LoadStrategy::kOnlyOut,
+	  typename VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T>>
 class HostFragment {
  public:
   using internal_vertex_t = grape::internal::Vertex<VID_T, VDATA_T>;
@@ -80,8 +81,8 @@ class HostFragment {
   using vertex_range_t = VertexRange<VID_T>;
   template <typename DATA_T>
   using vertex_array_t = grape::VertexArray<DATA_T, vid_t>;
-  using vertex_map_t = grape::GlobalVertexMap<oid_t, vid_t>;
-  using dev_vertex_map_t = cuda::DeviceVertexMap<oid_t, vid_t>;
+  using vertex_map_t = VERTEX_MAP_T;
+  using dev_vertex_map_t = cuda::DeviceVertexMap<vertex_map_t>;
   using device_t =
       dev::DeviceFragment<OID_T, VID_T, VDATA_T, EDATA_T, _load_strategy>;
   using coo_t = COOFragment<oid_t, vid_t, vdata_t, edata_t>;
@@ -102,7 +103,7 @@ class HostFragment {
     fid_ = fid;
     fnum_ = vm_ptr_->GetFragmentNum();
 
-    id_parser_.Init(fnum_);
+    id_parser_.init(fnum_);
 
     ivnum_ = vm_ptr_->GetInnerVertexSize(fid);
     tvnum_ = ivnum_;
@@ -115,42 +116,45 @@ class HostFragment {
     oeoffset_.clear();
 
     VID_T invalid_vid = std::numeric_limits<VID_T>::max();
-    auto is_iv_gid = [this](VID_T id) { return id_parser_.GetFid(id) == fid_; };
+    auto is_iv_gid = [this](VID_T id) { return id_parser_.get_fragment_id(id) == fid_; };
     {
       std::vector<VID_T> outer_vertices;
       auto first_iter_in = [&is_iv_gid, invalid_vid](
                                grape::Edge<VID_T, EDATA_T>& e,
                                std::vector<VID_T>& outer_vertices) {
-        if (is_iv_gid(e.dst())) {
-          if (!is_iv_gid(e.src())) {
-            outer_vertices.push_back(e.src());
+        if (is_iv_gid(e.dst)) {
+          if (!is_iv_gid(e.src)) {
+            outer_vertices.push_back(e.src);
           }
         } else {
-          e.SetEndpoint(invalid_vid, invalid_vid);
+          e.src = invalid_vid;
+          e.dst = invalid_vid;
         }
       };
       auto first_iter_out = [&is_iv_gid, invalid_vid](
                                 grape::Edge<VID_T, EDATA_T>& e,
                                 std::vector<VID_T>& outer_vertices) {
-        if (is_iv_gid(e.src())) {
-          if (!is_iv_gid(e.dst())) {
-            outer_vertices.push_back(e.dst());
+        if (is_iv_gid(e.src)) {
+          if (!is_iv_gid(e.dst)) {
+            outer_vertices.push_back(e.dst);
           }
         } else {
-          e.SetEndpoint(invalid_vid, invalid_vid);
+          e.src = invalid_vid;
+          e.dst = invalid_vid;
         }
       };
       auto first_iter_out_in = [&is_iv_gid, invalid_vid](
                                    grape::Edge<VID_T, EDATA_T>& e,
                                    std::vector<VID_T>& outer_vertices) {
-        if (is_iv_gid(e.src())) {
-          if (!is_iv_gid(e.dst())) {
-            outer_vertices.push_back(e.dst());
+        if (is_iv_gid(e.src)) {
+          if (!is_iv_gid(e.dst)) {
+            outer_vertices.push_back(e.dst);
           }
-        } else if (is_iv_gid(e.dst())) {
-          outer_vertices.push_back(e.src());
+        } else if (is_iv_gid(e.dst)) {
+          outer_vertices.push_back(e.src);
         } else {
-          e.SetEndpoint(invalid_vid, invalid_vid);
+          e.src = invalid_vid;
+          e.dst = invalid_vid;
         }
       };
 
@@ -190,29 +194,30 @@ class HostFragment {
       oenum_ = 0;
 
       auto gid_to_lid = [this](VID_T gid) {
-        return (id_parser_.GetFid(gid) == fid_) ? id_parser_.GetLid(gid)
+        return (id_parser_.get_fragment_id(gid) == fid_) ? id_parser_.get_local_id(gid)
                                                 : (ovg2l_.at(gid));
       };
 
-      auto iv_gid_to_lid = [this](VID_T gid) { return id_parser_.GetLid(gid); };
+      auto iv_gid_to_lid = [this](VID_T gid) { return id_parser_.get_local_id(gid); };
       auto ov_gid_to_lid = [this](VID_T gid) { return ovg2l_.at(gid); };
 
       auto second_iter_in = [this, &iv_gid_to_lid, &ov_gid_to_lid, invalid_vid,
                              &is_iv_gid](grape::Edge<VID_T, EDATA_T>& e,
                                          std::vector<int>& idegree,
                                          std::vector<int>& odegree) {
-        if (e.src() != invalid_vid) {
-          VID_T src_lid, dst_lid = iv_gid_to_lid(e.dst());
-          if (is_iv_gid(e.src())) {
-            src_lid = iv_gid_to_lid(e.src());
+        if (e.src != invalid_vid) {
+          VID_T src_lid, dst_lid = iv_gid_to_lid(e.dst);
+          if (is_iv_gid(e.src)) {
+            src_lid = iv_gid_to_lid(e.src);
           } else {
-            src_lid = ov_gid_to_lid(e.src());
+            src_lid = ov_gid_to_lid(e.src);
             ++odegree[src_lid];
             ++oenum_;
           }
           ++idegree[dst_lid];
           ++ienum_;
-          e.SetEndpoint(src_lid, dst_lid);
+	  e.src = src_lid;
+	  e.dst = dst_lid;
         }
       };
 
@@ -220,18 +225,19 @@ class HostFragment {
                               &is_iv_gid](grape::Edge<VID_T, EDATA_T>& e,
                                           std::vector<int>& idegree,
                                           std::vector<int>& odegree) {
-        if (e.src() != invalid_vid) {
-          VID_T src_lid = iv_gid_to_lid(e.src()), dst_lid;
-          if (is_iv_gid(e.dst())) {
-            dst_lid = iv_gid_to_lid(e.dst());
+        if (e.src != invalid_vid) {
+          VID_T src_lid = iv_gid_to_lid(e.src), dst_lid;
+          if (is_iv_gid(e.dst)) {
+            dst_lid = iv_gid_to_lid(e.dst);
           } else {
-            dst_lid = ov_gid_to_lid(e.dst());
+            dst_lid = ov_gid_to_lid(e.dst);
             ++idegree[dst_lid];
             ++ienum_;
           }
           ++odegree[src_lid];
           ++oenum_;
-          e.SetEndpoint(src_lid, dst_lid);
+	  e.src = src_lid;
+	  e.dst = dst_lid;
         }
       };
 
@@ -239,13 +245,14 @@ class HostFragment {
                                     grape::Edge<VID_T, EDATA_T>& e,
                                     std::vector<int>& idegree,
                                     std::vector<int>& odegree) {
-        if (e.src() != invalid_vid) {
-          VID_T src_lid = gid_to_lid(e.src()), dst_lid = gid_to_lid(e.dst());
+        if (e.src != invalid_vid) {
+          VID_T src_lid = gid_to_lid(e.src), dst_lid = gid_to_lid(e.dst);
           ++odegree[src_lid];
           ++idegree[dst_lid];
           ++oenum_;
           ++ienum_;
-          e.SetEndpoint(src_lid, dst_lid);
+	  e.src = src_lid;
+	  e.dst = dst_lid;
         }
       };
 
@@ -287,12 +294,14 @@ class HostFragment {
               const grape::Edge<VID_T, EDATA_T>& e,
               grape::Array<nbr_t*, grape::Allocator<nbr_t*>>& ieiter,
               grape::Array<nbr_t*, grape::Allocator<nbr_t*>>& oeiter) {
-            if (e.src() != invalid_vid) {
-              ieiter[e.dst()]->GetEdgeSrc(e);
-              ++ieiter[e.dst()];
-              if (e.src() >= ivnum_) {
-                oeiter[e.src()]->GetEdgeDst(e);
-                ++oeiter[e.src()];
+            if (e.src != invalid_vid) {
+              ieiter[e.dst]->neighbor = e.src;
+              ieiter[e.dst]->data = e.edata;
+              ++ieiter[e.dst];
+              if (e.src >= ivnum_) {
+                oeiter[e.src]->neighbor = e.dst;
+                oeiter[e.src]->data = e.edata;
+                ++oeiter[e.src];
               }
             }
           };
@@ -302,12 +311,14 @@ class HostFragment {
               const grape::Edge<VID_T, EDATA_T>& e,
               grape::Array<nbr_t*, grape::Allocator<nbr_t*>>& ieiter,
               grape::Array<nbr_t*, grape::Allocator<nbr_t*>>& oeiter) {
-            if (e.src() != invalid_vid) {
-              oeiter[e.src()]->GetEdgeDst(e);
-              ++oeiter[e.src()];
-              if (e.dst() >= ivnum_) {
-                ieiter[e.dst()]->GetEdgeSrc(e);
-                ++ieiter[e.dst()];
+            if (e.src != invalid_vid) {
+              oeiter[e.src]->neighbor = e.dst;
+              oeiter[e.src]->data = e.edata;
+              ++oeiter[e.src];
+              if (e.dst >= ivnum_) {
+                ieiter[e.dst]->neighbor = e.src;
+                ieiter[e.dst]->data = e.edata;
+                ++ieiter[e.dst];
               }
             }
           };
@@ -317,11 +328,13 @@ class HostFragment {
               const grape::Edge<VID_T, EDATA_T>& e,
               grape::Array<nbr_t*, grape::Allocator<nbr_t*>>& ieiter,
               grape::Array<nbr_t*, grape::Allocator<nbr_t*>>& oeiter) {
-            if (e.src() != invalid_vid) {
-              ieiter[e.dst()]->GetEdgeSrc(e);
-              ++ieiter[e.dst()];
-              oeiter[e.src()]->GetEdgeDst(e);
-              ++oeiter[e.src()];
+            if (e.src != invalid_vid) {
+              ieiter[e.dst]->neighbor = e.src;
+              ieiter[e.dst]->data = e.edata;
+              ++ieiter[e.dst];
+              oeiter[e.src]->neighbor = e.dst;
+              oeiter[e.src]->data = e.edata;
+              ++oeiter[e.src];
             }
           };
 
@@ -361,13 +374,13 @@ class HostFragment {
     vdata_.resize(tvnum_);
     if (sizeof(internal_vertex_t) > sizeof(VID_T)) {
       for (auto& v : vertices) {
-        VID_T gid = v.vid();
+        VID_T gid = v.vid;
         if (is_iv_gid(gid)) {
-          vdata_[id_parser_.GetLid(gid)] = v.vdata();
+          vdata_[id_parser_.get_local_id(gid)] = v.vdata;
         } else {
           auto iter = ovg2l_.find(gid);
           if (iter != ovg2l_.end()) {
-            vdata_[iter->second] = v.vdata();
+            vdata_[iter->second] = v.vdata;
           }
         }
       }
@@ -434,8 +447,8 @@ class HostFragment {
     }
 
     for (fid_t i = 0; i < fnum_; ++i) {
-      ia << mirrors_range_[i].begin().GetValue()
-         << mirrors_range_[i].end().GetValue();
+      ia << mirrors_range_[i].begin_value()
+         << mirrors_range_[i].end_value();
     }
     CHECK(io_adaptor->WriteArchive(ia));
     ia.Clear();
@@ -485,7 +498,7 @@ class HostFragment {
       CHECK(io_adaptor->Read(&ovgid_[0], ovnum_ * sizeof(VID_T)));
     }
 
-    id_parser_.Init(fnum_);
+    id_parser_.init(fnum_);
     initOuterVerticesOfFragment();
 
     {
@@ -626,7 +639,7 @@ class HostFragment {
     VID_T gid;
     OID_T internal_oid(oid);
     if (vm_ptr_->GetGid(internal_oid, gid)) {
-      return id_parser_.GetFid(gid) == fid_ ? InnerVertexGid2Vertex(gid, v)
+      return id_parser_.get_fragment_id(gid) == fid_ ? InnerVertexGid2Vertex(gid, v)
                                             : OuterVertexGid2Vertex(gid, v);
     } else {
       return false;
@@ -639,7 +652,7 @@ class HostFragment {
 
   inline fid_t GetFragId(const vertex_t& u) const {
     auto gid = ovgid_[u.GetValue() - ivnum_];
-    return IsInnerVertex(u) ? fid_ : id_parser_.GetFid(gid);
+    return IsInnerVertex(u) ? fid_ : id_parser_.get_fragment_id(gid);
   }
 
   inline const VDATA_T& GetData(const vertex_t& v) const {
@@ -671,7 +684,7 @@ class HostFragment {
   }
 
   inline bool Gid2Vertex(const VID_T& gid, vertex_t& v) const {
-    return id_parser_.GetFid(gid) == fid_ ? InnerVertexGid2Vertex(gid, v)
+    return id_parser_.get_fragment_id(gid) == fid_ ? InnerVertexGid2Vertex(gid, v)
                                           : OuterVertexGid2Vertex(gid, v);
   }
 
@@ -695,8 +708,8 @@ class HostFragment {
     VID_T gid;
     OID_T internal_oid(oid);
     if (vm_ptr_->GetGid(internal_oid, gid)) {
-      if (id_parser_.GetFid(gid) == fid_) {
-        v.SetValue(id_parser_.GetLid(gid));
+      if (id_parser_.get_fragment_id(gid) == fid_) {
+        v.SetValue(id_parser_.get_local_id(gid));
         return true;
       }
     }
@@ -738,7 +751,7 @@ class HostFragment {
   }
 
   inline bool InnerVertexGid2Vertex(const VID_T& gid, vertex_t& v) const {
-    v.SetValue(id_parser_.GetLid(gid));
+    v.SetValue(id_parser_.get_local_id(gid));
     return true;
   }
 
@@ -756,7 +769,7 @@ class HostFragment {
     return ovgid_[v.GetValue() - ivnum_];
   }
   inline VID_T GetInnerVertexGid(const vertex_t& v) const {
-    return id_parser_.Lid2Gid(fid_, v.GetValue());
+    return id_parser_.generate_global_id(fid_, v.GetValue());
   }
 
   /**
@@ -1092,8 +1105,8 @@ class HostFragment {
 
     for (size_t i = 0; i < gid_list.size(); ++i) {
       auto gid = gid_list[i];
-      CHECK_EQ(id_parser_.GetFid(gid), fid_);
-      vertex_vec[i].SetValue(id_parser_.GetLid(gid));
+      CHECK_EQ(id_parser_.get_fragment_id(gid), fid_);
+      vertex_vec[i].SetValue(id_parser_.get_local_id(gid));
     }
     auto& comm_spec = vm_ptr_->GetCommSpec();
     int dev_id = comm_spec.local_id();
@@ -1290,7 +1303,7 @@ class HostFragment {
       adj_list_t edges(eoffset[i], eoffset[i + 1]);
       for (auto& e : edges) {
         if (e.neighbor.GetValue() >= ivnum_) {
-          fid_t fid = id_parser_.GetFid(ovgid_[e.neighbor.GetValue() - ivnum_]);
+          fid_t fid = id_parser_.get_fragment_id(ovgid_[e.neighbor.GetValue() - ivnum_]);
           ++frag_count[fid];
         } else {
           ++frag_count[fid_];
@@ -1427,7 +1440,7 @@ class HostFragment {
         while (ptr != ieoffset_[i + 1]) {
           VID_T lid = ptr->neighbor.GetValue();
           if (lid >= ivnum_) {
-            fid_t f = id_parser_.GetFid(ovgid_[lid - ivnum_]);
+            fid_t f = id_parser_.get_fragment_id(ovgid_[lid - ivnum_]);
             dstset.insert(f);
           }
           ++ptr;
@@ -1438,7 +1451,7 @@ class HostFragment {
         while (ptr != oeoffset_[i + 1]) {
           VID_T lid = ptr->neighbor.GetValue();
           if (lid >= ivnum_) {
-            fid_t f = id_parser_.GetFid(ovgid_[lid - ivnum_]);
+            fid_t f = id_parser_.get_fragment_id(ovgid_[lid - ivnum_]);
             dstset.insert(f);
           }
           ++ptr;
@@ -1481,7 +1494,7 @@ class HostFragment {
 
     for (VID_T i = 0; i < ovnum_; ++i) {
       VID_T gid = ovgid_[i];
-      fid_t fid = id_parser_.GetFid(gid);
+      fid_t fid = id_parser_.get_fragment_id(gid);
 
       CHECK_GE(fid, last_fid);
       last_fid = fid;

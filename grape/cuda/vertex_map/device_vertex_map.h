@@ -18,7 +18,7 @@ limitations under the License.
 
 #ifdef __CUDACC__
 #include "cuda_hashmap/hash_map.h"
-#include "grape/cuda/fragment/id_parser.h"
+#include "grape/fragment/id_parser.h"
 #include "grape/cuda/utils/array_view.h"
 #include "grape/cuda/utils/cuda_utils.h"
 #include "grape/cuda/utils/launcher.h"
@@ -27,7 +27,7 @@ limitations under the License.
 
 namespace grape {
 namespace cuda {
-template <typename OID_T, typename VID_T>
+template <typename VERTEX_MAP_T>
 class DeviceVertexMap;
 
 namespace dev {
@@ -35,8 +35,8 @@ template <typename OID_T, typename VID_T>
 class DeviceVertexMap {
  public:
   DEV_INLINE bool GetOid(const VID_T& gid, OID_T& oid) const {
-    auto fid = id_parser_.GetFid(gid);
-    auto lid = id_parser_.GetLid(gid);
+    auto fid = id_parser_.get_fragment_id(gid);
+    auto lid = id_parser_.get_local_id(gid);
     return GetOid(fid, lid, oid);
   }
 
@@ -58,7 +58,7 @@ class DeviceVertexMap {
       return false;
     } else {
       auto lid = iter->value;
-      gid = id_parser_.Lid2Gid(fid, lid);
+      gid = id_parser_.generate_global_id(fid, lid);
       return true;
     }
   }
@@ -80,7 +80,7 @@ class DeviceVertexMap {
   ArrayView<CUDASTL::HashMap<OID_T, VID_T>*> o2l_;
   ArrayView<ArrayView<OID_T>> l2o_;
 
-  template <typename _OID_T, typename _VID_T>
+  template <typename _VERTEX_MAP_T>
   friend class grape::cuda::DeviceVertexMap;
 };
 }  // namespace dev
@@ -92,11 +92,13 @@ class DeviceVertexMap {
  * @tparam OID_T
  * @tparam VID_T
  */
-template <typename OID_T, typename VID_T>
+template <typename HOST_VM_T>
 class DeviceVertexMap {
+  using OID_T = typename HOST_VM_T::oid_t;
+  using VID_T = typename HOST_VM_T::vid_t;
  public:
   explicit DeviceVertexMap(
-      std::shared_ptr<grape::GlobalVertexMap<OID_T, VID_T>> vm_ptr)
+      std::shared_ptr<HOST_VM_T> vm_ptr)
       : vm_ptr_(std::move(vm_ptr)) {}
 
   void Init(const Stream& stream) {
@@ -106,7 +108,7 @@ class DeviceVertexMap {
 
     CHECK_CUDA(cudaSetDevice(dev_id));
 
-    id_parser_.Init(fnum);
+    id_parser_.init(fnum);
     d_o2l_.resize(fnum);
     d_l2o_.resize(fnum);
     d_l2o_ptr_.resize(fnum);
@@ -161,7 +163,7 @@ class DeviceVertexMap {
   }
 
  private:
-  std::shared_ptr<grape::GlobalVertexMap<OID_T, VID_T>> vm_ptr_;
+  std::shared_ptr<HOST_VM_T> vm_ptr_;
   IdParser<VID_T> id_parser_;
   // l2o for per device
   thrust::device_vector<
