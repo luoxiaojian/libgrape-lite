@@ -97,9 +97,7 @@ class SegmentedPartitioner {
 
   inline fid_t GetPartitionId(const OID_T& oid) const { return o2f_.at(oid); }
 
-  void SetPartitionId(const OID_T& oid, fid_t fid) {
-    o2f_[oid] = fid;
-  }
+  void SetPartitionId(const OID_T& oid, fid_t fid) { o2f_[oid] = fid; }
 
   SegmentedPartitioner& operator=(const SegmentedPartitioner& other) {
     if (this == &other) {

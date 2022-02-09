@@ -360,7 +360,7 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
       for (auto& pair : hmap) {
         VID_T new_gid = gid_maps[fid][pair.second];
         fid_t new_fid = GetFidFromGid(new_gid);
-	if (new_fid != fid) {
+        if (new_fid != fid) {
           partitioner_.SetPartitionId(pair.first, new_fid);
         }
         VID_T new_lid = GetLidFromGid(new_gid);
