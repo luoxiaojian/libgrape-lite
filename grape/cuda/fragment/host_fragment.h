@@ -30,12 +30,12 @@ limitations under the License.
 #include "grape/config.h"
 #include "grape/cuda/fragment/coo_fragment.h"
 #include "grape/cuda/fragment/device_fragment.h"
-#include "grape/fragment/id_parser.h"
 #include "grape/cuda/utils/cuda_utils.h"
 #include "grape/cuda/utils/dev_utils.h"
 #include "grape/cuda/utils/stream.h"
 #include "grape/cuda/vertex_map/device_vertex_map.h"
 #include "grape/fragment/edgecut_fragment_base.h"
+#include "grape/fragment/id_parser.h"
 #include "grape/graph/adj_list.h"
 #include "grape/graph/edge.h"
 #include "grape/graph/vertex.h"
@@ -65,7 +65,7 @@ inline void CalculateOffsetWithPrefixSum(const Stream& stream,
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
           grape::LoadStrategy _load_strategy = grape::LoadStrategy::kOnlyOut,
-	  typename VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T>>
+          typename VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T>>
 class HostFragment {
  public:
   using internal_vertex_t = grape::internal::Vertex<VID_T, VDATA_T>;
@@ -116,7 +116,9 @@ class HostFragment {
     oeoffset_.clear();
 
     VID_T invalid_vid = std::numeric_limits<VID_T>::max();
-    auto is_iv_gid = [this](VID_T id) { return id_parser_.get_fragment_id(id) == fid_; };
+    auto is_iv_gid = [this](VID_T id) {
+      return id_parser_.get_fragment_id(id) == fid_;
+    };
     {
       std::vector<VID_T> outer_vertices;
       auto first_iter_in = [&is_iv_gid, invalid_vid](
@@ -194,11 +196,14 @@ class HostFragment {
       oenum_ = 0;
 
       auto gid_to_lid = [this](VID_T gid) {
-        return (id_parser_.get_fragment_id(gid) == fid_) ? id_parser_.get_local_id(gid)
-                                                : (ovg2l_.at(gid));
+        return (id_parser_.get_fragment_id(gid) == fid_)
+                   ? id_parser_.get_local_id(gid)
+                   : (ovg2l_.at(gid));
       };
 
-      auto iv_gid_to_lid = [this](VID_T gid) { return id_parser_.get_local_id(gid); };
+      auto iv_gid_to_lid = [this](VID_T gid) {
+        return id_parser_.get_local_id(gid);
+      };
       auto ov_gid_to_lid = [this](VID_T gid) { return ovg2l_.at(gid); };
 
       auto second_iter_in = [this, &iv_gid_to_lid, &ov_gid_to_lid, invalid_vid,
@@ -216,8 +221,8 @@ class HostFragment {
           }
           ++idegree[dst_lid];
           ++ienum_;
-	  e.src = src_lid;
-	  e.dst = dst_lid;
+          e.src = src_lid;
+          e.dst = dst_lid;
         }
       };
 
@@ -236,8 +241,8 @@ class HostFragment {
           }
           ++odegree[src_lid];
           ++oenum_;
-	  e.src = src_lid;
-	  e.dst = dst_lid;
+          e.src = src_lid;
+          e.dst = dst_lid;
         }
       };
 
@@ -251,8 +256,8 @@ class HostFragment {
           ++idegree[dst_lid];
           ++oenum_;
           ++ienum_;
-	  e.src = src_lid;
-	  e.dst = dst_lid;
+          e.src = src_lid;
+          e.dst = dst_lid;
         }
       };
 
@@ -447,8 +452,7 @@ class HostFragment {
     }
 
     for (fid_t i = 0; i < fnum_; ++i) {
-      ia << mirrors_range_[i].begin_value()
-         << mirrors_range_[i].end_value();
+      ia << mirrors_range_[i].begin_value() << mirrors_range_[i].end_value();
     }
     CHECK(io_adaptor->WriteArchive(ia));
     ia.Clear();
@@ -639,8 +643,9 @@ class HostFragment {
     VID_T gid;
     OID_T internal_oid(oid);
     if (vm_ptr_->GetGid(internal_oid, gid)) {
-      return id_parser_.get_fragment_id(gid) == fid_ ? InnerVertexGid2Vertex(gid, v)
-                                            : OuterVertexGid2Vertex(gid, v);
+      return id_parser_.get_fragment_id(gid) == fid_
+                 ? InnerVertexGid2Vertex(gid, v)
+                 : OuterVertexGid2Vertex(gid, v);
     } else {
       return false;
     }
@@ -684,8 +689,9 @@ class HostFragment {
   }
 
   inline bool Gid2Vertex(const VID_T& gid, vertex_t& v) const {
-    return id_parser_.get_fragment_id(gid) == fid_ ? InnerVertexGid2Vertex(gid, v)
-                                          : OuterVertexGid2Vertex(gid, v);
+    return id_parser_.get_fragment_id(gid) == fid_
+               ? InnerVertexGid2Vertex(gid, v)
+               : OuterVertexGid2Vertex(gid, v);
   }
 
   inline VID_T Vertex2Gid(const vertex_t& v) const {
@@ -1243,21 +1249,20 @@ class HostFragment {
         idx++;
       }
 
-      LaunchKernel(
-          stream,
-          [] __device__(VID_T * gids, VID_T * lids, VID_T size,
-                        CUDASTL::HashMap<VID_T, VID_T> * ovg2l) {
-            auto tid = TID_1D;
-            auto nthreads = TOTAL_THREADS_1D;
+      LaunchKernel(stream,
+                   [] __device__(VID_T * gids, VID_T * lids, VID_T size,
+                                 CUDASTL::HashMap<VID_T, VID_T> * ovg2l) {
+                     auto tid = TID_1D;
+                     auto nthreads = TOTAL_THREADS_1D;
 
-            for (VID_T idx = 0 + tid; idx < size; idx += nthreads) {
-              VID_T gid = gids[idx];
-              VID_T lid = lids[idx];
+                     for (VID_T idx = 0 + tid; idx < size; idx += nthreads) {
+                       VID_T gid = gids[idx];
+                       VID_T lid = lids[idx];
 
-              (*ovg2l)[gid] = lid;
-            }
-          },
-          gids.data(), lids.data(), size, d_ovg2l_.get());
+                       (*ovg2l)[gid] = lid;
+                     }
+                   },
+                   gids.data(), lids.data(), size, d_ovg2l_.get());
     }
 
     d_mirrors_of_frag_holder_.resize(fnum_);
@@ -1303,7 +1308,8 @@ class HostFragment {
       adj_list_t edges(eoffset[i], eoffset[i + 1]);
       for (auto& e : edges) {
         if (e.neighbor.GetValue() >= ivnum_) {
-          fid_t fid = id_parser_.get_fragment_id(ovgid_[e.neighbor.GetValue() - ivnum_]);
+          fid_t fid = id_parser_.get_fragment_id(
+              ovgid_[e.neighbor.GetValue() - ivnum_]);
           ++frag_count[fid];
         } else {
           ++frag_count[fid_];
@@ -1330,20 +1336,20 @@ class HostFragment {
           h_degree[i] = e_splitter[i] - eoffset[0];
         }
 
-        LaunchKernel(
-            stream,
-            [] __device__(size_t * h_degree, vid_t ivnum,
-                          ArrayView<nbr_t*> offset,
-                          ArrayView<nbr_t*> espliter) {
-              auto tid = TID_1D;
-              auto nthreads = TOTAL_THREADS_1D;
+        LaunchKernel(stream,
+                     [] __device__(size_t * h_degree, vid_t ivnum,
+                                   ArrayView<nbr_t*> offset,
+                                   ArrayView<nbr_t*> espliter) {
+                       auto tid = TID_1D;
+                       auto nthreads = TOTAL_THREADS_1D;
 
-              for (size_t i = 0 + tid; i < ivnum; i += nthreads) {
-                espliter[i] = offset[0] + h_degree[i];
-              }
-            },
-            thrust::raw_pointer_cast(h_degree.data()), ivnum_,
-            ArrayView<nbr_t*>(d_eoffset), ArrayView<nbr_t*>(d_espliters[fid]));
+                       for (size_t i = 0 + tid; i < ivnum; i += nthreads) {
+                         espliter[i] = offset[0] + h_degree[i];
+                       }
+                     },
+                     thrust::raw_pointer_cast(h_degree.data()), ivnum_,
+                     ArrayView<nbr_t*>(d_eoffset),
+                     ArrayView<nbr_t*>(d_espliters[fid]));
       }
     }
   }

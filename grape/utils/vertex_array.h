@@ -165,9 +165,13 @@ class VertexRange {
       return iterator(cur_.GetValue() + offset);
     }
 
-    DEV_HOST bool operator==(const iterator& rhs) noexcept { return cur_ == rhs.cur_; }
+    DEV_HOST bool operator==(const iterator& rhs) noexcept {
+      return cur_ == rhs.cur_;
+    }
 
-    DEV_HOST bool operator!=(const iterator& rhs) noexcept { return cur_ != rhs.cur_; }
+    DEV_HOST bool operator!=(const iterator& rhs) noexcept {
+      return cur_ != rhs.cur_;
+    }
   };
 
   DEV_HOST_INLINE iterator begin() const { return iterator(begin_); }
@@ -223,12 +227,12 @@ class DualVertexRange {
   DualVertexRange() {}
 
   DualVertexRange(const VID_T& head_begin, const VID_T& head_end,
-                           const VID_T& tail_begin, const VID_T& tail_end) {
+                  const VID_T& tail_begin, const VID_T& tail_end) {
     SetRange(head_begin, head_end, tail_begin, tail_end);
   }
 
   void SetRange(const VID_T& head_begin, const VID_T& head_end,
-                         const VID_T& tail_begin, const VID_T& tail_end) {
+                const VID_T& tail_begin, const VID_T& tail_end) {
     head_begin_ = head_begin;
     tail_begin_ = tail_begin;
     head_end_ = std::max(head_begin_, head_end);
@@ -323,15 +327,15 @@ class DualVertexRange {
     return (head_end_ - head_begin_) + (tail_end_ - tail_begin_);
   }
 
-  friend InArchive& operator<<(
-      InArchive& in_archive, const DualVertexRange<VID_T>& range) {
+  friend InArchive& operator<<(InArchive& in_archive,
+                               const DualVertexRange<VID_T>& range) {
     in_archive << range.head_begin_ << range.head_end_ << range.tail_begin_
                << range.tail_end_;
     return in_archive;
   }
 
   friend OutArchive& operator>>(OutArchive& out_archive,
-                                                DualVertexRange<VID_T>& range) {
+                                DualVertexRange<VID_T>& range) {
     out_archive >> range.head_begin_ >> range.head_end_ >> range.tail_begin_ >>
         range.tail_end_;
     return out_archive;

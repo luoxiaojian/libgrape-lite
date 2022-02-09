@@ -18,11 +18,11 @@ limitations under the License.
 
 #ifdef __CUDACC__
 #include "cuda_hashmap/hash_map.h"
-#include "grape/fragment/id_parser.h"
 #include "grape/cuda/utils/array_view.h"
 #include "grape/cuda/utils/cuda_utils.h"
 #include "grape/cuda/utils/launcher.h"
 #include "grape/cuda/utils/stream.h"
+#include "grape/fragment/id_parser.h"
 #include "grape/vertex_map/global_vertex_map.h"
 
 namespace grape {
@@ -96,9 +96,9 @@ template <typename HOST_VM_T>
 class DeviceVertexMap {
   using OID_T = typename HOST_VM_T::oid_t;
   using VID_T = typename HOST_VM_T::vid_t;
+
  public:
-  explicit DeviceVertexMap(
-      std::shared_ptr<HOST_VM_T> vm_ptr)
+  explicit DeviceVertexMap(std::shared_ptr<HOST_VM_T> vm_ptr)
       : vm_ptr_(std::move(vm_ptr)) {}
 
   void Init(const Stream& stream) {
@@ -128,20 +128,19 @@ class DeviceVertexMap {
         oids[lid] = oid;
       }
 
-      LaunchKernel(
-          stream,
-          [] __device__(OID_T * oids, VID_T size,
-                        CUDASTL::HashMap<OID_T, VID_T> * o2l) {
-            auto tid = TID_1D;
-            auto nthreads = TOTAL_THREADS_1D;
+      LaunchKernel(stream,
+                   [] __device__(OID_T * oids, VID_T size,
+                                 CUDASTL::HashMap<OID_T, VID_T> * o2l) {
+                     auto tid = TID_1D;
+                     auto nthreads = TOTAL_THREADS_1D;
 
-            for (VID_T lid = 0 + tid; lid < size; lid += nthreads) {
-              OID_T oid = oids[lid];
+                     for (VID_T lid = 0 + tid; lid < size; lid += nthreads) {
+                       OID_T oid = oids[lid];
 
-              (*o2l)[oid] = lid;
-            }
-          },
-          oids.data(), ivnum, d_o2l_[fid]);
+                       (*o2l)[oid] = lid;
+                     }
+                   },
+                   oids.data(), ivnum, d_o2l_[fid]);
       d_l2o_[fid].assign(oids.begin(), oids.end());
       d_l2o_ptr_[fid] = ArrayView<OID_T>(d_l2o_[fid]);
     }

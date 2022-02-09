@@ -56,9 +56,7 @@ class DenseVertexSet {
   DenseVertexSet() = default;
 
   explicit DenseVertexSet(const VertexRange<VID_T>& range)
-      : beg_(range.begin_value()),
-        end_(range.end_value()),
-        bs_(end_ - beg_) {}
+      : beg_(range.begin_value()), end_(range.end_value()), bs_(end_ - beg_) {}
 
   ~DenseVertexSet() = default;
 

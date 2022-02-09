@@ -118,8 +118,10 @@ void CreateAndQuery(const grape::CommSpec& comm_spec, const std::string& efile,
     graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
   if (FLAGS_segmented_partition) {
-    using VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T, SegmentedPartitioner<OID_T>>;
-    using FRAG_T = grape::cuda::HostFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy, VERTEX_MAP_T>;
+    using VERTEX_MAP_T =
+        GlobalVertexMap<OID_T, VID_T, SegmentedPartitioner<OID_T>>;
+    using FRAG_T = grape::cuda::HostFragment<OID_T, VID_T, VDATA_T, EDATA_T,
+                                             load_strategy, VERTEX_MAP_T>;
     std::shared_ptr<FRAG_T> fragment;
     int dev_id = comm_spec.local_id();
     int dev_count;
@@ -132,10 +134,12 @@ void CreateAndQuery(const grape::CommSpec& comm_spec, const std::string& efile,
     fragment = LoadGraph<FRAG_T>(efile, vfile, comm_spec, graph_spec);
 
     auto app = std::make_shared<APP_T<FRAG_T>>();
-    DoQuery<FRAG_T, APP_T<FRAG_T>, Args...>(fragment, app, comm_spec, dev_id, out_prefix, args...);
+    DoQuery<FRAG_T, APP_T<FRAG_T>, Args...>(fragment, app, comm_spec, dev_id,
+                                            out_prefix, args...);
   } else {
     using VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T, HashPartitioner<OID_T>>;
-    using FRAG_T = grape::cuda::HostFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy, VERTEX_MAP_T>;
+    using FRAG_T = grape::cuda::HostFragment<OID_T, VID_T, VDATA_T, EDATA_T,
+                                             load_strategy, VERTEX_MAP_T>;
     std::shared_ptr<FRAG_T> fragment;
     int dev_id = comm_spec.local_id();
     int dev_count;
@@ -148,7 +152,8 @@ void CreateAndQuery(const grape::CommSpec& comm_spec, const std::string& efile,
     fragment = LoadGraph<FRAG_T>(efile, vfile, comm_spec, graph_spec);
 
     auto app = std::make_shared<APP_T<FRAG_T>>();
-    DoQuery<FRAG_T, APP_T<FRAG_T>, Args...>(fragment, app, comm_spec, dev_id, out_prefix, args...);
+    DoQuery<FRAG_T, APP_T<FRAG_T>, Args...>(fragment, app, comm_spec, dev_id,
+                                            out_prefix, args...);
   }
 }
 
@@ -173,41 +178,43 @@ void Run() {
   app_config.wl_alloc_factor_out_remote = 0.2;
 
   if (application == "bfs") {
-    CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T, grape::LoadStrategy::kOnlyOut, BFS>
-	    (comm_spec, efile, vfile, out_prefix, app_config, FLAGS_bfs_source);
+    CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T,
+                   grape::LoadStrategy::kOnlyOut, BFS>(
+        comm_spec, efile, vfile, out_prefix, app_config, FLAGS_bfs_source);
   } else if (application == "sssp") {
 #ifdef INT_WEIGHT
-	  using WeightT = uint32_t;
+    using WeightT = uint32_t;
 #else
-	  using WeightT = float;
+    using WeightT = float;
 #endif
-    CreateAndQuery<OID_T, VID_T, VDATA_T, WeightT, grape::LoadStrategy::kOnlyOut, SSSP>
-	    (comm_spec, efile, vfile, out_prefix,
-                      app_config, FLAGS_sssp_source, 0);
+    CreateAndQuery<OID_T, VID_T, VDATA_T, WeightT,
+                   grape::LoadStrategy::kOnlyOut, SSSP>(
+        comm_spec, efile, vfile, out_prefix, app_config, FLAGS_sssp_source, 0);
   } else if (application == "wcc") {
-    CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T, grape::LoadStrategy::kOnlyOut, WCC>
-	    (comm_spec, efile, vfile, out_prefix,
-                                       app_config);
+    CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T,
+                   grape::LoadStrategy::kOnlyOut, WCC>(comm_spec, efile, vfile,
+                                                       out_prefix, app_config);
   } else if (application == "wcc_opt") {
-    CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T, grape::LoadStrategy::kOnlyOut, WCCOpt>
-	    (comm_spec, efile, vfile, out_prefix,
-                                       app_config);
+    CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T,
+                   grape::LoadStrategy::kOnlyOut, WCCOpt>(
+        comm_spec, efile, vfile, out_prefix, app_config);
   } else if (application == "pagerank") {
-    CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T, grape::LoadStrategy::kOnlyOut, Pagerank>
-	    (comm_spec, efile, vfile, out_prefix,
-                                       app_config, FLAGS_pr_d, FLAGS_pr_mr);
+    CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T,
+                   grape::LoadStrategy::kOnlyOut, Pagerank>(
+        comm_spec, efile, vfile, out_prefix, app_config, FLAGS_pr_d,
+        FLAGS_pr_mr);
   } else if (application == "lcc") {
-    CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T, grape::LoadStrategy::kOnlyOut, LCC>
-	    (comm_spec, efile, vfile, out_prefix,
-                                       app_config);
+    CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T,
+                   grape::LoadStrategy::kOnlyOut, LCC>(comm_spec, efile, vfile,
+                                                       out_prefix, app_config);
   } else if (application == "lcc_opt") {
-    CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T, grape::LoadStrategy::kOnlyOut, LCC_OPT>
-	    (comm_spec, efile, vfile, out_prefix,
-                                       app_config);
+    CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T,
+                   grape::LoadStrategy::kOnlyOut, LCC_OPT>(
+        comm_spec, efile, vfile, out_prefix, app_config);
   } else if (application == "cdlp") {
-    CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T, grape::LoadStrategy::kOnlyOut, CDLP>
-	    (comm_spec, efile, vfile, out_prefix,
-                                       app_config, FLAGS_cdlp_mr);
+    CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T,
+                   grape::LoadStrategy::kOnlyOut, CDLP>(
+        comm_spec, efile, vfile, out_prefix, app_config, FLAGS_cdlp_mr);
   } else {
     LOG(FATAL) << "Invalid app name: " << application;
   }
