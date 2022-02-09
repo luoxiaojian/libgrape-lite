@@ -451,20 +451,6 @@ class HostFragment {
       CHECK(io_adaptor->Write(&odegree[0], sizeof(int) * tvnum_));
     }
 
-    for (fid_t i = 0; i < fnum_; ++i) {
-      ia << mirrors_range_[i].begin_value() << mirrors_range_[i].end_value();
-    }
-    CHECK(io_adaptor->WriteArchive(ia));
-    ia.Clear();
-
-    for (fid_t i = 0; i < fnum_; ++i) {
-      CHECK_EQ(mirrors_range_[i].size(), mirrors_of_frag_[i].size());
-      if (mirrors_range_[i].size() != 0) {
-        CHECK(io_adaptor->Write(&mirrors_of_frag_[i][0],
-                                sizeof(vertex_t) * mirrors_of_frag_[i].size()));
-      }
-    }
-
     ia << vdata_;
     CHECK(io_adaptor->WriteArchive(ia));
     ia.Clear();
@@ -561,21 +547,9 @@ class HostFragment {
 
     mirrors_range_.clear();
     mirrors_range_.resize(fnum_);
+    mirrors_range_[fid_].SetRange(0, 0);
     mirrors_of_frag_.clear();
     mirrors_of_frag_.resize(fnum_);
-    CHECK(io_adaptor->ReadArchive(oa));
-    for (fid_t i = 0; i < fnum_; ++i) {
-      VID_T begin, end;
-      oa >> begin >> end;
-      mirrors_range_[i].SetRange(begin, end);
-      VID_T len = end - begin;
-      mirrors_of_frag_[i].resize(len);
-      if (len != 0) {
-        CHECK(
-            io_adaptor->Read(&mirrors_of_frag_[i][0], len * sizeof(vertex_t)));
-      }
-    }
-    oa.Clear();
 
     CHECK(io_adaptor->ReadArchive(oa));
     oa >> vdata_;
@@ -585,16 +559,15 @@ class HostFragment {
     __allocate_device_fragment__();
   }
 
-  void PrepareToRunApp(grape::MessageStrategy strategy, bool need_split_edges,
-                       bool need_build_device_vm) {
+  void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) {
     Stream stream;
-    if (strategy == grape::MessageStrategy::kAlongEdgeToOuterVertex ||
-        strategy == grape::MessageStrategy::kAlongIncomingEdgeToOuterVertex ||
-        strategy == grape::MessageStrategy::kAlongOutgoingEdgeToOuterVertex) {
-      initMessageDestination(stream, strategy);
+    if (conf.message_strategy == grape::MessageStrategy::kAlongEdgeToOuterVertex ||
+        conf.message_strategy == grape::MessageStrategy::kAlongIncomingEdgeToOuterVertex ||
+        conf.message_strategy == grape::MessageStrategy::kAlongOutgoingEdgeToOuterVertex) {
+      initMessageDestination(stream, conf.message_strategy);
     }
 
-    if (need_split_edges) {
+    if (conf.need_split_edges) {
       if (load_strategy == grape::LoadStrategy::kOnlyIn ||
           load_strategy == grape::LoadStrategy::kBothOutIn) {
         __init_edges_splitter__(stream, ieoffset_, iespliters_, d_ieoffset_,
@@ -607,7 +580,11 @@ class HostFragment {
       }
     }
 
-    if (need_build_device_vm) {
+    if (conf.need_mirror_info) {
+      initMirrorInfo(comm_spec);
+    }
+
+    if (conf.need_build_device_vm) {
       d_vm_ptr_->Init(stream);
     }
     stream.Sync();
@@ -1098,31 +1075,6 @@ class HostFragment {
     return mirrors_of_frag_[fid];
   }
 
-  inline const VertexRange<VID_T>& MirrorsRange(fid_t fid) const {
-    return mirrors_range_[fid];
-  }
-
-  void SetupMirrorInfo(fid_t fid, const vertex_range_t& range,
-                       const std::vector<VID_T>& gid_list) {
-    mirrors_range_[fid].SetRange(range.begin().GetValue(),
-                                 range.end().GetValue());
-    auto& vertex_vec = mirrors_of_frag_[fid];
-    vertex_vec.resize(gid_list.size());
-
-    for (size_t i = 0; i < gid_list.size(); ++i) {
-      auto gid = gid_list[i];
-      CHECK_EQ(id_parser_.get_fragment_id(gid), fid_);
-      vertex_vec[i].SetValue(id_parser_.get_local_id(gid));
-    }
-    auto& comm_spec = vm_ptr_->GetCommSpec();
-    int dev_id = comm_spec.local_id();
-    CHECK_CUDA(cudaSetDevice(dev_id));
-    // SetupMirrorInfo will be invoked after Init, so we copy mirrors for here
-    d_mirrors_of_frag_holder_[fid] = mirrors_of_frag_[fid];
-    d_mirrors_of_frag_[fid] =
-        ArrayView<vertex_t>(d_mirrors_of_frag_holder_[fid]);
-  }
-
   device_t DeviceObject() const {
     device_t dev_frag;
 
@@ -1518,6 +1470,50 @@ class HostFragment {
       cur_lid = next_lid;
     }
     CHECK_EQ(cur_lid, tvnum_);
+  }
+
+  void initMirrorInfo(const CommSpec& comm_spec) {
+    int worker_id = comm_spec.worker_id();
+    int worker_num = comm_spec.worker_num();
+    mirrors_of_frag_.resize(fnum_);
+
+    std::thread send_thread([&]() {
+      std::vector<vertex_t> gid_list;
+      for (int i = 1; i < worker_num; ++i) {
+        int dst_worker_id = (worker_id + i) % worker_num;
+        fid_t dst_fid = comm_spec.WorkerToFrag(dst_worker_id);
+        auto& range = OuterVertices(dst_fid);
+        gid_list.clear();
+        gid_list.reserve(range.size());
+        for (auto& v : range) {
+          gid_list.emplace_back(id_parser_.get_local_id(Vertex2Gid(v)));
+        }
+        sync_comm::Send<std::vector<vertex_t>>(gid_list, dst_worker_id, 0,
+                                               comm_spec.comm());
+      }
+    });
+
+    std::thread recv_thread([&]() {
+      for (int i = 1; i < worker_num; ++i) {
+        int src_worker_id = (worker_id + worker_num - i) % worker_num;
+        fid_t src_fid = comm_spec.WorkerToFrag(src_worker_id);
+        auto& mirror_vec = mirrors_of_frag_[src_fid];
+        sync_comm::Recv<std::vector<vertex_t>>(mirror_vec, src_worker_id, 0,
+                                               comm_spec.comm());
+      }
+    });
+
+    recv_thread.join();
+    send_thread.join();
+
+    int dev_id = comm_spec.local_id();
+    CHECK_CUDA(cudaSetDevice(dev_id));
+
+    for (fid_t i = 0; i < fnum_; ++i) {
+      d_mirrors_of_frag_holder_[i] = mirrors_of_frag_[i];
+      d_mirrors_of_frag_[i] =
+          ArrayView<vertex_t>(d_mirrors_of_frag_holder_[i]);
+    }
   }
 
   std::shared_ptr<vertex_map_t> vm_ptr_;
