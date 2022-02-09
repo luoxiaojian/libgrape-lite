@@ -561,9 +561,12 @@ class HostFragment {
 
   void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) {
     Stream stream;
-    if (conf.message_strategy == grape::MessageStrategy::kAlongEdgeToOuterVertex ||
-        conf.message_strategy == grape::MessageStrategy::kAlongIncomingEdgeToOuterVertex ||
-        conf.message_strategy == grape::MessageStrategy::kAlongOutgoingEdgeToOuterVertex) {
+    if (conf.message_strategy ==
+            grape::MessageStrategy::kAlongEdgeToOuterVertex ||
+        conf.message_strategy ==
+            grape::MessageStrategy::kAlongIncomingEdgeToOuterVertex ||
+        conf.message_strategy ==
+            grape::MessageStrategy::kAlongOutgoingEdgeToOuterVertex) {
       initMessageDestination(stream, conf.message_strategy);
     }
 
@@ -1511,8 +1514,7 @@ class HostFragment {
 
     for (fid_t i = 0; i < fnum_; ++i) {
       d_mirrors_of_frag_holder_[i] = mirrors_of_frag_[i];
-      d_mirrors_of_frag_[i] =
-          ArrayView<vertex_t>(d_mirrors_of_frag_holder_[i]);
+      d_mirrors_of_frag_[i] = ArrayView<vertex_t>(d_mirrors_of_frag_holder_[i]);
     }
   }
 
