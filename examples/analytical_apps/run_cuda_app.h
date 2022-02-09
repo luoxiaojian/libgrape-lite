@@ -137,6 +137,7 @@ void CreateAndQuery(const grape::CommSpec& comm_spec, const std::string& efile,
     DoQuery<FRAG_T, APP_T<FRAG_T>, Args...>(fragment, app, comm_spec, dev_id,
                                             out_prefix, args...);
   } else {
+    graph_spec.set_rebalance(false, 0);
     using VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T, HashPartitioner<OID_T>>;
     using FRAG_T = grape::cuda::HostFragment<OID_T, VID_T, VDATA_T, EDATA_T,
                                              load_strategy, VERTEX_MAP_T>;
