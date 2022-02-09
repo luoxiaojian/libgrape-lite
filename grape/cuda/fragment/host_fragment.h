@@ -1482,7 +1482,7 @@ class HostFragment {
       for (int i = 1; i < worker_num; ++i) {
         int dst_worker_id = (worker_id + i) % worker_num;
         fid_t dst_fid = comm_spec.WorkerToFrag(dst_worker_id);
-        auto& range = OuterVertices(dst_fid);
+        auto range = OuterVertices(dst_fid);
         gid_list.clear();
         gid_list.reserve(range.size());
         for (auto& v : range) {
