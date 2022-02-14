@@ -17,7 +17,6 @@ limitations under the License.
 #define EXAMPLES_GNN_SAMPLER_APPEND_ONLY_EDGECUT_FRAGMENT_H_
 
 #include <grape/config.h>
-#include <grape/fragment/basic_fragment_loader.h>
 #include <grape/fragment/edgecut_fragment_base.h>
 #include <grape/fragment/fragment_base.h>
 #include <grape/fragment/partitioner.h>

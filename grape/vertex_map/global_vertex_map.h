@@ -24,16 +24,13 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
-#include "flat_hash_map/flat_hash_map.hpp"
 #include "grape/config.h"
 #include "grape/fragment/partitioner.h"
+#include "grape/graph/id_indexer.h"
 #include "grape/serialization/in_archive.h"
 #include "grape/serialization/out_archive.h"
 #include "grape/vertex_map/vertex_map_base.h"
 #include "grape/worker/comm_spec.h"
-
-template <typename Key, typename Value>
-using HashMap = ska::flat_hash_map<Key, Value>;
 
 namespace grape {
 
@@ -43,40 +40,16 @@ class GlobalVertexMap;
 template <typename OID_T, typename VID_T, typename PARTITIONER_T>
 class GlobalVertexMapBuilder {
  private:
-  GlobalVertexMapBuilder(fid_t fid, HashMap<OID_T, VID_T>& hmap,
-                         std::vector<OID_T>& list,
-                         const PARTITIONER_T& partitioner,
-                         const IdParser<VID_T>& id_parser)
-      : fid_(fid),
-        map_(hmap),
-        list_(list),
-        partitioner_(partitioner),
-        id_parser_(id_parser),
-        init_size_(list.size()) {}
+  GlobalVertexMapBuilder(fid_t fid, IdIndexer<OID_T, VID_T>& indexer,
+                         const PARTITIONER_T& partitioner)
+      : fid_(fid), indexer_(indexer), partitioner_(partitioner) {}
 
  public:
   ~GlobalVertexMapBuilder() {}
 
   void add_vertex(const OID_T& id) {
-    assert(partitioner_.GetPartitionId(id) == fid_);
-    if (map_.find(id) == map_.end()) {
-      map_.emplace(id, static_cast<VID_T>(list_.size()));
-      list_.emplace_back(id);
-    }
-  }
-
-  bool add_vertex(const OID_T& id, VID_T& gid) {
-    assert(partitioner_.GetPartitionId(id) == fid_);
-    auto iter = map_.find(id);
-    if (iter == map_.end()) {
-      gid = static_cast<VID_T>(list_.size());
-      map_.emplace(id, gid);
-      list_.emplace_back(id);
-      gid = id_parser_.generate_global_id(fid_, gid);
-      return true;
-    } else {
-      gid = id_parser_.generate_global_id(fid_, iter->second);
-      return false;
+    if (partitioner_.GetPartitionId(id) == fid_) {
+      indexer_._add(id);
     }
   }
 
@@ -94,10 +67,8 @@ class GlobalVertexMapBuilder {
             if (comm_spec.FragToWorker(fid) != src_worker_id) {
               continue;
             }
-            init_sizes[fid] = vertex_map.l2o_[fid].size();
-            sync_comm::RecvAt<OID_T>(vertex_map.l2o_[fid],
-                                     vertex_map.l2o_[fid].size(), src_worker_id,
-                                     0, comm_spec.comm());
+            sync_comm::Recv(vertex_map.indexers_[fid], src_worker_id, 0,
+                            comm_spec.comm());
           }
           src_worker_id = (src_worker_id + 1) % worker_num;
         }
@@ -109,45 +80,13 @@ class GlobalVertexMapBuilder {
             if (comm_spec.FragToWorker(fid) != worker_id) {
               continue;
             }
-            sync_comm::SendPartial<OID_T>(list_, init_size_, list_.size(),
-                                          dst_worker_id, 0, comm_spec.comm());
+            sync_comm::Send(indexer_, dst_worker_id, 0, comm_spec.comm());
           }
           dst_worker_id = (dst_worker_id + worker_num - 1) % worker_num;
         }
       });
       send_thread.join();
       recv_thread.join();
-    }
-    {
-      int thread_num =
-          (std::thread::hardware_concurrency() + comm_spec.local_num() - 1) /
-          comm_spec.local_num();
-      std::atomic<fid_t> current_fid(0);
-      std::vector<std::thread> work_threads(thread_num);
-      for (int tid = 0; tid < thread_num; ++tid) {
-        work_threads[tid] = std::thread([&] {
-          fid_t got;
-          while (true) {
-            got = current_fid.fetch_add(1, std::memory_order_relaxed);
-            if (got >= fnum) {
-              break;
-            }
-            if (comm_spec.FragToWorker(got) == worker_id) {
-              continue;
-            }
-            auto& rm = vertex_map.o2l_[got];
-            auto& ol = vertex_map.l2o_[got];
-            VID_T vnum = static_cast<VID_T>(ol.size());
-            rm.reserve(vnum);
-            for (VID_T lid = init_sizes[got]; lid < vnum; ++lid) {
-              rm.emplace(ol[lid], lid);
-            }
-          }
-        });
-      }
-      for (auto& thrd : work_threads) {
-        thrd.join();
-      }
     }
   }
 
@@ -156,12 +95,8 @@ class GlobalVertexMapBuilder {
   friend class GlobalVertexMap;
 
   fid_t fid_;
-  HashMap<OID_T, VID_T>& map_;
-  std::vector<OID_T>& list_;
+  IdIndexer<OID_T, VID_T>& indexer_;
   const PARTITIONER_T& partitioner_;
-  const IdParser<VID_T> id_parser_;
-
-  VID_T init_size_;
 };
 
 /**
@@ -181,44 +116,30 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
  public:
   explicit GlobalVertexMap(const CommSpec& comm_spec) : base_t(comm_spec) {}
   ~GlobalVertexMap() = default;
-  void Init() {
-    o2l_.resize(comm_spec_.fnum());
-    l2o_.resize(comm_spec_.fnum());
-  }
+  void Init() { indexers_.resize(comm_spec_.fnum()); }
 
   size_t GetTotalVertexSize() const {
     size_t size = 0;
-    for (const auto& v : o2l_) {
+    for (const auto& v : indexers_) {
       size += v.size();
     }
     return size;
   }
 
-  size_t GetInnerVertexSize(fid_t fid) const { return l2o_[fid].size(); }
+  size_t GetInnerVertexSize(fid_t fid) const { return indexers_[fid].size(); }
   void AddVertex(const OID_T& oid) {
     fid_t fid = partitioner_.GetPartitionId(oid);
-    auto& rm = o2l_[fid];
-    if (rm.find(oid) == rm.end()) {
-      rm.emplace(oid, static_cast<VID_T>(l2o_[fid].size()));
-      l2o_[fid].emplace_back(oid);
-    }
+    indexers_[fid]._add(oid);
   }
 
   using base_t::Lid2Gid;
   bool AddVertex(const OID_T& oid, VID_T& gid) {
     fid_t fid = partitioner_.GetPartitionId(oid);
-    auto& rm = o2l_[fid];
-    auto iter = rm.find(oid);
-    if (iter == rm.end()) {
-      gid = static_cast<VID_T>(l2o_[fid].size());
-      rm.emplace(oid, gid);
-      l2o_[fid].emplace_back(oid);
+    if (indexers_[fid].add(oid, gid)) {
       gid = Lid2Gid(fid, gid);
       return true;
-    } else {
-      gid = Lid2Gid(fid, iter->second);
-      return false;
     }
+    return false;
   }
 
   using base_t::GetFidFromGid;
@@ -230,22 +151,15 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   }
 
   bool GetOid(fid_t fid, const VID_T& lid, OID_T& oid) const {
-    if (lid >= l2o_[fid].size()) {
-      return false;
-    }
-    oid = l2o_[fid][lid];
-    return true;
+    return indexers_[fid].get_key(lid, oid);
   }
 
   bool GetGid(fid_t fid, const OID_T& oid, VID_T& gid) const {
-    auto& rm = o2l_[fid];
-    auto iter = rm.find(oid);
-    if (iter == rm.end()) {
-      return false;
-    } else {
-      gid = Lid2Gid(fid, iter->second);
+    if (indexers_[fid].get_index(oid, gid)) {
+      gid = Lid2Gid(fid, gid);
       return true;
     }
+    return false;
   }
 
   bool GetGid(const OID_T& oid, VID_T& gid) const {
@@ -256,7 +170,7 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T> GetLocalBuilder() {
     fid_t fid = comm_spec_.fid();
     return GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T>(
-        fid, o2l_[fid], l2o_[fid], partitioner_, id_parser_);
+        fid, indexers_[fid], partitioner_);
   }
 
   template <typename IOADAPTOR_T>
@@ -270,14 +184,8 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     io_adaptor->Open("wb");
 
     base_t::serialize(io_adaptor);
-    InArchive ia;
     for (fid_t i = 0; i < comm_spec_.fnum(); ++i) {
-      ia << l2o_[i].size();
-    }
-    CHECK(io_adaptor->WriteArchive(ia));
-    ia.Clear();
-    for (fid_t i = 0; i < comm_spec_.fnum(); ++i) {
-      CHECK(io_adaptor->Write(l2o_[i].data(), l2o_[i].size() * sizeof(OID_T)));
+      indexers_[i].Serialize(io_adaptor);
     }
     io_adaptor->Close();
   }
@@ -294,94 +202,51 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
     base_t::deserialize(io_adaptor);
 
-    OutArchive oa;
-
-    l2o_.clear();
-    l2o_.resize(comm_spec_.fnum());
-    o2l_.clear();
-    o2l_.resize(comm_spec_.fnum());
-
-    CHECK(io_adaptor->ReadArchive(oa));
+    indexers_.resize(comm_spec_.fnum());
     for (fid_t i = 0; i < comm_spec_.fnum(); ++i) {
-      size_t size;
-      oa >> size;
-      l2o_[i].resize(size);
-    }
-    oa.Clear();
-
-    for (fid_t i = 0; i < comm_spec_.fnum(); ++i) {
-      CHECK(io_adaptor->Read(l2o_[i].data(), l2o_[i].size() * sizeof(OID_T)));
+      indexers_[i].Deserialize(io_adaptor);
     }
     io_adaptor->Close();
-
-    {
-      int thread_num =
-          (std::thread::hardware_concurrency() + comm_spec_.local_num() - 1) /
-          comm_spec_.local_num();
-      std::vector<std::thread> construct_threads(thread_num);
-      std::atomic<fid_t> current_fid(0);
-      fid_t fnum = comm_spec_.fnum();
-      for (int i = 0; i < thread_num; ++i) {
-        construct_threads[i] = std::thread([&]() {
-          fid_t got;
-          while (true) {
-            got = current_fid.fetch_add(1, std::memory_order_relaxed);
-            if (got >= fnum) {
-              break;
-            }
-            auto& rm = o2l_[got];
-            auto& vec = l2o_[got];
-            size_t vnum = vec.size();
-            rm.reserve(vnum);
-            for (size_t lid = 0; lid < vnum; ++lid) {
-              rm.emplace(vec[lid], static_cast<VID_T>(lid));
-            }
-          }
-        });
-      }
-
-      for (auto& thrd : construct_threads) {
-        thrd.join();
-      }
-    }
   }
 
   void UpdateToBalance(std::vector<VID_T>& vnum_list,
                        std::vector<std::vector<VID_T>>& gid_maps) {
-    std::vector<HashMap<OID_T, VID_T>> new_o2l(o2l_.size());
-    std::vector<std::vector<OID_T>> new_l2o(l2o_.size());
     fid_t fnum = comm_spec_.fnum();
-    for (fid_t fid = 0; fid < fnum; ++fid) {
-      new_l2o[fid].clear();
-      new_l2o[fid].resize(vnum_list[fid]);
+    std::vector<std::vector<OID_T>> oid_lists(fnum);
+    for (fid_t i = 0; i < fnum; ++i) {
+      oid_lists[i].resize(vnum_list[i]);
     }
     for (fid_t fid = 0; fid < fnum; ++fid) {
-      auto& hmap = o2l_[fid];
-      for (auto& pair : hmap) {
-        VID_T new_gid = gid_maps[fid][pair.second];
+      auto& old_indexer = indexers_[fid];
+      VID_T vnum = old_indexer.size();
+      for (VID_T i = 0; i < vnum; ++i) {
+        VID_T new_gid = gid_maps[fid][i];
+        OID_T oid;
         fid_t new_fid = GetFidFromGid(new_gid);
+        CHECK(old_indexer.get_key(i, oid));
         if (new_fid != fid) {
-          partitioner_.SetPartitionId(pair.first, new_fid);
+          partitioner_.SetPartitionId(oid, new_fid);
         }
         VID_T new_lid = GetLidFromGid(new_gid);
-        new_l2o[new_fid][new_lid] = pair.first;
-        new_o2l[new_fid].emplace(pair.first, new_lid);
+        oid_lists[new_fid][new_lid] = oid;
       }
-      HashMap<OID_T, VID_T> tmp;
-      hmap.swap(tmp);
     }
-    o2l_.swap(new_o2l);
-    l2o_.swap(new_l2o);
+    std::vector<IdIndexer<OID_T, VID_T>> new_indexers(fnum);
+    for (fid_t i = 0; i < fnum; ++i) {
+      auto& indexer = new_indexers[i];
+      for (auto& oid : oid_lists[i]) {
+        indexer._add(oid);
+      }
+    }
+    std::swap(indexers_, new_indexers);
   }
 
  private:
   template <typename _OID_T, typename _VID_T, typename _PARTITIONER_T>
   friend class GlobalVertexMapBuilder;
 
-  std::vector<HashMap<OID_T, VID_T>> o2l_;
-  std::vector<std::vector<OID_T>> l2o_;
+  std::vector<IdIndexer<OID_T, VID_T>> indexers_;
   using base_t::comm_spec_;
-  using base_t::id_parser_;
   using base_t::partitioner_;
 };
 
