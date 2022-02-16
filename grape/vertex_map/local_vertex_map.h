@@ -1,3 +1,18 @@
+/** Copyright 2020 Alibaba Group Holding Limited.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 #ifndef GRAPE_VERTEX_MAP_LOCAL_VERTEX_MAP_H_
 #define GRAPE_VERTEX_MAP_LOCAL_VERTEX_MAP_H_
 
@@ -39,6 +54,12 @@ class LocalVertexMapBuilder {
  public:
   ~LocalVertexMapBuilder() {}
 
+  void add_local_vertex(const OID_T& id, VID_T& gid) {
+    assert(partitioner_.GetPartitionId(id) == fid_);
+    oid_to_index_[fid_].add(id, gid);
+    gid = id_parser_.generate_global_id(fid_, gid);
+  }
+
   void add_vertex(const OID_T& id) {
     fid_t fid = partitioner_.GetPartitionId(id);
     oid_to_index_[fid]._add(id);
@@ -54,7 +75,7 @@ class LocalVertexMapBuilder {
         auto& indexer = oid_to_index_[comm_spec.WorkerToFrag(dst_worker_id)];
         sync_comm::Send(indexer.keys(), dst_worker_id, 0, comm_spec.comm());
         std::vector<VID_T> gid_list(indexer.size());
-        sync_comm::Recv(gid_list, dst_worker_id, 0, comm_spec.comm());
+        sync_comm::Recv(gid_list, dst_worker_id, 1, comm_spec.comm());
         auto& gid_indexer =
             gid_to_index_[comm_spec.WorkerToFrag(dst_worker_id)];
         for (auto gid : gid_list) {
@@ -75,16 +96,17 @@ class LocalVertexMapBuilder {
           gid = id_parser_.generate_global_id(fid_, gid);
           gid_list.push_back(gid);
         }
-        sync_comm::Send(gid_list, src_worker_id, 0, comm_spec.comm());
+        sync_comm::Send(gid_list, src_worker_id, 1, comm_spec.comm());
       }
     });
 
     request_thread.join();
     response_thread.join();
+    MPI_Barrier(comm_spec.comm());
 
     vertex_map.vertices_num_.resize(comm_spec.fnum());
     vertex_map.vertices_num_[fid_] = oid_to_index_[fid_].size();
-    sync_comm::AllGather(vertex_map.vertices_num, comm_spec.comm());
+    sync_comm::AllGather(vertex_map.vertices_num_, comm_spec.comm());
   }
 
  private:
@@ -106,7 +128,10 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
  public:
   explicit LocalVertexMap(const CommSpec& comm_spec) : base_t(comm_spec) {}
   ~LocalVertexMap() = default;
-  void Init() {}
+  void Init() {
+    oid_to_index_.resize(comm_spec_.fnum());
+    gid_to_index_.resize(comm_spec_.fnum());
+  }
 
   size_t GetTotalVertexSize() const {
     size_t size = 0;
@@ -134,7 +159,7 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
   bool GetOid(fid_t fid, const VID_T& lid, OID_T& oid) const {
     if (fid == comm_spec_.fid()) {
-      return oid_to_index_[fid].get_key(index, lid);
+      return oid_to_index_[fid].get_key(lid, oid);
     } else {
       VID_T index;
       if (gid_to_index_[fid].get_index(id_parser_.generate_global_id(fid, lid),
@@ -142,6 +167,7 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
         return oid_to_index_[fid].get_key(index, oid);
       }
     }
+    return false;
   }
 
   bool GetGid(fid_t fid, const OID_T& oid, VID_T& gid) const {
@@ -173,8 +199,8 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   template <typename IOADAPTOR_T>
   void Serialize(const std::string& prefix) {
     char fbuf[1024];
-    snprintf(fbuf, sizeof(fbuf), "%s/%s", prefix.c_str(),
-             kSerializationVertexMapFilename);
+    snprintf(fbuf, sizeof(fbuf), "%s/%s_%d", prefix.c_str(),
+             kSerializationVertexMapFilename, comm_spec_.fid());
 
     auto io_adaptor =
         std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(fbuf)));
@@ -191,10 +217,10 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   }
 
   template <typename IOADAPTOR_T>
-  void Deserialize(const std::string& prefix) {
+  void Deserialize(const std::string& prefix, fid_t fid) {
     char fbuf[1024];
-    snprintf(fbuf, sizeof(fbuf), "%s/%s", prefix.c_str(),
-             kSerializationVertexMapFilename);
+    snprintf(fbuf, sizeof(fbuf), "%s/%s_%d", prefix.c_str(),
+             kSerializationVertexMapFilename, fid);
 
     auto io_adaptor =
         std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(fbuf)));
@@ -205,6 +231,7 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     for (auto& indexer : oid_to_index_) {
       indexer.Deserialize(io_adaptor);
     }
+    gid_to_index_.resize(comm_spec_.fnum());
     for (auto& indexer : gid_to_index_) {
       indexer.Deserialize(io_adaptor);
     }

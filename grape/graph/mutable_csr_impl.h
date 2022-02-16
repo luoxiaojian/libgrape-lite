@@ -83,7 +83,7 @@ inline void sort_neighbors_tail(Nbr<VID_T, EDATA_T>* begin,
   Nbr<VID_T, EDATA_T>* src = last - 1;
   for (int i = unsorted - 1; i >= 0; --i) {
     auto& cur = buffer[i];
-    while (cur.neighbor.GetValue() < src->neighbor.GetValue() && src >= begin) {
+    while (src >= begin && cur.neighbor.GetValue() < src->neighbor.GetValue()) {
       *(--end) = std::move(*(src--));
     }
     *(--end) = std::move(cur);

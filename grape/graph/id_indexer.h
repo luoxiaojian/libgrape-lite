@@ -52,15 +52,19 @@ struct KeyBuffer {
   static void serialize(std::unique_ptr<IOADAPTOR_T>& writer, type& buffer) {
     size_t size = buffer.size();
     CHECK(writer->Write(&size, sizeof(size_t)));
-    CHECK(writer->Write(buffer.data(), size * sizeof(T)));
+    if (size > 0) {
+      CHECK(writer->Write(buffer.data(), size * sizeof(T)));
+    }
   }
 
   template <typename IOADAPTOR_T>
   static void deserialize(std::unique_ptr<IOADAPTOR_T>& reader, type& buffer) {
     size_t size;
     CHECK(reader->Read(&size, sizeof(size_t)));
-    buffer.resize(size);
-    CHECK(reader->Read(buffer.data(), size * sizeof(T)));
+    if (size > 0) {
+      buffer.resize(size);
+      CHECK(reader->Read(buffer.data(), size * sizeof(T)));
+    }
   }
 
   static void SendTo(const type& buffer, int dst_worker_id, int tag,
@@ -217,8 +221,13 @@ class IdIndexer {
     CHECK(writer->WriteArchive(arc));
     arc.Clear();
 
-    CHECK(writer->Write(indices_.data(), indices_.size() * sizeof(INDEX_T)));
-    CHECK(writer->Write(distances_.data(), distances_.size() * sizeof(int8_t)));
+    if (indices_.size() > 0) {
+      CHECK(writer->Write(indices_.data(), indices_.size() * sizeof(INDEX_T)));
+    }
+    if (distances_.size() > 0) {
+      CHECK(
+          writer->Write(distances_.data(), distances_.size() * sizeof(int8_t)));
+    }
   }
 
   template <typename IOADAPTOR_T>
@@ -235,8 +244,13 @@ class IdIndexer {
     hash_policy_.set_mod_function_by_index(mod_function_index);
     indices_.resize(indices_size);
     distances_.resize(distances_size);
-    CHECK(reader->Read(indices_.data(), indices_.size() * sizeof(INDEX_T)));
-    CHECK(reader->Read(distances_.data(), distances_.size() * sizeof(int8_t)));
+    if (indices_size > 0) {
+      CHECK(reader->Read(indices_.data(), indices_.size() * sizeof(INDEX_T)));
+    }
+    if (distances_size > 0) {
+      CHECK(
+          reader->Read(distances_.data(), distances_.size() * sizeof(int8_t)));
+    }
   }
 
  private:
@@ -310,13 +324,13 @@ class IdIndexer {
     int8_t new_max_lookups = compute_max_lookups(num_buckets);
 
     dist_buffer_t new_distances(num_buckets + new_max_lookups);
+    ind_buffer_t new_indices(num_buckets + new_max_lookups);
+
     size_t special_end_index = num_buckets + new_max_lookups - 1;
     for (size_t i = 0; i != special_end_index; ++i) {
       new_distances[i] = -1;
     }
     new_distances[special_end_index] = 0;
-
-    ind_buffer_t new_indices(num_buckets + new_max_lookups);
 
     new_indices.swap(indices_);
     new_distances.swap(distances_);

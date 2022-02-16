@@ -1,3 +1,18 @@
+/** Copyright 2020 Alibaba Group Holding Limited.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 #ifndef GRAPE_FRAGMENT_BASIC_FRAGMENT_LOADER_H_
 #define GRAPE_FRAGMENT_BASIC_FRAGMENT_LOADER_H_
 
@@ -139,41 +154,25 @@ class BasicFragmentLoader {
   void AddVertex(const oid_t& id, const vdata_t& data) {
     auto& partitioner = vm_ptr_->GetPartitioner();
     fid_t fid = partitioner.GetPartitionId(id);
-    vdata_t ref_data(data);
-    vertices_to_frag_[fid].Emplace(id, ref_data);
+    vertices_to_frag_[fid].Emplace(id, data);
   }
 
   void AddEdge(const oid_t& src, const oid_t& dst, const edata_t& data) {
     auto& partitioner = vm_ptr_->GetPartitioner();
     fid_t src_fid = partitioner.GetPartitionId(src);
     fid_t dst_fid = partitioner.GetPartitionId(dst);
-    edata_t ref_data(data);
-    edges_to_frag_[src_fid].Emplace(src, dst, ref_data);
+    edges_to_frag_[src_fid].Emplace(src, dst, data);
     if (src_fid != dst_fid) {
-      edges_to_frag_[dst_fid].Emplace(src, dst, ref_data);
+      edges_to_frag_[dst_fid].Emplace(src, dst, data);
     }
   }
 
   bool SerializeFragment(std::shared_ptr<fragment_t>& fragment,
                          const std::string& serialization_prefix) {
-    if (comm_spec_.worker_id() == 0) {
-      vm_ptr_->template Serialize<IOADAPTOR_T>(serialization_prefix);
-    }
-
-    MPI_Barrier(comm_spec_.comm());
-
-    // If not using a nfs, each worker should serialize a copy of vertex map.
-    auto exists_file = [](const std::string& name) {
-      std::ifstream f(name.c_str());
-      return f.good();
-    };
     char serial_file[1024];
     snprintf(serial_file, sizeof(serial_file), "%s/%s",
              serialization_prefix.c_str(), kSerializationVertexMapFilename);
-    if (comm_spec_.local_id() == 0 && !exists_file(serial_file)) {
-      vm_ptr_->template Serialize<IOADAPTOR_T>(serialization_prefix);
-    }
-
+    vm_ptr_->template Serialize<IOADAPTOR_T>(serialization_prefix);
     fragment->template Serialize<IOADAPTOR_T>(serialization_prefix);
 
     return true;
@@ -184,7 +183,8 @@ class BasicFragmentLoader {
     auto io_adaptor =
         std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(deserialization_prefix));
     if (io_adaptor->IsExist()) {
-      vm_ptr_->template Deserialize<IOADAPTOR_T>(deserialization_prefix);
+      vm_ptr_->template Deserialize<IOADAPTOR_T>(deserialization_prefix,
+                                                 comm_spec_.fid());
       fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr_));
       fragment->template Deserialize<IOADAPTOR_T>(deserialization_prefix,
                                                   comm_spec_.fid());
@@ -205,61 +205,49 @@ class BasicFragmentLoader {
 
     MPI_Barrier(comm_spec_.comm());
 
-    got_vertices_id_.emplace_back(
-        std::move(get_buffer<0>(vertices_to_frag_[comm_spec_.fid()])));
-    got_vertices_data_.emplace_back(
-        std::move(get_buffer<1>(vertices_to_frag_[comm_spec_.fid()])));
+    got_vertices_.emplace_back(
+        std::move(vertices_to_frag_[comm_spec_.fid()].buffers()));
     vertices_to_frag_[comm_spec_.fid()].Clear();
-    got_edges_src_.emplace_back(
-        std::move(get_buffer<0>(edges_to_frag_[comm_spec_.fid()])));
-    got_edges_dst_.emplace_back(
-        std::move(get_buffer<1>(edges_to_frag_[comm_spec_.fid()])));
-    got_edges_data_.emplace_back(
-        std::move(get_buffer<2>(edges_to_frag_[comm_spec_.fid()])));
+    got_edges_.emplace_back(
+        std::move(edges_to_frag_[comm_spec_.fid()].buffers()));
     edges_to_frag_[comm_spec_.fid()].Clear();
 
     vm_ptr_->Init();
     auto builder = vm_ptr_->GetLocalBuilder();
-    size_t v_buf_num = got_vertices_id_.size();
-    size_t e_buf_num = got_edges_src_.size();
-    for (size_t i = 0; i < v_buf_num; ++i) {
-      for (auto& id : got_vertices_id_[i]) {
-        builder.add_vertex(id);
-      }
+    for (auto& buffers : got_vertices_) {
+      foreach_helper(buffers,
+                     [&builder](const oid_t& id) { builder.add_vertex(id); },
+                     make_index_sequence<1>{});
     }
-    for (size_t i = 0; i < e_buf_num; ++i) {
-      for (auto& id : got_edges_src_[i]) {
-        builder.add_vertex(id);
-      }
-      for (auto& id : got_edges_dst_[i]) {
-        builder.add_vertex(id);
-      }
+    for (auto& buffers : got_edges_) {
+      foreach_helper(buffers,
+                     [&builder](const oid_t& src, const oid_t& dst) {
+                       builder.add_vertex(src);
+                       builder.add_vertex(dst);
+                     },
+                     make_index_sequence<2>{});
     }
     builder.finish(*vm_ptr_);
 
     processed_vertices_.clear();
     if (!std::is_same<vdata_t, EmptyType>::value) {
-      for (size_t i = 0; i < v_buf_num; ++i) {
-        vid_t gid;
-        size_t buf_size = got_vertices_id_[i].size();
-        for (size_t k = 0; k < buf_size; ++k) {
-          CHECK(vm_ptr_->GetGid(got_vertices_id_[i][k], gid));
-          processed_vertices_.emplace_back(gid,
-                                           std::move(got_vertices_data_[i][k]));
-        }
+      for (auto& buffers : got_vertices_) {
+        foreach_rval(buffers, [this](oid_t&& id, vdata_t&& data) {
+          vid_t gid;
+          CHECK(vm_ptr_->GetGid(id, gid));
+          processed_vertices_.emplace_back(gid, std::move(data));
+        });
       }
     }
-    got_vertices_id_.clear();
-    got_vertices_data_.clear();
+    got_vertices_.clear();
 
-    for (size_t i = 0; i < e_buf_num; ++i) {
-      size_t buf_size = got_edges_src_[i].size();
-      vid_t src_gid, dst_gid;
-      for (size_t k = 0; k < buf_size; ++k) {
-        CHECK(vm_ptr_->GetGid(got_edges_src_[i][k], src_gid));
-        CHECK(vm_ptr_->GetGid(got_edges_dst_[i][k], dst_gid));
-        processed_edges_.emplace_back(src_gid, dst_gid, got_edges_data_[i][k]);
-      }
+    for (auto& buffers : got_edges_) {
+      foreach_rval(buffers, [this](oid_t&& src, oid_t&& dst, edata_t&& data) {
+        vid_t src_gid, dst_gid;
+        CHECK(vm_ptr_->GetGid(src, src_gid));
+        CHECK(vm_ptr_->GetGid(dst, dst_gid));
+        processed_edges_.emplace_back(src_gid, dst_gid, std::move(data));
+      });
     }
 
     fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr_));
@@ -280,10 +268,7 @@ class BasicFragmentLoader {
       if (src_worker_id == -1) {
         break;
       }
-      auto& dst_buf0 = got_vertices_id_;
-      auto& dst_buf1 = got_vertices_data_;
-      dst_buf0.emplace_back(std::move(get_buffer<0>(data_in)));
-      dst_buf1.emplace_back(std::move(get_buffer<1>(data_in)));
+      got_vertices_.emplace_back(std::move(data_in.buffers()));
       data_in.Clear();
     }
   }
@@ -299,9 +284,7 @@ class BasicFragmentLoader {
         break;
       }
       CHECK_EQ(dst_fid, comm_spec_.fid());
-      got_edges_src_.emplace_back(std::move(get_buffer<0>(data_in)));
-      got_edges_dst_.emplace_back(std::move(get_buffer<1>(data_in)));
-      got_edges_data_.emplace_back(std::move(get_buffer<2>(data_in)));
+      got_edges_.emplace_back(std::move(data_in.buffers()));
       data_in.Clear();
     }
   }
@@ -357,12 +340,8 @@ class BasicFragmentLoader {
   std::thread edge_recv_thread_;
   bool recv_thread_running_;
 
-  std::vector<std::vector<oid_t>> got_vertices_id_;
-  std::vector<std::vector<vdata_t>> got_vertices_data_;
-
-  std::vector<std::vector<oid_t>> got_edges_src_;
-  std::vector<std::vector<oid_t>> got_edges_dst_;
-  std::vector<std::vector<edata_t>> got_edges_data_;
+  std::vector<ShuffleBufferTuple<oid_t, vdata_t>> got_vertices_;
+  std::vector<ShuffleBufferTuple<oid_t, oid_t, edata_t>> got_edges_;
 
   std::vector<internal::Vertex<vid_t, vdata_t>> processed_vertices_;
   std::vector<Edge<vid_t, edata_t>> processed_edges_;

@@ -18,6 +18,7 @@ limitations under the License.
 
 #include <algorithm>
 #include <atomic>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -41,11 +42,21 @@ template <typename OID_T, typename VID_T, typename PARTITIONER_T>
 class GlobalVertexMapBuilder {
  private:
   GlobalVertexMapBuilder(fid_t fid, IdIndexer<OID_T, VID_T>& indexer,
-                         const PARTITIONER_T& partitioner)
-      : fid_(fid), indexer_(indexer), partitioner_(partitioner) {}
+                         const PARTITIONER_T& partitioner,
+                         const IdParser<VID_T>& id_parser)
+      : fid_(fid),
+        indexer_(indexer),
+        partitioner_(partitioner),
+        id_parser_(id_parser) {}
 
  public:
   ~GlobalVertexMapBuilder() {}
+
+  void add_local_vertex(const OID_T& id, VID_T& gid) {
+    assert(partitioner_.GetPartitionId(id) == fid_);
+    indexer_.add(id, gid);
+    id_parser_.generate_global_id(fid_, gid);
+  }
 
   void add_vertex(const OID_T& id) {
     if (partitioner_.GetPartitionId(id) == fid_) {
@@ -58,7 +69,6 @@ class GlobalVertexMapBuilder {
     int worker_id = comm_spec.worker_id();
     int worker_num = comm_spec.worker_num();
     fid_t fnum = comm_spec.fnum();
-    std::vector<size_t> init_sizes(fnum);
     {
       std::thread recv_thread([&]() {
         int src_worker_id = (worker_id + 1) % worker_num;
@@ -97,6 +107,7 @@ class GlobalVertexMapBuilder {
   fid_t fid_;
   IdIndexer<OID_T, VID_T>& indexer_;
   const PARTITIONER_T& partitioner_;
+  const IdParser<VID_T>& id_parser_;
 };
 
 /**
@@ -170,19 +181,14 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T> GetLocalBuilder() {
     fid_t fid = comm_spec_.fid();
     return GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T>(
-        fid, indexers_[fid], partitioner_);
+        fid, indexers_[fid], partitioner_, id_parser_);
   }
 
+ private:
   template <typename IOADAPTOR_T>
-  void Serialize(const std::string& prefix) {
-    char fbuf[1024];
-    snprintf(fbuf, sizeof(fbuf), "%s/%s", prefix.c_str(),
-             kSerializationVertexMapFilename);
-
-    auto io_adaptor =
-        std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(fbuf)));
+  void serialize(const std::string& path) {
+    auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(path));
     io_adaptor->Open("wb");
-
     base_t::serialize(io_adaptor);
     for (fid_t i = 0; i < comm_spec_.fnum(); ++i) {
       indexers_[i].Serialize(io_adaptor);
@@ -190,8 +196,32 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     io_adaptor->Close();
   }
 
+ public:
   template <typename IOADAPTOR_T>
-  void Deserialize(const std::string& prefix) {
+  void Serialize(const std::string& prefix) {
+    char fbuf[1024];
+    snprintf(fbuf, sizeof(fbuf), "%s/%s", prefix.c_str(),
+             kSerializationVertexMapFilename);
+    std::string path = std::string(fbuf);
+    if (comm_spec_.worker_id() == 0) {
+      serialize<IOADAPTOR_T>(path);
+    }
+    MPI_Barrier(comm_spec_.comm());
+    auto exists_file = [](const std::string& name) {
+      std::ifstream f(name.c_str());
+      return f.good();
+    };
+    if (!exists_file(path) && comm_spec_.local_id() == 0) {
+      serialize<IOADAPTOR_T>(path);
+    }
+    MPI_Barrier(comm_spec_.comm());
+    if (!exists_file(path)) {
+      serialize<IOADAPTOR_T>(path);
+    }
+  }
+
+  template <typename IOADAPTOR_T>
+  void Deserialize(const std::string& prefix, fid_t fid) {
     char fbuf[1024];
     snprintf(fbuf, sizeof(fbuf), "%s/%s", prefix.c_str(),
              kSerializationVertexMapFilename);
@@ -247,6 +277,7 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
   std::vector<IdIndexer<OID_T, VID_T>> indexers_;
   using base_t::comm_spec_;
+  using base_t::id_parser_;
   using base_t::partitioner_;
 };
 
