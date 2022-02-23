@@ -23,6 +23,8 @@ limitations under the License.
 #include <vector>
 
 #include "grape/communication/sync_comm.h"
+#include "grape/utils/string_view_vector.h"
+#include "string_view/string_view.hpp"
 
 namespace grape {
 
@@ -61,6 +63,30 @@ struct ShuffleBuffer {
   static void RecvFrom(type& buffer, int src_worker_id, int tag,
                        MPI_Comm comm) {
     sync_comm::RecvAt<T>(buffer, buffer.size(), src_worker_id, tag, comm);
+  }
+};
+
+template <>
+struct ShuffleBuffer<nonstd::string_view> {
+  using type = StringViewVector;
+
+  static void SendTo(const type& buffer, int dst_worker_id, int tag,
+                     MPI_Comm comm) {
+    sync_comm::Send(buffer, dst_worker_id, tag, comm);
+  }
+
+  static void RecvFrom(type& buffer, int src_worker_id, int tag,
+                       MPI_Comm comm) {
+    if (buffer.size() == 0) {
+      sync_comm::Recv(buffer, src_worker_id, tag, comm);
+    } else {
+      type delta;
+      sync_comm::Recv(delta, src_worker_id, tag, comm);
+      size_t num = delta.size();
+      for (size_t i = 0; i < num; ++i) {
+        buffer.push_back(delta[i]);
+      }
+    }
   }
 };
 

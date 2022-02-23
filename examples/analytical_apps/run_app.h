@@ -212,6 +212,19 @@ void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
   }
 }
 
+template <typename T>
+struct ParamConverter {};
+
+template <>
+struct ParamConverter<int64_t> {
+  static int64_t FromInt64(int64_t val) { return val; }
+};
+
+template <>
+struct ParamConverter<std::string> {
+  static std::string FromInt64(int64_t val) { return std::to_string(val); }
+};
+
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
 void Run() {
   CommSpec comm_spec;
@@ -266,24 +279,28 @@ void Run() {
   if (name.find("sssp") != std::string::npos) {
     if (name == "sssp_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, double, LoadStrategy::kOnlyOut,
-                     SSSPAuto, OID_T>(comm_spec, out_prefix, fnum, spec,
-                                      FLAGS_sssp_source);
+                     SSSPAuto, OID_T>(
+          comm_spec, out_prefix, fnum, spec,
+          ParamConverter<OID_T>::FromInt64(FLAGS_sssp_source));
     } else if (name == "sssp") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, double, LoadStrategy::kOnlyOut,
-                     SSSP, OID_T>(comm_spec, out_prefix, fnum, spec,
-                                  FLAGS_sssp_source);
+                     SSSP, OID_T>(
+          comm_spec, out_prefix, fnum, spec,
+          ParamConverter<OID_T>::FromInt64(FLAGS_sssp_source));
     } else {
       LOG(FATAL) << "No avaiable application named [" << name << "].";
     }
   } else {
     if (name == "bfs_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     BFSAuto, OID_T>(comm_spec, out_prefix, fnum, spec,
-                                     FLAGS_bfs_source);
+                     BFSAuto, OID_T>(
+          comm_spec, out_prefix, fnum, spec,
+          ParamConverter<OID_T>::FromInt64(FLAGS_bfs_source));
     } else if (name == "bfs") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     BFS, OID_T>(comm_spec, out_prefix, fnum, spec,
-                                 FLAGS_bfs_source);
+                     BFS, OID_T>(
+          comm_spec, out_prefix, fnum, spec,
+          ParamConverter<OID_T>::FromInt64(FLAGS_bfs_source));
     } else if (name == "pagerank_local") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      PageRankLocal, double, int>(comm_spec, out_prefix, fnum,

@@ -72,13 +72,25 @@ for np in ${proc_list}; do
     RunApp ${np} sssp --sssp_source=6 --serialize=true --serialization_prefix=./serial/${GRAPH}
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
 
+    RunApp ${np} sssp --sssp_source=6 --string_id
+    ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
+
     RunApp ${np} sssp --sssp_source=6 --nosegmented_partition --norebalance --noglobal_vertex_map
+    ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
+
+    RunApp ${np} sssp --sssp_source=6 --nosegmented_partition --norebalance --noglobal_vertex_map --string_id
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
 
     RunMutableApp ${np} sssp --sssp_source=6
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
 
+    RunMutableApp ${np} sssp --sssp_source=6 --string_id
+    ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
+
     RunMutableApp ${np} sssp --sssp_source=6 --noglobal_vertex_map
+    ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
+
+    RunMutableApp ${np} sssp --sssp_source=6 --noglobal_vertex_map --string_id
     ExactVerify ${GRAPE_HOME}/dataset/${GRAPH}-SSSP
 
     RunApp ${np} sssp_auto --sssp_source=6 --deserialize=true --serialization_prefix=./serial/${GRAPH}

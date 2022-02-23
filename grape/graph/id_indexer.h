@@ -21,6 +21,8 @@ limitations under the License.
 #include <vector>
 
 #include "grape/graph/id_indexer_impl.h"
+#include "grape/utils/string_view_vector.h"
+#include "string_view/string_view.hpp"
 
 namespace grape {
 
@@ -64,6 +66,55 @@ struct KeyBuffer {
     if (size > 0) {
       buffer.resize(size);
       CHECK(reader->Read(buffer.data(), size * sizeof(T)));
+    }
+  }
+
+  static void SendTo(const type& buffer, int dst_worker_id, int tag,
+                     MPI_Comm comm) {
+    sync_comm::Send(buffer, dst_worker_id, tag, comm);
+  }
+
+  static void RecvFrom(type& buffer, int src_worker_id, int tag,
+                       MPI_Comm comm) {
+    sync_comm::Recv(buffer, src_worker_id, tag, comm);
+  }
+};
+
+template <>
+struct KeyBuffer<nonstd::string_view> {
+  using type = StringViewVector;
+
+  template <typename IOADAPTOR_T>
+  static void serialize(std::unique_ptr<IOADAPTOR_T>& writer, type& buffer) {
+    size_t content_buffer_size = buffer.content_buffer().size();
+    CHECK(writer->Write(&content_buffer_size, sizeof(size_t)));
+    if (content_buffer_size > 0) {
+      CHECK(writer->Write(buffer.content_buffer().data(),
+                          content_buffer_size * sizeof(char)));
+    }
+    size_t offset_buffer_size = buffer.offset_buffer().size();
+    CHECK(writer->Write(&offset_buffer_size, sizeof(size_t)));
+    if (offset_buffer_size > 0) {
+      CHECK(writer->Write(buffer.offset_buffer().data(),
+                          offset_buffer_size * sizeof(size_t)));
+    }
+  }
+
+  template <typename IOADAPTOR_T>
+  static void deserialize(std::unique_ptr<IOADAPTOR_T>& reader, type& buffer) {
+    size_t content_buffer_size;
+    CHECK(reader->Read(&content_buffer_size, sizeof(size_t)));
+    if (content_buffer_size > 0) {
+      buffer.content_buffer().resize(content_buffer_size);
+      CHECK(reader->Read(buffer.content_buffer().data(),
+                         content_buffer_size * sizeof(char)));
+    }
+    size_t offset_buffer_size;
+    CHECK(reader->Read(&offset_buffer_size, sizeof(size_t)));
+    if (offset_buffer_size > 0) {
+      buffer.offset_buffer().resize(offset_buffer_size);
+      CHECK(reader->Read(buffer.offset_buffer().data(),
+                         offset_buffer_size * sizeof(size_t)));
     }
   }
 

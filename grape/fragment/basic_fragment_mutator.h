@@ -43,6 +43,7 @@ class BasicFragmentMutator {
   using fragment_t = FRAG_T;
   using vertex_map_t = typename FRAG_T::vertex_map_t;
   using oid_t = typename FRAG_T::oid_t;
+  using internal_oid_t = typename InternalOID<oid_t>::type;
   using vid_t = typename FRAG_T::vid_t;
   using vdata_t = typename FRAG_T::vdata_t;
   using edata_t = typename FRAG_T::edata_t;
@@ -146,9 +147,11 @@ class BasicFragmentMutator {
 
     if (!std::is_same<edata_t, grape::EmptyType>::value) {
       for (auto& buffers : got_edges_to_update_) {
-        foreach_rval(buffers, [this](oid_t&& src, oid_t&& dst, edata_t&& data) {
+        foreach_rval(buffers, [this](internal_oid_t&& src, internal_oid_t&& dst,
+                                     edata_t&& data) {
           vid_t src_gid, dst_gid;
-          if (vm_ptr_->GetGid(src, src_gid) && vm_ptr_->GetGid(dst, dst_gid)) {
+          if (vm_ptr_->_GetGid(src, src_gid) &&
+              vm_ptr_->_GetGid(dst, dst_gid)) {
             mutation_.edges_to_update.emplace_back(src_gid, dst_gid,
                                                    std::move(data));
           }
@@ -158,9 +161,10 @@ class BasicFragmentMutator {
     got_edges_to_update_.clear();
 
     for (auto& buffers : got_edges_to_remove_) {
-      foreach(buffers, [this](const oid_t& src, const oid_t& dst) {
+      foreach(buffers, [this](const internal_oid_t& src,
+                               const internal_oid_t& dst) {
         vid_t src_gid, dst_gid;
-        if (vm_ptr_->GetGid(src, src_gid) && vm_ptr_->GetGid(dst, dst_gid)) {
+        if (vm_ptr_->_GetGid(src, src_gid) && vm_ptr_->_GetGid(dst, dst_gid)) {
           mutation_.edges_to_remove.emplace_back(src_gid, dst_gid);
         }
       });
@@ -168,9 +172,9 @@ class BasicFragmentMutator {
     got_edges_to_remove_.clear();
 
     for (auto& buffers : got_vertices_to_remove_) {
-      foreach(buffers, [this](const oid_t& id) {
+      foreach(buffers, [this](const internal_oid_t& id) {
         vid_t gid;
-        if (vm_ptr_->GetGid(id, gid)) {
+        if (vm_ptr_->_GetGid(id, gid)) {
           parsed_vertices_to_remove_.emplace_back(gid);
         }
       });
@@ -179,9 +183,9 @@ class BasicFragmentMutator {
 
     if (!std::is_same<vdata_t, grape::EmptyType>::value) {
       for (auto& buffers : got_vertices_to_update_) {
-        foreach_rval(buffers, [this](oid_t&& id, vdata_t&& data) {
+        foreach_rval(buffers, [this](internal_oid_t&& id, vdata_t&& data) {
           vid_t gid;
-          if (vm_ptr_->GetGid(id, gid)) {
+          if (vm_ptr_->_GetGid(id, gid)) {
             parsed_vertices_to_update_.emplace_back(gid, std::move(data));
           }
         });
@@ -191,28 +195,31 @@ class BasicFragmentMutator {
 
     auto builder = vm_ptr_->GetLocalBuilder();
     for (auto& buffers : got_vertices_to_add_) {
-      foreach_rval(buffers, [this, &builder](oid_t&& id, vdata_t&& data) {
-        vid_t gid;
-        builder.add_local_vertex(id, gid);
-        parsed_vertices_to_add_.emplace_back(gid, std::move(data));
-      });
+      foreach_rval(buffers,
+                   [this, &builder](internal_oid_t&& id, vdata_t&& data) {
+                     vid_t gid;
+                     builder.add_local_vertex(id, gid);
+                     parsed_vertices_to_add_.emplace_back(gid, std::move(data));
+                   });
     }
     got_vertices_to_add_.clear();
 
     for (auto& buffers : got_edges_to_add_) {
-      foreach_helper(buffers,
-                     [&builder](const oid_t& src, const oid_t& dst) {
-                       builder.add_vertex(src);
-                       builder.add_vertex(dst);
-                     },
-                     make_index_sequence<2>{});
+      foreach_helper(
+          buffers,
+          [&builder](const internal_oid_t& src, const internal_oid_t& dst) {
+            builder.add_vertex(src);
+            builder.add_vertex(dst);
+          },
+          make_index_sequence<2>{});
     }
     builder.finish(*vm_ptr_);
 
     for (auto& buffers : got_edges_to_add_) {
-      foreach_rval(buffers, [this](oid_t&& src, oid_t&& dst, edata_t&& data) {
+      foreach_rval(buffers, [this](internal_oid_t&& src, internal_oid_t&& dst,
+                                   edata_t&& data) {
         vid_t src_gid, dst_gid;
-        if (vm_ptr_->GetGid(src, src_gid) && vm_ptr_->GetGid(dst, dst_gid)) {
+        if (vm_ptr_->_GetGid(src, src_gid) && vm_ptr_->_GetGid(dst, dst_gid)) {
           mutation_.edges_to_add.emplace_back(src_gid, dst_gid,
                                               std::move(data));
         }
@@ -268,14 +275,14 @@ class BasicFragmentMutator {
     recv_thread_ = std::thread(&BasicFragmentMutator::recvThreadRoutine, this);
   }
 
-  void AddVertex(const oid_t& id, const vdata_t& data) {
+  void AddVertex(const internal_oid_t& id, const vdata_t& data) {
     auto& partitioner = vm_ptr_->GetPartitioner();
     fid_t fid = partitioner.GetPartitionId(id);
     vertices_to_add_[fid].Emplace(id, data);
   }
 
   void AddVertices(
-      std::vector<typename ShuffleBuffer<oid_t>::type>&& id_lists,
+      std::vector<typename ShuffleBuffer<internal_oid_t>::type>&& id_lists,
       std::vector<typename ShuffleBuffer<vdata_t>::type>&& data_lists) {
     CHECK_EQ(id_lists.size(), vertices_to_add_.size());
     CHECK_EQ(data_lists.size(), vertices_to_add_.size());
@@ -285,7 +292,8 @@ class BasicFragmentMutator {
     }
   }
 
-  void AddEdge(const oid_t& src, const oid_t& dst, const edata_t& data) {
+  void AddEdge(const internal_oid_t& src, const internal_oid_t& dst,
+               const edata_t& data) {
     auto& partitioner = vm_ptr_->GetPartitioner();
     fid_t src_fid = partitioner.GetPartitionId(src);
     fid_t dst_fid = partitioner.GetPartitionId(dst);
@@ -296,8 +304,8 @@ class BasicFragmentMutator {
   }
 
   void AddEdges(
-      std::vector<typename ShuffleBuffer<oid_t>::type>&& src_lists,
-      std::vector<typename ShuffleBuffer<oid_t>::type>&& dst_lists,
+      std::vector<typename ShuffleBuffer<internal_oid_t>::type>&& src_lists,
+      std::vector<typename ShuffleBuffer<internal_oid_t>::type>&& dst_lists,
       std::vector<typename ShuffleBuffer<edata_t>::type>&& data_lists) {
     CHECK_EQ(src_lists.size(), edges_to_add_.size());
     CHECK_EQ(dst_lists.size(), edges_to_add_.size());
@@ -404,17 +412,17 @@ class BasicFragmentMutator {
     if (comm_spec_.fnum() == 1) {
       return;
     }
-    ShuffleIn<oid_t> vertices_to_remove_in;
+    ShuffleIn<internal_oid_t> vertices_to_remove_in;
     vertices_to_remove_in.Init(comm_spec_.fnum(), comm_spec_.comm(), vr_tag);
-    ShuffleIn<oid_t, vdata_t> vertices_to_update_in;
+    ShuffleIn<internal_oid_t, vdata_t> vertices_to_update_in;
     vertices_to_update_in.Init(comm_spec_.fnum(), comm_spec_.comm(), vu_tag);
-    ShuffleIn<oid_t, vdata_t> vertices_to_add_in;
+    ShuffleIn<internal_oid_t, vdata_t> vertices_to_add_in;
     vertices_to_add_in.Init(comm_spec_.fnum(), comm_spec_.comm(), va_tag);
-    ShuffleIn<oid_t, oid_t, edata_t> edges_to_add_in;
+    ShuffleIn<internal_oid_t, internal_oid_t, edata_t> edges_to_add_in;
     edges_to_add_in.Init(comm_spec_.fnum(), comm_spec_.comm(), ea_tag);
-    ShuffleIn<oid_t, oid_t> edges_to_remove_in;
+    ShuffleIn<internal_oid_t, internal_oid_t> edges_to_remove_in;
     edges_to_remove_in.Init(comm_spec_.fnum(), comm_spec_.comm(), er_tag);
-    ShuffleIn<oid_t, oid_t, edata_t> edges_to_update_in;
+    ShuffleIn<internal_oid_t, internal_oid_t, edata_t> edges_to_update_in;
     edges_to_update_in.Init(comm_spec_.fnum(), comm_spec_.comm(), eu_tag);
 
     int remaining_channel = 6;
@@ -490,24 +498,30 @@ class BasicFragmentMutator {
   std::vector<internal::Vertex<vid_t, vdata_t>> parsed_vertices_to_update_;
   std::vector<internal::Vertex<vid_t, vdata_t>> parsed_vertices_to_add_;
 
-  std::vector<ShuffleOut<oid_t>> vertices_to_remove_;
-  std::vector<ShuffleBufferTuple<oid_t>> got_vertices_to_remove_;
+  std::vector<ShuffleOut<internal_oid_t>> vertices_to_remove_;
+  std::vector<ShuffleBufferTuple<internal_oid_t>> got_vertices_to_remove_;
   static constexpr int vr_tag = 1;
-  std::vector<ShuffleOut<oid_t, vdata_t>> vertices_to_add_;
-  std::vector<ShuffleBufferTuple<oid_t, vdata_t>> got_vertices_to_add_;
+  std::vector<ShuffleOut<internal_oid_t, vdata_t>> vertices_to_add_;
+  std::vector<ShuffleBufferTuple<internal_oid_t, vdata_t>> got_vertices_to_add_;
   static constexpr int va_tag = 2;
-  std::vector<ShuffleOut<oid_t, vdata_t>> vertices_to_update_;
-  std::vector<ShuffleBufferTuple<oid_t, vdata_t>> got_vertices_to_update_;
+  std::vector<ShuffleOut<internal_oid_t, vdata_t>> vertices_to_update_;
+  std::vector<ShuffleBufferTuple<internal_oid_t, vdata_t>>
+      got_vertices_to_update_;
   static constexpr int vu_tag = 3;
 
-  std::vector<ShuffleOut<oid_t, oid_t>> edges_to_remove_;
-  std::vector<ShuffleBufferTuple<oid_t, oid_t>> got_edges_to_remove_;
+  std::vector<ShuffleOut<internal_oid_t, internal_oid_t>> edges_to_remove_;
+  std::vector<ShuffleBufferTuple<internal_oid_t, internal_oid_t>>
+      got_edges_to_remove_;
   static constexpr int er_tag = 4;
-  std::vector<ShuffleOut<oid_t, oid_t, edata_t>> edges_to_update_;
-  std::vector<ShuffleBufferTuple<oid_t, oid_t, edata_t>> got_edges_to_update_;
+  std::vector<ShuffleOut<internal_oid_t, internal_oid_t, edata_t>>
+      edges_to_update_;
+  std::vector<ShuffleBufferTuple<internal_oid_t, internal_oid_t, edata_t>>
+      got_edges_to_update_;
   static constexpr int ea_tag = 5;
-  std::vector<ShuffleOut<oid_t, oid_t, edata_t>> edges_to_add_;
-  std::vector<ShuffleBufferTuple<oid_t, oid_t, edata_t>> got_edges_to_add_;
+  std::vector<ShuffleOut<internal_oid_t, internal_oid_t, edata_t>>
+      edges_to_add_;
+  std::vector<ShuffleBufferTuple<internal_oid_t, internal_oid_t, edata_t>>
+      got_edges_to_add_;
   static constexpr int eu_tag = 6;
 
   mutation_t mutation_;

@@ -38,6 +38,7 @@ DECLARE_bool(rebalance);
 DECLARE_int32(rebalance_vertex_factor);
 
 DECLARE_bool(global_vertex_map);
+DECLARE_bool(string_id);
 
 DECLARE_bool(serialize);
 DECLARE_bool(deserialize);

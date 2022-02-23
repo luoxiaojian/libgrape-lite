@@ -13,6 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+#include <string>
+
 #include "run_app.h"
 
 #include <gflags/gflags.h>
@@ -37,10 +39,18 @@ int main(int argc, char* argv[]) {
   grape::Init();
 
   std::string name = FLAGS_application;
-  if (name.find("sssp") != std::string::npos) {
-    grape::Run<int64_t, uint32_t, grape::EmptyType, double>();
+  if (FLAGS_string_id) {
+    if (name.find("sssp") != std::string::npos) {
+      grape::Run<std::string, uint32_t, grape::EmptyType, double>();
+    } else {
+      grape::Run<std::string, uint32_t, grape::EmptyType, grape::EmptyType>();
+    }
   } else {
-    grape::Run<int64_t, uint32_t, grape::EmptyType, grape::EmptyType>();
+    if (name.find("sssp") != std::string::npos) {
+      grape::Run<int64_t, uint32_t, grape::EmptyType, double>();
+    } else {
+      grape::Run<int64_t, uint32_t, grape::EmptyType, grape::EmptyType>();
+    }
   }
 
   grape::Finalize();
