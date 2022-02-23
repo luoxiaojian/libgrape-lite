@@ -39,6 +39,8 @@ DEFINE_bool(segmented_partition, true,
 DEFINE_bool(rebalance, true, "whether to rebalance graph after loading.");
 DEFINE_int32(rebalance_vertex_factor, 0, "vertex factor of rebalancing.");
 
+DEFINE_bool(global_vertex_map, true, "whether to use global vertex map.");
+
 DEFINE_bool(serialize, false, "whether to serialize loaded graph.");
 DEFINE_bool(deserialize, false, "whether to deserialize graph while loading.");
 DEFINE_string(serialization_prefix, "",

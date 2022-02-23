@@ -19,7 +19,6 @@ limitations under the License.
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
-#include <grape/fragment/immutable_edgecut_fragment.h>
 #include <grape/fragment/loader.h>
 #include <grape/grape.h>
 #include <grape/util.h>
@@ -38,6 +37,8 @@ limitations under the License.
 #include <grape/fragment/mutable_edgecut_fragment.h>
 #include <grape/grape.h>
 #include <grape/util.h>
+#include <grape/vertex_map/global_vertex_map.h>
+#include <grape/vertex_map/local_vertex_map.h>
 
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
@@ -164,24 +165,49 @@ void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
     graph_spec.set_rebalance(false, 0);
     if (UseMutableFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy,
                            APP_T>()) {
-      using FRAG_T =
-          MutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy>;
-      std::shared_ptr<FRAG_T> fragment = LoadGraphAndMutate<FRAG_T>(
-          FLAGS_efile, FLAGS_vfile, FLAGS_delta_efile, FLAGS_delta_vfile,
-          comm_spec, graph_spec);
-      using AppType = APP_T<FRAG_T>;
-      auto app = std::make_shared<AppType>();
-      DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                        out_prefix, args...);
-    } else {
-      using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
+      if (FLAGS_global_vertex_map) {
+        using FRAG_T = MutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
                                               load_strategy>;
-      std::shared_ptr<FRAG_T> fragment =
-          LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
-      using AppType = APP_T<FRAG_T>;
-      auto app = std::make_shared<AppType>();
-      DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                        out_prefix, args...);
+        std::shared_ptr<FRAG_T> fragment = LoadGraphAndMutate<FRAG_T>(
+            FLAGS_efile, FLAGS_vfile, FLAGS_delta_efile, FLAGS_delta_vfile,
+            comm_spec, graph_spec);
+        using AppType = APP_T<FRAG_T>;
+        auto app = std::make_shared<AppType>();
+        DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
+                                          out_prefix, args...);
+      } else {
+        using VertexMapType = LocalVertexMap<OID_T, VID_T>;
+        using FRAG_T = MutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
+                                              load_strategy, VertexMapType>;
+        std::shared_ptr<FRAG_T> fragment = LoadGraphAndMutate<FRAG_T>(
+            FLAGS_efile, FLAGS_vfile, FLAGS_delta_efile, FLAGS_delta_vfile,
+            comm_spec, graph_spec);
+        using AppType = APP_T<FRAG_T>;
+        auto app = std::make_shared<AppType>();
+        DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
+                                          out_prefix, args...);
+      }
+    } else {
+      if (FLAGS_global_vertex_map) {
+        using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
+                                                load_strategy>;
+        std::shared_ptr<FRAG_T> fragment =
+            LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+        using AppType = APP_T<FRAG_T>;
+        auto app = std::make_shared<AppType>();
+        DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
+                                          out_prefix, args...);
+      } else {
+        using VertexMapType = LocalVertexMap<OID_T, VID_T>;
+        using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
+                                                load_strategy, VertexMapType>;
+        std::shared_ptr<FRAG_T> fragment =
+            LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+        using AppType = APP_T<FRAG_T>;
+        auto app = std::make_shared<AppType>();
+        DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
+                                          out_prefix, args...);
+      }
     }
   }
 }
