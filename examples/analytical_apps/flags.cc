@@ -21,8 +21,6 @@ limitations under the License.
 DEFINE_string(application, "", "application name");
 DEFINE_string(efile, "", "edge file");
 DEFINE_string(vfile, "", "vertex file");
-DEFINE_string(delta_efile, "", "delta edge file");
-DEFINE_string(delta_vfile, "", "delta vertex file");
 DEFINE_string(out_prefix, "", "output directory of results");
 DEFINE_string(jobid, "", "jobid, only used in LDBC graphanalytics.");
 DEFINE_bool(directed, false, "input graph is directed or not.");
@@ -38,9 +36,6 @@ DEFINE_bool(segmented_partition, true,
             "whether to use segmented partitioning.");
 DEFINE_bool(rebalance, true, "whether to rebalance graph after loading.");
 DEFINE_int32(rebalance_vertex_factor, 0, "vertex factor of rebalancing.");
-
-DEFINE_bool(global_vertex_map, true, "whether to use global vertex map.");
-DEFINE_bool(string_id, false, "whether to use string as origin id");
 
 DEFINE_bool(serialize, false, "whether to serialize loaded graph.");
 DEFINE_bool(deserialize, false, "whether to deserialize graph while loading.");

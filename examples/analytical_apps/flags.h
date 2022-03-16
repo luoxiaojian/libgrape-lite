@@ -22,8 +22,6 @@ DECLARE_bool(directed);
 DECLARE_string(application);
 DECLARE_string(efile);
 DECLARE_string(vfile);
-DECLARE_string(delta_efile);
-DECLARE_string(delta_vfile);
 DECLARE_string(out_prefix);
 DECLARE_string(jobid);
 
@@ -36,9 +34,6 @@ DECLARE_int32(cdlp_mr);
 DECLARE_bool(segmented_partition);
 DECLARE_bool(rebalance);
 DECLARE_int32(rebalance_vertex_factor);
-
-DECLARE_bool(global_vertex_map);
-DECLARE_bool(string_id);
 
 DECLARE_bool(serialize);
 DECLARE_bool(deserialize);

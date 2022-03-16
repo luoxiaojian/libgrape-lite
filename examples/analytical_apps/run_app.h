@@ -19,9 +19,6 @@ limitations under the License.
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
-#include <grape/fragment/loader.h>
-#include <grape/grape.h>
-#include <grape/util.h>
 
 #include <algorithm>
 #include <iostream>
@@ -34,15 +31,9 @@ limitations under the License.
 
 #include <grape/fragment/immutable_edgecut_fragment.h>
 #include <grape/fragment/loader.h>
-#include <grape/fragment/mutable_edgecut_fragment.h>
 #include <grape/grape.h>
 #include <grape/util.h>
 #include <grape/vertex_map/global_vertex_map.h>
-#include <grape/vertex_map/local_vertex_map.h>
-
-#include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
-#include <glog/logging.h>
 
 #ifdef GRANULA
 #include "thirdparty/atlarge-research-granula/granula.hpp"
@@ -125,18 +116,6 @@ void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
 }
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
-          LoadStrategy load_strategy, template <class> class APP_T>
-bool UseMutableFragment() {
-  if (FLAGS_delta_efile != "" || FLAGS_delta_vfile != "") {
-    return true;
-  }
-  using fragment_t =
-      ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy>;
-  using context_t = typename APP_T<fragment_t>::context_t;
-  return std::is_base_of<MutationContext<fragment_t>, context_t>::value;
-}
-
-template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
           LoadStrategy load_strategy, template <class> class APP_T,
           typename... Args>
 void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
@@ -163,52 +142,14 @@ void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
                                       out_prefix, args...);
   } else {
     graph_spec.set_rebalance(false, 0);
-    if (UseMutableFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy,
-                           APP_T>()) {
-      if (FLAGS_global_vertex_map) {
-        using FRAG_T = MutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                              load_strategy>;
-        std::shared_ptr<FRAG_T> fragment = LoadGraphAndMutate<FRAG_T>(
-            FLAGS_efile, FLAGS_vfile, FLAGS_delta_efile, FLAGS_delta_vfile,
-            comm_spec, graph_spec);
-        using AppType = APP_T<FRAG_T>;
-        auto app = std::make_shared<AppType>();
-        DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                          out_prefix, args...);
-      } else {
-        using VertexMapType = LocalVertexMap<OID_T, VID_T>;
-        using FRAG_T = MutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                              load_strategy, VertexMapType>;
-        std::shared_ptr<FRAG_T> fragment = LoadGraphAndMutate<FRAG_T>(
-            FLAGS_efile, FLAGS_vfile, FLAGS_delta_efile, FLAGS_delta_vfile,
-            comm_spec, graph_spec);
-        using AppType = APP_T<FRAG_T>;
-        auto app = std::make_shared<AppType>();
-        DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                          out_prefix, args...);
-      }
-    } else {
-      if (FLAGS_global_vertex_map) {
-        using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                                load_strategy>;
-        std::shared_ptr<FRAG_T> fragment =
-            LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
-        using AppType = APP_T<FRAG_T>;
-        auto app = std::make_shared<AppType>();
-        DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                          out_prefix, args...);
-      } else {
-        using VertexMapType = LocalVertexMap<OID_T, VID_T>;
-        using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                                load_strategy, VertexMapType>;
-        std::shared_ptr<FRAG_T> fragment =
-            LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
-        using AppType = APP_T<FRAG_T>;
-        auto app = std::make_shared<AppType>();
-        DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                          out_prefix, args...);
-      }
-    }
+    using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
+                                            load_strategy>;
+    std::shared_ptr<FRAG_T> fragment =
+        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+    using AppType = APP_T<FRAG_T>;
+    auto app = std::make_shared<AppType>();
+    DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
+                                      out_prefix, args...);
   }
 }
 
@@ -257,8 +198,6 @@ void Run() {
   // FIXME: no barrier apps. more manager? or use a dynamic-cast.
   std::string efile = FLAGS_efile;
   std::string vfile = FLAGS_vfile;
-  std::string delta_efile = FLAGS_delta_efile;
-  std::string delta_vfile = FLAGS_delta_vfile;
   std::string out_prefix = FLAGS_out_prefix;
   auto spec = MultiProcessSpec(comm_spec, __AFFINITY__);
   if (FLAGS_app_concurrency != -1) {
@@ -277,28 +216,28 @@ void Run() {
   int fnum = comm_spec.fnum();
   std::string name = FLAGS_application;
   if (name.find("sssp") != std::string::npos) {
-    if (name == "sssp_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, double, LoadStrategy::kOnlyOut,
-                     SSSPAuto, OID_T>(
-          comm_spec, out_prefix, fnum, spec,
-          ParamConverter<OID_T>::FromInt64(FLAGS_sssp_source));
-    } else if (name == "sssp") {
+    if (name == "sssp") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, double, LoadStrategy::kOnlyOut,
                      SSSP, OID_T>(
+          comm_spec, out_prefix, fnum, spec,
+          ParamConverter<OID_T>::FromInt64(FLAGS_sssp_source));
+    } else if (name == "sssp_auto") {
+      CreateAndQuery<OID_T, VID_T, VDATA_T, double, LoadStrategy::kOnlyOut,
+                     SSSPAuto, OID_T>(
           comm_spec, out_prefix, fnum, spec,
           ParamConverter<OID_T>::FromInt64(FLAGS_sssp_source));
     } else {
       LOG(FATAL) << "No avaiable application named [" << name << "].";
     }
   } else {
-    if (name == "bfs_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     BFSAuto, OID_T>(
-          comm_spec, out_prefix, fnum, spec,
-          ParamConverter<OID_T>::FromInt64(FLAGS_bfs_source));
-    } else if (name == "bfs") {
+    if (name == "bfs") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      BFS, OID_T>(
+          comm_spec, out_prefix, fnum, spec,
+          ParamConverter<OID_T>::FromInt64(FLAGS_bfs_source));
+    } else if (name == "bfs_auto") {
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                     BFSAuto, OID_T>(
           comm_spec, out_prefix, fnum, spec,
           ParamConverter<OID_T>::FromInt64(FLAGS_bfs_source));
     } else if (name == "pagerank_local") {
@@ -309,38 +248,38 @@ void Run() {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
                      PageRankLocalParallel, double, int>(
           comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
-    } else if (name == "pagerank_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
-                     PageRankAuto, double, int>(comm_spec, out_prefix, fnum,
-                                                spec, FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "pagerank") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      PageRank, double, int>(comm_spec, out_prefix, fnum, spec,
                                             FLAGS_pr_d, FLAGS_pr_mr);
+    } else if (name == "pagerank_auto") {
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
+                     PageRankAuto, double, int>(comm_spec, out_prefix, fnum,
+                                                spec, FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "pagerank_parallel") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
                      PageRankParallel, double, int>(
           comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
-    } else if (name == "cdlp_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
-                     CDLPAuto, int>(comm_spec, out_prefix, fnum, spec,
-                                    FLAGS_cdlp_mr);
     } else if (name == "cdlp") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      CDLP, int>(comm_spec, out_prefix, fnum, spec,
                                 FLAGS_cdlp_mr);
-    } else if (name == "wcc_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     WCCAuto>(comm_spec, out_prefix, fnum, spec);
+    } else if (name == "cdlp_auto") {
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
+                     CDLPAuto, int>(comm_spec, out_prefix, fnum, spec,
+                                    FLAGS_cdlp_mr);
     } else if (name == "wcc") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      WCC>(comm_spec, out_prefix, fnum, spec);
-    } else if (name == "lcc_auto") {
+    } else if (name == "wcc_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     LCCAuto>(comm_spec, out_prefix, fnum, spec);
+                     WCCAuto>(comm_spec, out_prefix, fnum, spec);
     } else if (name == "lcc") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      LCC>(comm_spec, out_prefix, fnum, spec);
+    } else if (name == "lcc_auto") {
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                     LCCAuto>(comm_spec, out_prefix, fnum, spec);
     } else {
       LOG(FATAL) << "No avaiable application named [" << name << "].";
     }
