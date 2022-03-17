@@ -17,16 +17,22 @@
 #include <grape/vertex_map/global_vertex_map.h>
 
 #include "bfs/bfs.h"
+#include "bfs/bfs_auto.h"
 #include "cdlp/cdlp.h"
+#include "cdlp/cdlp_auto.h"
 #include "flags.h"
 #include "lcc/lcc.h"
+#include "lcc/lcc_auto.h"
 #include "pagerank/pagerank.h"
+#include "pagerank/pagerank_auto.h"
 #include "pagerank/pagerank_local.h"
 #include "pagerank/pagerank_local_parallel.h"
 #include "pagerank/pagerank_parallel.h"
 #include "sssp/sssp.h"
+#include "sssp/sssp_auto.h"
 #include "timer.h"
 #include "wcc/wcc.h"
+#include "wcc/wcc_auto.h"
 
 #ifndef __AFFINITY__
 #define __AFFINITY__ false
@@ -147,6 +153,11 @@ void Run() {
                      grape::SSSP, OID_T>(
           comm_spec, out_prefix, fnum, spec,
           ParamConverter<OID_T>::FromInt64(FLAGS_sssp_source));
+    } else if (name == "sssp_auto") {
+      CreateAndQuery<OID_T, VID_T, VDATA_T, double, grape::LoadStrategy::kOnlyOut,
+                     grape::SSSPAuto, OID_T>(
+          comm_spec, out_prefix, fnum, spec,
+          ParamConverter<OID_T>::FromInt64(FLAGS_sssp_source));
     } else {
       LOG(FATAL) << "No avaiable application named [" << name << "].";
     }
@@ -154,6 +165,11 @@ void Run() {
     if (name == "bfs") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
                      grape::BFS, OID_T>(
+          comm_spec, out_prefix, fnum, spec,
+          ParamConverter<OID_T>::FromInt64(FLAGS_bfs_source));
+    } else if (name == "bfs_auto") {
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
+                     grape::BFSAuto, OID_T>(
           comm_spec, out_prefix, fnum, spec,
           ParamConverter<OID_T>::FromInt64(FLAGS_bfs_source));
     } else if (name == "pagerank_local") {
@@ -168,6 +184,10 @@ void Run() {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
                      grape::PageRank, double, int>(comm_spec, out_prefix, fnum, spec,
                                             FLAGS_pr_d, FLAGS_pr_mr);
+    } else if (name == "pagerank_auto") {
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kBothOutIn,
+                     grape::PageRankAuto, double, int>(comm_spec, out_prefix, fnum,
+                                                spec, FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "pagerank_parallel") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kBothOutIn,
                      grape::PageRankParallel, double, int>(
@@ -176,12 +196,22 @@ void Run() {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
                      grape::CDLP, int>(comm_spec, out_prefix, fnum, spec,
                                 FLAGS_cdlp_mr);
+    } else if (name == "cdlp_auto") {
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kBothOutIn,
+                     grape::CDLPAuto, int>(comm_spec, out_prefix, fnum, spec,
+                                    FLAGS_cdlp_mr);
     } else if (name == "wcc") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
                      grape::WCC>(comm_spec, out_prefix, fnum, spec);
+    } else if (name == "wcc_auto") {
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
+                     grape::WCCAuto>(comm_spec, out_prefix, fnum, spec);
     } else if (name == "lcc") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
                      grape::LCC>(comm_spec, out_prefix, fnum, spec);
+    } else if (name == "lcc_auto") {
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
+                     grape::LCCAuto>(comm_spec, out_prefix, fnum, spec);
     } else {
       LOG(FATAL) << "No avaiable application named [" << name << "].";
     }
