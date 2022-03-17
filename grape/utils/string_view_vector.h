@@ -106,12 +106,12 @@ class StringViewVectorSlice {
   void release() {
     if (alloc_) {
       if (buffer_ != NULL) {
-        free((void*) buffer_);
+        free(buffer_);
         buffer_ = NULL;
       }
       buffer_size_ = 0;
       if (offsets_ != NULL) {
-        free((void*) offsets_);
+        free(offsets_);
         offsets_ = NULL;
       }
       offsets_size_ = 0;
