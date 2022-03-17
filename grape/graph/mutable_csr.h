@@ -54,9 +54,7 @@ class MutableCSRBuilder<VID_T, Nbr<VID_T, EDATA_T>> {
     degree_.resize(vnum_, 0);
   }
 
-  VID_T vertex_num() const {
-    return vnum_;
-  }
+  VID_T vertex_num() const { return vnum_; }
 
   void inc_degree(VID_T i) { ++degree_[i]; }
 

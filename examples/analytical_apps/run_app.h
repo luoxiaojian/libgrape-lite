@@ -142,8 +142,8 @@ void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
                                       out_prefix, args...);
   } else {
     graph_spec.set_rebalance(false, 0);
-    using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                            load_strategy>;
+    using FRAG_T =
+        ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy>;
     std::shared_ptr<FRAG_T> fragment =
         LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
     using AppType = APP_T<FRAG_T>;

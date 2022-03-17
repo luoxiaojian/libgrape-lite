@@ -16,8 +16,8 @@ limitations under the License.
 #ifndef GRAPE_UTILS_STRING_VIEW_VECTOR_H_
 #define GRAPE_UTILS_STRING_VIEW_VECTOR_H_
 
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <vector>
 
@@ -29,7 +29,8 @@ template <typename T>
 class VectorSlice {
  public:
   VectorSlice() : buffer_(NULL), size_(0), alloc_(false) {}
-  VectorSlice(T* buffer, size_t size) : buffer_(buffer), size_(size), alloc_(false) {}
+  VectorSlice(T* buffer, size_t size)
+      : buffer_(buffer), size_(size), alloc_(false) {}
   ~VectorSlice() {
     if (alloc_ && buffer_ != NULL) {
       free(buffer_);
@@ -42,13 +43,9 @@ class VectorSlice {
     alloc_ = true;
   }
 
-  const T& operator[](size_t ind) const {
-    return buffer_[ind];
-  }
+  const T& operator[](size_t ind) const { return buffer_[ind]; }
 
-  T& operator[](size_t ind) {
-    return buffer_[ind];
-  }
+  T& operator[](size_t ind) { return buffer_[ind]; }
 
   T* buffer() { return buffer_; }
 
@@ -65,15 +62,19 @@ class VectorSlice {
 class StringViewVectorSlice {
  public:
   StringViewVectorSlice()
-      : buffer_(NULL), buffer_size_(0),
-        offsets_(NULL), offsets_size_(0), alloc_(false) {}
-  StringViewVectorSlice(char* buffer, size_t buffer_size,
-                        size_t* offsets, size_t offsets_size)
-      : buffer_(buffer), buffer_size_(buffer_size),
-        offsets_(offsets), offsets_size_(offsets_size), alloc_(false) {}
-  ~StringViewVectorSlice() {
-    release();
-  }
+      : buffer_(NULL),
+        buffer_size_(0),
+        offsets_(NULL),
+        offsets_size_(0),
+        alloc_(false) {}
+  StringViewVectorSlice(char* buffer, size_t buffer_size, size_t* offsets,
+                        size_t offsets_size)
+      : buffer_(buffer),
+        buffer_size_(buffer_size),
+        offsets_(offsets),
+        offsets_size_(offsets_size),
+        alloc_(false) {}
+  ~StringViewVectorSlice() { release(); }
 
   void Init(size_t buffer_size, size_t offsets_size) {
     release();
@@ -85,32 +86,21 @@ class StringViewVectorSlice {
   }
 
   nonstd::string_view operator[](size_t index) const {
-    return nonstd::string_view(buffer_ + (offsets_[index] - offsets_[0]), offsets_[index + 1] - offsets_[index]);
+    return nonstd::string_view(buffer_ + (offsets_[index] - offsets_[0]),
+                               offsets_[index + 1] - offsets_[index]);
   }
 
-  size_t size() const {
-    return offsets_size_ - 1;
-  }
+  size_t size() const { return offsets_size_ - 1; }
 
-  size_t buffer_size() const {
-    return buffer_size_;
-  }
+  size_t buffer_size() const { return buffer_size_; }
 
-  char* buffer() {
-    return buffer_;
-  }
+  char* buffer() { return buffer_; }
 
-  size_t* offsets() {
-    return offsets_;
-  }
+  size_t* offsets() { return offsets_; }
 
-  const char* buffer() const {
-    return buffer_;
-  }
+  const char* buffer() const { return buffer_; }
 
-  const size_t* offsets() const {
-    return offsets_;
-  }
+  const size_t* offsets() const { return offsets_; }
 
  private:
   void release() {

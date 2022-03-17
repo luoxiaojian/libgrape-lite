@@ -10,9 +10,9 @@
 #include <utility>
 #include <vector>
 
-#include <grape/grape.h>
-#include <grape/fragment/mutable_edgecut_fragment.h>
 #include <grape/fragment/loader.h>
+#include <grape/fragment/mutable_edgecut_fragment.h>
+#include <grape/grape.h>
 #include <grape/util.h>
 #include <grape/vertex_map/global_vertex_map.h>
 
@@ -77,7 +77,8 @@ void Finalize() {
 
 template <typename FRAG_T, typename APP_T, typename... Args>
 void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
-             const grape::CommSpec& comm_spec, const grape::ParallelEngineSpec& spec,
+             const grape::CommSpec& comm_spec,
+             const grape::ParallelEngineSpec& spec,
              const std::string& out_prefix, Args... args) {
   timer_next("load application");
   auto worker = APP_T::CreateWorker(app, fragment);
@@ -113,21 +114,22 @@ struct ParamConverter<std::string> {
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
           grape::LoadStrategy load_strategy, template <class> class APP_T,
           typename... Args>
-void CreateAndQuery(const grape::CommSpec& comm_spec, const std::string& out_prefix,
-                    int fnum, const grape::ParallelEngineSpec& spec, Args... args) {
+void CreateAndQuery(const grape::CommSpec& comm_spec,
+                    const std::string& out_prefix, int fnum,
+                    const grape::ParallelEngineSpec& spec, Args... args) {
   timer_next("load graph");
   grape::LoadGraphSpec graph_spec = grape::DefaultLoadGraphSpec();
   graph_spec.set_directed(FLAGS_directed);
   graph_spec.set_rebalance(false, 0);
   using FRAG_T = grape::MutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                        load_strategy>;
+                                               load_strategy>;
   std::shared_ptr<FRAG_T> fragment = grape::LoadGraphAndMutate<FRAG_T>(
-      FLAGS_efile, FLAGS_vfile, FLAGS_delta_efile, FLAGS_delta_vfile,
-      comm_spec, graph_spec);
+      FLAGS_efile, FLAGS_vfile, FLAGS_delta_efile, FLAGS_delta_vfile, comm_spec,
+      graph_spec);
   using AppType = APP_T<FRAG_T>;
   auto app = std::make_shared<AppType>();
-  DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                    out_prefix, args...);
+  DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec, out_prefix,
+                                    args...);
 }
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
@@ -149,13 +151,13 @@ void Run() {
   std::string name = FLAGS_application;
   if (name.find("sssp") != std::string::npos) {
     if (name == "sssp") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, double, grape::LoadStrategy::kOnlyOut,
-                     grape::SSSP, OID_T>(
+      CreateAndQuery<OID_T, VID_T, VDATA_T, double,
+                     grape::LoadStrategy::kOnlyOut, grape::SSSP, OID_T>(
           comm_spec, out_prefix, fnum, spec,
           ParamConverter<OID_T>::FromInt64(FLAGS_sssp_source));
     } else if (name == "sssp_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, double, grape::LoadStrategy::kOnlyOut,
-                     grape::SSSPAuto, OID_T>(
+      CreateAndQuery<OID_T, VID_T, VDATA_T, double,
+                     grape::LoadStrategy::kOnlyOut, grape::SSSPAuto, OID_T>(
           comm_spec, out_prefix, fnum, spec,
           ParamConverter<OID_T>::FromInt64(FLAGS_sssp_source));
     } else {
@@ -163,55 +165,64 @@ void Run() {
     }
   } else {
     if (name == "bfs") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
-                     grape::BFS, OID_T>(
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
+                     grape::LoadStrategy::kOnlyOut, grape::BFS, OID_T>(
           comm_spec, out_prefix, fnum, spec,
           ParamConverter<OID_T>::FromInt64(FLAGS_bfs_source));
     } else if (name == "bfs_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
-                     grape::BFSAuto, OID_T>(
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
+                     grape::LoadStrategy::kOnlyOut, grape::BFSAuto, OID_T>(
           comm_spec, out_prefix, fnum, spec,
           ParamConverter<OID_T>::FromInt64(FLAGS_bfs_source));
     } else if (name == "pagerank_local") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
-                     grape::PageRankLocal, double, int>(comm_spec, out_prefix, fnum,
-                                                 spec, FLAGS_pr_d, FLAGS_pr_mr);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
+                     grape::LoadStrategy::kOnlyOut, grape::PageRankLocal,
+                     double, int>(comm_spec, out_prefix, fnum, spec, FLAGS_pr_d,
+                                  FLAGS_pr_mr);
     } else if (name == "pagerank_local_parallel") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kBothOutIn,
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
+                     grape::LoadStrategy::kBothOutIn,
                      grape::PageRankLocalParallel, double, int>(
           comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "pagerank") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
-                     grape::PageRank, double, int>(comm_spec, out_prefix, fnum, spec,
-                                            FLAGS_pr_d, FLAGS_pr_mr);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
+                     grape::LoadStrategy::kOnlyOut, grape::PageRank, double,
+                     int>(comm_spec, out_prefix, fnum, spec, FLAGS_pr_d,
+                          FLAGS_pr_mr);
     } else if (name == "pagerank_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kBothOutIn,
-                     grape::PageRankAuto, double, int>(comm_spec, out_prefix, fnum,
-                                                spec, FLAGS_pr_d, FLAGS_pr_mr);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
+                     grape::LoadStrategy::kBothOutIn, grape::PageRankAuto,
+                     double, int>(comm_spec, out_prefix, fnum, spec, FLAGS_pr_d,
+                                  FLAGS_pr_mr);
     } else if (name == "pagerank_parallel") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kBothOutIn,
-                     grape::PageRankParallel, double, int>(
-          comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
+                     grape::LoadStrategy::kBothOutIn, grape::PageRankParallel,
+                     double, int>(comm_spec, out_prefix, fnum, spec, FLAGS_pr_d,
+                                  FLAGS_pr_mr);
     } else if (name == "cdlp") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
-                     grape::CDLP, int>(comm_spec, out_prefix, fnum, spec,
-                                FLAGS_cdlp_mr);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
+                     grape::LoadStrategy::kOnlyOut, grape::CDLP, int>(
+          comm_spec, out_prefix, fnum, spec, FLAGS_cdlp_mr);
     } else if (name == "cdlp_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kBothOutIn,
-                     grape::CDLPAuto, int>(comm_spec, out_prefix, fnum, spec,
-                                    FLAGS_cdlp_mr);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
+                     grape::LoadStrategy::kBothOutIn, grape::CDLPAuto, int>(
+          comm_spec, out_prefix, fnum, spec, FLAGS_cdlp_mr);
     } else if (name == "wcc") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
-                     grape::WCC>(comm_spec, out_prefix, fnum, spec);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
+                     grape::LoadStrategy::kOnlyOut, grape::WCC>(
+          comm_spec, out_prefix, fnum, spec);
     } else if (name == "wcc_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
-                     grape::WCCAuto>(comm_spec, out_prefix, fnum, spec);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
+                     grape::LoadStrategy::kOnlyOut, grape::WCCAuto>(
+          comm_spec, out_prefix, fnum, spec);
     } else if (name == "lcc") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
-                     grape::LCC>(comm_spec, out_prefix, fnum, spec);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
+                     grape::LoadStrategy::kOnlyOut, grape::LCC>(
+          comm_spec, out_prefix, fnum, spec);
     } else if (name == "lcc_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType, grape::LoadStrategy::kOnlyOut,
-                     grape::LCCAuto>(comm_spec, out_prefix, fnum, spec);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
+                     grape::LoadStrategy::kOnlyOut, grape::LCCAuto>(
+          comm_spec, out_prefix, fnum, spec);
     } else {
       LOG(FATAL) << "No avaiable application named [" << name << "].";
     }
@@ -234,14 +245,13 @@ int main(int argc, char* argv[]) {
   google::InstallFailureSignalHandler();
 
   Init();
-  
+
   std::string name = FLAGS_application;
   if (name.find("sssp") != std::string::npos) {
     Run<int64_t, uint32_t, grape::EmptyType, double>();
   } else {
     Run<int64_t, uint32_t, grape::EmptyType, grape::EmptyType>();
   }
- 
 
   Finalize();
 

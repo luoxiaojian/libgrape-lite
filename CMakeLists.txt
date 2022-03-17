@@ -328,7 +328,9 @@ install(EXPORT libgrapelite-targets
 file(GLOB_RECURSE FILES_NEED_FORMAT "grape/*.cc"
                                     "grape/*.h"
                                     "examples/*.h"
-                                    "examples/*.cc")
+                                    "examples/*.cc"
+                                    "tests/*.h"
+                                    "tests/*.cc")
 foreach (file_path ${FILES_NEED_FORMAT})
   if (${file_path} MATCHES ".*thirdparty.*")
     list(REMOVE_ITEM FILES_NEED_FORMAT ${file_path})
