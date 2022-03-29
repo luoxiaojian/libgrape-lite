@@ -22,6 +22,7 @@ limitations under the License.
 
 #include "flat_hash_map/flat_hash_map.hpp"
 #include "grape/utils/string_view_vector.h"
+#include "grape/communication/sync_comm.h"
 #include "string_view/string_view.hpp"
 
 namespace grape {
