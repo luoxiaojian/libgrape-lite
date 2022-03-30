@@ -28,7 +28,7 @@ class Table {
   std::shared_ptr<ColumnBase> get_column(const std::string& name) {
     int col_id;
     if (col_id_indexer_.get_index(name, col_id)) {
-      if (col_id < columns_.size()) {
+      if (static_cast<size_t>(col_id) < columns_.size()) {
         return columns_[col_id];
       }
     }

@@ -142,7 +142,7 @@ int main(int argc, char** argv) {
   schema.add_edge_label("TAG", "TAGCLASS", "HASTYPE", {});
   edge_files.emplace_back("TAG", "TAGCLASS", "HASTYPE", prefix + "/static/tag_hasType_tagclass" + suffix);
   schema.add_edge_label("TAGCLASS", "TAGCLASS", "ISSUBCLASSOF", {});
-  edge_files.emplace_back("TAGCLASS", "TAGCLASS", "ISSUBCLASSOF", prefix + "/static/tagclass_isSubClassOf_tagclass" + suffix);
+  edge_files.emplace_back("TAGCLASS", "TAGCLASS", "ISSUBCLASSOF", prefix + "/static/tagclass_isSubclassOf_tagclass" + suffix);
 
   schema.add_edge_label("PERSON", "EMAILADDRESS", "EMAIL", {});
   edge_files.emplace_back("PERSON", "EMAILADDRESS", "EMAIL", prefix + "/dynamic/person_email_emailaddress" + suffix);
@@ -160,6 +160,7 @@ int main(int argc, char** argv) {
   std::ofstream ostrm(output_path, std::ios::binary);
   char line_buf[4096];
   while (fgets(line_buf, 4096, fin) != NULL) {
+    preprocessLine(line_buf);
     if (line_buf[0] == 'i' && line_buf[1] == 'c' && line_buf[2] == '6') {
       ic6.Query(line_buf, ostrm);
     }

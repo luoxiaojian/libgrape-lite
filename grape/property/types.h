@@ -29,7 +29,7 @@ inline void ParseInt32(const nonstd::string_view& str, int& val) {
 }
 
 inline void ParseInt64(const nonstd::string_view& str, int64_t& val) {
-  sscanf(str.data(), "%lld", &val);
+  sscanf(str.data(), "%" SCNd64, &val);
 }
 
 inline void ParseFloat32(const nonstd::string_view& str, float& val) {
@@ -71,7 +71,7 @@ struct Any {
 inline void ParseRecord(const char* line, std::vector<Any>& rec) {
   const char* cur = line;
   for (auto& item : rec) {
-    const char* ptr = cur + 1;
+    const char* ptr = cur;
     while (*ptr != '\0' && *ptr != '|') {
       ++ptr;
     }
@@ -85,23 +85,23 @@ inline void ParseRecord(const char* line, std::vector<Any>& rec) {
     } else if (item.type == PropertyType::kString) {
       ParseString(sv, item.value.s);
     }
-    cur = ptr;
+    cur = ptr + 1;
   }
 }
 
 inline void ParseRecord(const char* line, int64_t& id, std::vector<Any>& rec) {
   const char* cur = line;
   {
-    const char* ptr = cur + 1;
+    const char* ptr = cur;
     while (*ptr != '\0' && *ptr != '|') {
       ++ptr;
     }
     nonstd::string_view sv(cur, ptr - cur);
     ParseInt64(sv, id);
-    cur = ptr;
+    cur = ptr + 1;
   }
   for (auto& item : rec) {
-    const char* ptr = cur + 1;
+    const char* ptr = cur;
     while (*ptr != '\0' && *ptr != '|') {
       ++ptr;
     }
@@ -115,32 +115,32 @@ inline void ParseRecord(const char* line, int64_t& id, std::vector<Any>& rec) {
     } else if (item.type == PropertyType::kString) {
       ParseString(sv, item.value.s);
     }
-    cur = ptr;
+    cur = ptr + 1;
   }
 }
 
 inline void ParseRecord(const char* line, int64_t& src, int64_t& dst, std::vector<Any>& rec) {
   const char* cur = line;
   {
-    const char* ptr = cur + 1;
+    const char* ptr = cur;
     while (*ptr != '\0' && *ptr != '|') {
       ++ptr;
     }
     nonstd::string_view sv(cur, ptr - cur);
     ParseInt64(sv, src);
-    cur = ptr;
+    cur = ptr + 1;
   }
   {
-    const char* ptr = cur + 1;
+    const char* ptr = cur;
     while (*ptr != '\0' && *ptr != '|') {
       ++ptr;
     }
     nonstd::string_view sv(cur, ptr - cur);
     ParseInt64(sv, dst);
-    cur = ptr;
+    cur = ptr + 1;
   }
   for (auto& item : rec) {
-    const char* ptr = cur + 1;
+    const char* ptr = cur;
     while (*ptr != '\0' && *ptr != '|') {
       ++ptr;
     }
@@ -154,7 +154,7 @@ inline void ParseRecord(const char* line, int64_t& src, int64_t& dst, std::vecto
     } else if (item.type == PropertyType::kString) {
       ParseString(sv, item.value.s);
     }
-    cur = ptr;
+    cur = ptr + 1;
   }
 }
 

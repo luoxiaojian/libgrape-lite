@@ -82,7 +82,7 @@ class IC6 {
   void Query(int64_t person_id, const nonstd::string_view& tag_name, std::ostream& stream) {
     uint32_t root = person_sub_graph_.GetVertex(person_id);
     uint32_t tag_id;
-    tag_indexer_.get_index(tag_name, tag_id);
+    CHECK(tag_indexer_.get_index(tag_name, tag_id));
     std::set<uint32_t> friends;
     get_2d_friends(person_sub_graph_, root, friends);
 
@@ -107,6 +107,7 @@ class IC6 {
         }
       }
     }
+    post_count[tag_id] = 0;
 
     auto& tag_names = tag_indexer_.keys();
     TagComparer comparer(post_count, tag_names);

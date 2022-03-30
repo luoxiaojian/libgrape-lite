@@ -40,28 +40,28 @@ class Schema {
 
   uint8_t get_vertex_label_id(const std::string& label) const {
     uint8_t ret;
-    vlabel_indexer_.get_index(label, ret);
+    CHECK(vlabel_indexer_.get_index(label, ret));
     return ret;
   }
 
   const std::vector<PropertyType>& get_vertex_properties(const std::string& label) const {
     uint8_t index;
-    vlabel_indexer_.get_index(label, index);
+    CHECK(vlabel_indexer_.get_index(label, index));
     return vproperties_[index];
   }
 
   const std::vector<PropertyType>& get_edge_properties(const std::string& src_label, const std::string& dst_label, const std::string& label) const {
     uint8_t src, dst, edge;
-    vlabel_indexer_.get_index(src_label, src);
-    vlabel_indexer_.get_index(dst_label, dst);
-    elabel_indexer_.get_index(label, edge);
+    CHECK(vlabel_indexer_.get_index(src_label, src));
+    CHECK(vlabel_indexer_.get_index(dst_label, dst));
+    CHECK(elabel_indexer_.get_index(label, edge));
     uint32_t index = generate_edge_label(src, dst, edge);
     return eproperties_.at(index);
   }
 
   uint8_t get_edge_label_id(const std::string& label) const {
     uint8_t ret;
-    elabel_indexer_.get_index(label, ret);
+    CHECK(elabel_indexer_.get_index(label, ret));
     return ret;
   }
 
@@ -119,7 +119,7 @@ class SingleLabelSubGraph {
 
   uint32_t GetVertex(int64_t id) const {
     uint32_t ret;
-    indexer_.get_index(id, ret);
+    CHECK(indexer_.get_index(id, ret));
     return ret;
   }
 
@@ -150,13 +150,13 @@ class DoubleLabelSubGraph {
 
   uint32_t GetSourceVertex(int64_t id) const {
     uint32_t ret;
-    src_indexer_.get_index(id, ret);
+    CHECK(src_indexer_.get_index(id, ret));
     return ret;
   }
 
   uint32_t GetDestinationVertex(int64_t id) const {
     uint32_t ret;
-    dst_indexer_.get_index(id, ret);
+    CHECK(dst_indexer_.get_index(id, ret));
     return ret;
   }
 
@@ -219,10 +219,6 @@ class PropertyFragment {
     }
   }
 
-  void Desc() {
-    std::cout << edge_data_.size() << std::endl;
-  }
-
   const Schema& schema() const { return schema_; }
 
   uint32_t GetVertexNum(uint8_t label_id) const {
@@ -243,8 +239,9 @@ class PropertyFragment {
   DoubleLabelSubGraph GetSubGraph(uint8_t src_vertex_label, uint8_t dst_vertex_label, uint8_t edge_label) {
     size_t v_label_num = schema_.vertex_label_num();
     size_t e_label_num = schema_.edge_label_num();
-    size_t index = src_vertex_label * v_label_num * e_label_num + dst_vertex_label * e_label_num + edge_label;
-    return DoubleLabelSubGraph(indexers_[src_vertex_label], indexers_[dst_vertex_label], ie_[index], oe_[index]);
+    auto& ie = ie_[dst_vertex_label * v_label_num * e_label_num + src_vertex_label * e_label_num + edge_label];
+    auto& oe = oe_[src_vertex_label * v_label_num * e_label_num + dst_vertex_label * e_label_num + edge_label];
+    return DoubleLabelSubGraph(indexers_[src_vertex_label], indexers_[dst_vertex_label], ie, oe);
   }
 
  private:
