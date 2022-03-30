@@ -108,6 +108,75 @@ class Schema {
   std::map<uint32_t, std::vector<PropertyType>> eproperties_;
 };
 
+class SingleLabelSubGraph {
+  using adj_list_t = AdjList<uint32_t, uint64_t>;
+ public:
+  SingleLabelSubGraph(
+      IdIndexer<int64_t, uint32_t>& indexer,
+      ImmutableCSR<uint32_t, Nbr<uint32_t, uint64_t>> &ie,
+      ImmutableCSR<uint32_t, Nbr<uint32_t, uint64_t>> &oe)
+      : indexer_(indexer), ie_(ie), oe_(oe) {}
+
+  uint32_t GetVertex(int64_t id) const {
+    uint32_t ret;
+    indexer_.get_index(id, ret);
+    return ret;
+  }
+
+  adj_list_t GetIncomingAdjList(uint32_t v) {
+    return adj_list_t(ie_.get_begin(v), ie_.get_end(v));
+  }
+
+  adj_list_t GetOutgoingAdjList(uint32_t v) {
+    return adj_list_t(oe_.get_begin(v), oe_.get_end(v));
+  }
+
+ private:
+  IdIndexer<int64_t, uint32_t>& indexer_;
+  ImmutableCSR<uint32_t, Nbr<uint32_t, uint64_t>> &ie_;
+  ImmutableCSR<uint32_t, Nbr<uint32_t, uint64_t>> &oe_;
+};
+
+class DoubleLabelSubGraph {
+  using adj_list_t = AdjList<uint32_t, uint64_t>;
+ public:
+  DoubleLabelSubGraph(
+      IdIndexer<int64_t, uint32_t>& src_indexer,
+      IdIndexer<int64_t, uint32_t>& dst_indexer,
+      ImmutableCSR<uint32_t, Nbr<uint32_t, uint64_t>> &ie,
+      ImmutableCSR<uint32_t, Nbr<uint32_t, uint64_t>> &oe)
+      : src_indexer_(src_indexer), dst_indexer_(dst_indexer),
+        ie_(ie), oe_(oe) {}
+
+  uint32_t GetSourceVertex(int64_t id) const {
+    uint32_t ret;
+    src_indexer_.get_index(id, ret);
+    return ret;
+  }
+
+  uint32_t GetDestinationVertex(int64_t id) const {
+    uint32_t ret;
+    dst_indexer_.get_index(id, ret);
+    return ret;
+  }
+
+  adj_list_t GetIncomingAdjList(uint32_t v) {
+    return adj_list_t(ie_.get_begin(v), ie_.get_end(v));
+  }
+
+  adj_list_t GetOutgoingAdjList(uint32_t v) {
+    return adj_list_t(oe_.get_begin(v), oe_.get_end(v));
+  }
+
+ private:
+  IdIndexer<int64_t, uint32_t>& src_indexer_;
+  IdIndexer<int64_t, uint32_t>& dst_indexer_;
+  ImmutableCSR<uint32_t, Nbr<uint32_t, uint64_t>> &ie_;
+  ImmutableCSR<uint32_t, Nbr<uint32_t, uint64_t>> &oe_;
+};
+
+
+
 class PropertyFragment {
  public:
   void Init(const Schema& schema, const std::vector<std::pair<std::string, std::string>>& vertex_files,
@@ -152,6 +221,30 @@ class PropertyFragment {
 
   void Desc() {
     std::cout << edge_data_.size() << std::endl;
+  }
+
+  const Schema& schema() const { return schema_; }
+
+  uint32_t GetVertexNum(uint8_t label_id) const {
+    return indexers_[label_id].size();
+  }
+
+  std::shared_ptr<ColumnBase> GetVertexDataColumn(uint8_t label_id, int col_id) {
+    return vertex_data_[label_id].get_column_by_id(0);
+  }
+
+  SingleLabelSubGraph GetSubGraph(uint8_t vertex_label, uint8_t edge_label) {
+    size_t v_label_num = schema_.vertex_label_num();
+    size_t e_label_num = schema_.edge_label_num();
+    size_t index = vertex_label * v_label_num * e_label_num + vertex_label * e_label_num + edge_label;
+    return SingleLabelSubGraph(indexers_[vertex_label], ie_[index], oe_[index]);
+  }
+
+  DoubleLabelSubGraph GetSubGraph(uint8_t src_vertex_label, uint8_t dst_vertex_label, uint8_t edge_label) {
+    size_t v_label_num = schema_.vertex_label_num();
+    size_t e_label_num = schema_.edge_label_num();
+    size_t index = src_vertex_label * v_label_num * e_label_num + dst_vertex_label * e_label_num + edge_label;
+    return DoubleLabelSubGraph(indexers_[src_vertex_label], indexers_[dst_vertex_label], ie_[index], oe_[index]);
   }
 
  private:

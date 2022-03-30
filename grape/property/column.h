@@ -184,6 +184,8 @@ class StringColumn : public ColumnBase {
     buffer_.push_back(value.s);
   }
 
+  StringViewVector& buffer() { return buffer_; }
+
  private:
   StringViewVector buffer_;
 };

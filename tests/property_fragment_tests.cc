@@ -1,12 +1,31 @@
 #include "grape/fragment/property_fragment.h"
 
+#include "examples/snb_ldbc/ic6.h"
+
 #include <string>
+#include <iostream>
+#include <fstream>
 
 using grape::PropertyType;
+
+void preprocessLine(char* line) {
+  size_t len = strlen(line);
+  while (len >= 0) {
+    if (line[len] != '\0' && line[len] != '\n' &&
+        line[len] != '\r' && line[len] != ' ' && line[len] != '\t') {
+      break;
+    } else {
+      --len;
+    }
+  }
+  line[len + 1] = '\0';
+}
 
 int main(int argc, char** argv) {
   std::string prefix = argv[1];
   std::string suffix = "_0_0.csv";
+  std::string query_path = argv[2];
+  std::string output_path = argv[3];
 
   grape::Schema schema;
   std::vector<std::pair<std::string, std::string>> vertex_files;
@@ -134,7 +153,20 @@ int main(int argc, char** argv) {
 
   grape::PropertyFragment fragment;
   fragment.Init(schema, vertex_files, edge_files);
-  fragment.Desc();
+
+  grape::IC6 ic6(fragment);
+
+  FILE* fin = fopen(query_path.c_str(), "r");
+  std::ofstream ostrm(output_path, std::ios::binary);
+  char line_buf[4096];
+  while (fgets(line_buf, 4096, fin) != NULL) {
+    if (line_buf[0] == 'i' && line_buf[1] == 'c' && line_buf[2] == '6') {
+      ic6.Query(line_buf, ostrm);
+    }
+  }
+
+  ostrm.flush();
+  ostrm.close();
 
   return 0;
 }
