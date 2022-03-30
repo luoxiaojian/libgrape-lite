@@ -76,6 +76,9 @@ class Table {
       types.push_back(col->type());
     }
     CHECK_EQ(types.size(), col_id_indexer_.size());
+    if (types.empty()) {
+      return ;
+    }
     CHECK(writer->Write(types.data(), sizeof(PropertyType) * types.size()));
     for (auto col : columns_) {
       auto type = col->type();
@@ -97,6 +100,9 @@ class Table {
   void Deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
     col_id_indexer_.Deserialize(reader);
     std::vector<PropertyType> types(col_id_indexer_.size());
+    if (types.empty()) {
+      return ;
+    }
     CHECK(reader->Read(types.data(), sizeof(PropertyType) * types.size()));
     columns_.resize(types.size());
     for (size_t i = 0; i < types.size(); ++i) {
