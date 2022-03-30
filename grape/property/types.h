@@ -4,6 +4,7 @@
 #include <charconv>
 
 #include "string_view/string_view.hpp"
+#include "grape/property/date.h"
 
 namespace grape {
 
@@ -11,6 +12,7 @@ enum class PropertyType {
   kInt32,
   kInt64,
   kFloat32,
+  kDate,
   kString,
 };
 
@@ -21,6 +23,7 @@ union AnyValue {
   int i;
   int64_t i64;
   float f;
+  Date d;
   nonstd::string_view s;
 };
 
@@ -29,11 +32,19 @@ inline void ParseInt32(const nonstd::string_view& str, int& val) {
 }
 
 inline void ParseInt64(const nonstd::string_view& str, int64_t& val) {
+#ifdef __APPLE__
+  sscanf(str.data(), "%lld", &val);
+#else
   sscanf(str.data(), "%" SCNd64, &val);
+#endif
 }
 
 inline void ParseFloat32(const nonstd::string_view& str, float& val) {
   sscanf(str.data(), "%f", &val);
+}
+
+inline void ParseDate(const nonstd::string_view& str, Date& date) {
+  date.reset(str.data());
 }
 
 inline void ParseString(const nonstd::string_view& str, nonstd::string_view & val) {
@@ -59,6 +70,11 @@ struct Any {
     value.f = v;
   }
 
+  void set_date(Date v) {
+    type = PropertyType::kDate;
+    value.d = v;
+  }
+
   void set_string(nonstd::string_view v) {
     type = PropertyType::kString;
     value.s = v;
@@ -82,6 +98,8 @@ inline void ParseRecord(const char* line, std::vector<Any>& rec) {
       ParseInt64(sv, item.value.i64);
     } else if (item.type == PropertyType::kFloat32) {
       ParseFloat32(sv, item.value.f);
+    } else if (item.type == PropertyType::kDate) {
+      ParseDate(sv, item.value.d);
     } else if (item.type == PropertyType::kString) {
       ParseString(sv, item.value.s);
     }
@@ -112,6 +130,8 @@ inline void ParseRecord(const char* line, int64_t& id, std::vector<Any>& rec) {
       ParseInt64(sv, item.value.i64);
     } else if (item.type == PropertyType::kFloat32) {
       ParseFloat32(sv, item.value.f);
+    } else if (item.type == PropertyType::kDate) {
+      ParseDate(sv, item.value.d);
     } else if (item.type == PropertyType::kString) {
       ParseString(sv, item.value.s);
     }
@@ -151,6 +171,8 @@ inline void ParseRecord(const char* line, int64_t& src, int64_t& dst, std::vecto
       ParseInt64(sv, item.value.i64);
     } else if (item.type == PropertyType::kFloat32) {
       ParseFloat32(sv, item.value.f);
+    } else if (item.type == PropertyType::kDate) {
+      ParseDate(sv, item.value.d);
     } else if (item.type == PropertyType::kString) {
       ParseString(sv, item.value.s);
     }

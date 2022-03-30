@@ -1,4 +1,5 @@
 #include "grape/fragment/property_fragment.h"
+#include "grape/util.h"
 
 #include "examples/snb_ldbc/ic6.h"
 
@@ -41,13 +42,13 @@ int main(int argc, char** argv) {
                                         PropertyType::kString,  // lastName
                                         PropertyType::kString,  // gender
                                         PropertyType::kString,  // birthday
-                                        PropertyType::kString,  // creationDate
+                                        PropertyType::kDate, // PropertyType::kString,  // creationDate
                                         PropertyType::kString,  // locationIP
                                         PropertyType::kString,  // browserUsed
                                     });
   vertex_files.emplace_back("PERSON", prefix + "/dynamic/person" + suffix);
   schema.add_vertex_label("COMMENT", {
-                                         PropertyType::kString, // creationDate
+                                         PropertyType::kDate, // PropertyType::kString,  // creationDate
                                          PropertyType::kString, // locationIP
                                          PropertyType::kString, // browserUsed
                                          PropertyType::kString, // content
@@ -56,7 +57,7 @@ int main(int argc, char** argv) {
   vertex_files.emplace_back("COMMENT", prefix + "/dynamic/comment" + suffix);
   schema.add_vertex_label("POST", {
                                       PropertyType::kString, // imageFile
-                                      PropertyType::kString, // creationDate
+                                      PropertyType::kDate, // PropertyType::kString,  // creationDate
                                       PropertyType::kString, // locationIP
                                       PropertyType::kString, // browserUsed
                                       PropertyType::kString, // language
@@ -66,7 +67,7 @@ int main(int argc, char** argv) {
   vertex_files.emplace_back("POST", prefix + "/dynamic/post" + suffix);
   schema.add_vertex_label("FORUM", {
                                        PropertyType::kString, // title
-                                       PropertyType::kString, // creationDate
+                                       PropertyType::kDate, // PropertyType::kString,  // creationDate
                                    });
   vertex_files.emplace_back("FORUM", prefix + "/dynamic/forum" + suffix);
   schema.add_vertex_label("ORGANISATION", {
@@ -106,7 +107,7 @@ int main(int argc, char** argv) {
   schema.add_edge_label("FORUM", "POST", "CONTAINEROF", {});
   edge_files.emplace_back("FORUM", "POST", "CONTAINEROF", prefix + "/dynamic/forum_containerOf_post" + suffix);
   schema.add_edge_label("FORUM", "PERSON", "HASMEMBER", {
-                                                            PropertyType::kString // joinDate
+                                                            PropertyType::kDate // PropertyType::kString // joinDate
                                                         });
   edge_files.emplace_back("FORUM", "PERSON", "HASMEMBER", prefix + "/dynamic/forum_hasMember_person" + suffix);
   schema.add_edge_label("FORUM", "PERSON", "HASMODERATOR", {});
@@ -122,15 +123,15 @@ int main(int argc, char** argv) {
   schema.add_edge_label("ORGANISATION", "PLACE", "ISLOCATEDIN", {});
   edge_files.emplace_back("ORGANISATION", "PLACE", "ISLOCATEDIN", prefix + "/static/organisation_isLocatedIn_place" + suffix);
   schema.add_edge_label("PERSON", "PERSON", "KNOWS", {
-                                                         PropertyType::kString // creationDate
+                                                         PropertyType::kDate // PropertyType::kString // creationDate
                                                      });
   edge_files.emplace_back("PERSON", "PERSON", "KNOWS", prefix + "/dynamic/person_knows_person" + suffix);
   schema.add_edge_label("PERSON", "COMMENT", "LIKES", {
-                                                          PropertyType::kString // creationDate
+                                                          PropertyType::kDate // PropertyType::kString // creationDate
                                                       });
   edge_files.emplace_back("PERSON", "COMMENT", "LIKES", prefix + "/dynamic/person_likes_comment" + suffix);
   schema.add_edge_label("PERSON", "POST", "LIKES", {
-                                                          PropertyType::kString // creationDate
+                                                          PropertyType::kDate // PropertyType::kString // creationDate
                                                       });
   edge_files.emplace_back("PERSON", "POST", "LIKES", prefix + "/dynamic/person_likes_post" + suffix);
   schema.add_edge_label("PERSON", "ORGANISATION", "WORKAT", {
@@ -156,15 +157,35 @@ int main(int argc, char** argv) {
 
   grape::IC6 ic6(fragment);
 
-  FILE* fin = fopen(query_path.c_str(), "r");
   std::ofstream ostrm(output_path, std::ios::binary);
+  FILE* fin = fopen(query_path.c_str(), "r");
   char line_buf[4096];
+#if 0
   while (fgets(line_buf, 4096, fin) != NULL) {
     preprocessLine(line_buf);
     if (line_buf[0] == 'i' && line_buf[1] == 'c' && line_buf[2] == '6') {
       ic6.Query(line_buf, ostrm);
     }
   }
+#else
+  std::vector<std::pair<int64_t, std::string>> params;
+  std::vector<nonstd::string_view> splits;
+  while (fgets(line_buf, 4096, fin) != NULL) {
+    preprocessLine(line_buf);
+    grape::split(line_buf, splits, ',');
+    params.emplace_back(std::stol(splits[1].to_string()), splits[2].to_string());
+  }
+
+  const int iteration = 10000;
+  int params_num = params.size();
+  double t0 = -grape::GetCurrentTime();
+  for (int i = 0; i < iteration; ++i) {
+    auto& pair = params[i % params_num];
+    ic6.Query(pair.first, pair.second, ostrm);
+  }
+  t0 += grape::GetCurrentTime();
+  LOG(INFO) << t0 / static_cast<double>(iteration) << " (s)";
+#endif
 
   ostrm.flush();
   ostrm.close();

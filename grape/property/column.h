@@ -6,6 +6,7 @@
 #include "string_view/string_view.hpp"
 #include "grape/utils/string_view_vector.h"
 #include "grape/property/types.h"
+#include "grape/property/date.h"
 
 namespace grape {
 
@@ -147,6 +148,47 @@ class FloatColumn : public ColumnBase {
   std::vector<float> buffer_;
 };
 
+class DateColumn : public ColumnBase {
+ public:
+  DateColumn() {}
+  ~DateColumn() {}
+
+  void push_back(Date val) {
+    buffer_.push_back(val);
+  }
+
+  Date get_view(size_t index) const {
+    return buffer_[index];
+  }
+
+  size_t size() const override {
+    return buffer_.size();
+  }
+
+  PropertyType type() const override {
+    return PropertyType::kDate;
+  }
+
+  AnyValue get_value(size_t index) const override {
+    AnyValue ret;
+    ret.d = buffer_[index];
+    return ret;
+  }
+
+  Any get(size_t index) const override {
+    Any ret;
+    ret.set_date(buffer_[index]);
+    return ret;
+  }
+
+  void push_value(const AnyValue& value) override {
+    buffer_.push_back(value.d);
+  }
+
+ private:
+  std::vector<Date> buffer_;
+};
+
 class StringColumn : public ColumnBase {
  public:
   StringColumn() {}
@@ -195,6 +237,8 @@ inline std::shared_ptr<ColumnBase> CreateColumn(PropertyType type) {
     return std::make_shared<IntColumn>();
   } else if (type == PropertyType::kFloat32) {
     return std::make_shared<FloatColumn>();
+  } else if (type == PropertyType::kDate) {
+    return std::make_shared<DateColumn>();
   } else if (type == PropertyType::kInt64) {
     return std::make_shared<Int64Column>();
   } else if (type == PropertyType::kString) {
