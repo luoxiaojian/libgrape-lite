@@ -62,6 +62,21 @@ class IntColumn : public ColumnBase {
     buffer_.push_back(value.i);
   }
 
+  template <typename IOADAPTOR_T>
+  void Serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+    size_t size = buffer_.size();
+    CHECK(writer->Write(&size, sizeof(size_t)));
+    CHECK(writer->Write(buffer_.data(), size * sizeof(int)));
+  }
+
+  template <typename IOADAPTOR_T>
+  void Deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+    size_t size;
+    CHECK(reader->Read(&size, sizeof(size_t)));
+    buffer_.resize(size);
+    CHECK(reader->Read(buffer_.data(), size * sizeof(int)));
+  }
+
  private:
   std::vector<int> buffer_;
 };
@@ -101,6 +116,21 @@ class Int64Column : public ColumnBase {
 
   void push_value(const AnyValue& value) override {
     buffer_.push_back(value.i64);
+  }
+
+  template <typename IOADAPTOR_T>
+  void Serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+    size_t size = buffer_.size();
+    CHECK(writer->Write(&size, sizeof(size_t)));
+    CHECK(writer->Write(buffer_.data(), size * sizeof(int64_t)));
+  }
+
+  template <typename IOADAPTOR_T>
+  void Deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+    size_t size;
+    CHECK(reader->Read(&size, sizeof(size_t)));
+    buffer_.resize(size);
+    CHECK(reader->Read(buffer_.data(), size * sizeof(int64_t)));
   }
 
  private:
@@ -144,6 +174,21 @@ class FloatColumn : public ColumnBase {
     buffer_.push_back(value.f);
   }
 
+  template <typename IOADAPTOR_T>
+  void Serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+    size_t size = buffer_.size();
+    CHECK(writer->Write(&size, sizeof(size_t)));
+    CHECK(writer->Write(buffer_.data(), size * sizeof(float)));
+  }
+
+  template <typename IOADAPTOR_T>
+  void Deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+    size_t size;
+    CHECK(reader->Read(&size, sizeof(size_t)));
+    buffer_.resize(size);
+    CHECK(reader->Read(buffer_.data(), size * sizeof(float)));
+  }
+
  private:
   std::vector<float> buffer_;
 };
@@ -183,6 +228,21 @@ class DateColumn : public ColumnBase {
 
   void push_value(const AnyValue& value) override {
     buffer_.push_back(value.d);
+  }
+
+  template <typename IOADAPTOR_T>
+  void Serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+    size_t size = buffer_.size();
+    CHECK(writer->Write(&size, sizeof(size_t)));
+    CHECK(writer->Write(buffer_.data(), size * sizeof(Date)));
+  }
+
+  template <typename IOADAPTOR_T>
+  void Deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+    size_t size;
+    CHECK(reader->Read(&size, sizeof(size_t)));
+    buffer_.resize(size);
+    CHECK(reader->Read(buffer_.data(), size * sizeof(Date)));
   }
 
  private:
@@ -227,6 +287,26 @@ class StringColumn : public ColumnBase {
   }
 
   StringViewVector& buffer() { return buffer_; }
+
+  template <typename IOADAPTOR_T>
+  void Serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+    size_t sizes[2];
+    sizes[0] = buffer_.offset_buffer().size();
+    sizes[1] = buffer_.content_buffer().size();
+    CHECK(writer->Write(sizes, 2 * sizeof(size_t)));
+    CHECK(writer->Write(buffer_.offset_buffer().data(), sizes[0] * sizeof(size_t)));
+    CHECK(writer->Write(buffer_.content_buffer().data(), sizes[1]));
+  }
+
+  template <typename IOADAPTOR_T>
+  void Deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+    size_t sizes[2];
+    CHECK(reader->Read(sizes, 2 * sizeof(size_t)));
+    buffer_.offset_buffer().resize(sizes[0]);
+    buffer_.content_buffer().resize(sizes[1]);
+    CHECK(reader->Read(buffer_.offset_buffer().data(), sizes[0] * sizeof(size_t)));
+    CHECK(reader->Read(buffer_.content_buffer().data(), sizes[1]));
+  }
 
  private:
   StringViewVector buffer_;

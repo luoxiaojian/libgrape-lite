@@ -68,9 +68,66 @@ class Table {
     }
   }
 
+  template <typename IOADAPTOR_T>
+  void Serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+    col_id_indexer_.Serialize(writer);
+    std::vector<PropertyType> types;
+    for (auto col : columns_) {
+      types.push_back(col->type());
+    }
+    CHECK_EQ(types.size(), col_id_indexer_.size());
+    CHECK(writer->Write(types.data(), sizeof(PropertyType) * types.size()));
+    for (auto col : columns_) {
+      auto type = col->type();
+      if (type == PropertyType::kInt32) {
+        std::dynamic_pointer_cast<IntColumn>(col)->Serialize(writer);
+      } else if (type == PropertyType::kFloat32) {
+        std::dynamic_pointer_cast<FloatColumn>(col)->Serialize(writer);
+      } else if (type == PropertyType::kDate) {
+        std::dynamic_pointer_cast<DateColumn>(col)->Serialize(writer);
+      } else if (type == PropertyType::kInt64) {
+        std::dynamic_pointer_cast<Int64Column>(col)->Serialize(writer);
+      } else if (type == PropertyType::kString) {
+        std::dynamic_pointer_cast<StringColumn>(col)->Serialize(writer);
+      }
+    }
+  }
+
+  template <typename IOADAPTOR_T>
+  void Deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+    col_id_indexer_.Deserialize(reader);
+    std::vector<PropertyType> types(col_id_indexer_.size());
+    CHECK(reader->Read(types.data(), sizeof(PropertyType) * types.size()));
+    columns_.resize(types.size());
+    for (size_t i = 0; i < types.size(); ++i) {
+      auto type = types[i];
+      if (type == PropertyType::kInt32) {
+        auto ptr = std::make_shared<IntColumn>();
+        ptr->Deserialize(reader);
+        columns_[i] = ptr;
+      } else if (type == PropertyType::kFloat32) {
+        auto ptr = std::make_shared<FloatColumn>();
+        ptr->Deserialize(reader);
+        columns_[i] = ptr;
+      } else if (type == PropertyType::kDate) {
+        auto ptr = std::make_shared<DateColumn>();
+        ptr->Deserialize(reader);
+        columns_[i] = ptr;
+      } else if (type == PropertyType::kInt64) {
+        auto ptr = std::make_shared<Int64Column>();
+        ptr->Deserialize(reader);
+        columns_[i] = ptr;
+      } else if (type == PropertyType::kString) {
+        auto ptr = std::make_shared<StringColumn>();
+        ptr->Deserialize(reader);
+        columns_[i] = ptr;
+      }
+    }
+  }
+
  private:
   std::vector<std::shared_ptr<ColumnBase>> columns_;
-  IdIndexer<std::string, int> col_id_indexer_;
+  IdIndexer<nonstd::string_view, int> col_id_indexer_;
 };
 
 }  // namespace grape

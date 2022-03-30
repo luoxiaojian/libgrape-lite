@@ -10,6 +10,9 @@
 #include "grape/property/types.h"
 #include "grape/property/table.h"
 #include "grape/graph/edge.h"
+#include "grape/serialization/in_archive.h"
+#include "grape/serialization/out_archive.h"
+#include "grape/io/local_io_adaptor.h"
 
 namespace grape {
 
@@ -66,15 +69,33 @@ class Schema {
   }
 
   std::string get_vertex_label_name(uint8_t index) const {
-    std::string ret;
+    nonstd::string_view ret;
     vlabel_indexer_.get_key(index, ret);
-    return ret;
+    return ret.to_string();
   }
 
   std::string get_edge_label_name(uint8_t index) const {
-    std::string ret;
+    nonstd::string_view ret;
     elabel_indexer_.get_key(index, ret);
-    return ret;
+    return ret.to_string();
+  }
+
+  template <typename IOADAPTOR_T>
+  void Serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+    vlabel_indexer_.Serialize(writer);
+    elabel_indexer_.Serialize(writer);
+    InArchive arc;
+    arc << vproperties_ << eproperties_;
+    CHECK(writer->WriteArchive(arc));
+  }
+
+  template <typename IOADAPTOR_T>
+  void Deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+    vlabel_indexer_.Deserialize(reader);
+    elabel_indexer_.Deserialize(reader);
+    OutArchive arc;
+    CHECK(reader->ReadArchive(arc));
+    arc >> vproperties_ >> eproperties_;
   }
 
  private:
@@ -102,8 +123,8 @@ class Schema {
     ret |= edge;
     return ret;
   }
-  IdIndexer<std::string, uint8_t> vlabel_indexer_;
-  IdIndexer<std::string, uint8_t> elabel_indexer_;
+  IdIndexer<nonstd::string_view, uint8_t> vlabel_indexer_;
+  IdIndexer<nonstd::string_view, uint8_t> elabel_indexer_;
   std::vector<std::vector<PropertyType>> vproperties_;
   std::map<uint32_t, std::vector<PropertyType>> eproperties_;
 };
@@ -175,8 +196,6 @@ class DoubleLabelSubGraph {
   ImmutableCSR<uint32_t, Nbr<uint32_t, uint64_t>> &oe_;
 };
 
-
-
 class PropertyFragment {
  public:
   void Init(const Schema& schema, const std::vector<std::pair<std::string, std::string>>& vertex_files,
@@ -242,6 +261,61 @@ class PropertyFragment {
     auto& ie = ie_[dst_vertex_label * v_label_num * e_label_num + src_vertex_label * e_label_num + edge_label];
     auto& oe = oe_[src_vertex_label * v_label_num * e_label_num + dst_vertex_label * e_label_num + edge_label];
     return DoubleLabelSubGraph(indexers_[src_vertex_label], indexers_[dst_vertex_label], ie, oe);
+  }
+
+  void Serialize(const std::string& filename) {
+    auto io_adaptor =
+        std::unique_ptr<LocalIOAdaptor>(new LocalIOAdaptor(filename));
+    io_adaptor->Open("wb");
+    schema_.Serialize(io_adaptor);
+    for (auto& indexer : indexers_) {
+      indexer.Serialize(io_adaptor);
+    }
+    for (auto& csr : ie_) {
+      csr.Serialize(io_adaptor);
+    }
+    for (auto& csr : oe_) {
+      csr.Serialize(io_adaptor);
+    }
+    for (auto& table : vertex_data_) {
+      table.Serialize(io_adaptor);
+    }
+    for (auto& table : edge_data_) {
+      table.Serialize(io_adaptor);
+    }
+    io_adaptor->Close();
+  }
+
+  void Deserialize(const std::string& filename) {
+    auto io_adaptor =
+        std::unique_ptr<LocalIOAdaptor>(new LocalIOAdaptor(filename));
+    io_adaptor->Open();
+    schema_.Deserialize(io_adaptor);
+
+    size_t v_label_num = schema_.vertex_label_num();
+    size_t e_label_num = schema_.edge_label_num();
+    indexers_.resize(v_label_num);
+    vertex_data_.resize(v_label_num);
+    ie_.resize(v_label_num * v_label_num * e_label_num);
+    oe_.resize(v_label_num * v_label_num * e_label_num);
+    edge_data_.resize(v_label_num * v_label_num * e_label_num);
+
+    for (auto& indexer : indexers_) {
+      indexer.Deserialize(io_adaptor);
+    }
+    for (auto& csr : ie_) {
+      csr.Deserialize(io_adaptor);
+    }
+    for (auto& csr : oe_) {
+      csr.Deserialize(io_adaptor);
+    }
+    for (auto& table : vertex_data_) {
+      table.Deserialize(io_adaptor);
+    }
+    for (auto& table : edge_data_) {
+      table.Deserialize(io_adaptor);
+    }
+    io_adaptor->Close();
   }
 
  private:
