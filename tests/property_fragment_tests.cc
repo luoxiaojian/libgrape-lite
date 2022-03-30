@@ -154,8 +154,10 @@ int main(int argc, char** argv) {
 
   grape::PropertyFragment fragment;
   fragment.Init(schema, vertex_files, edge_files);
+  LOG(INFO) << "Finished init property graph...";
 
   grape::IC6 ic6(fragment);
+  LOG(INFO) << "Finished init application...";
 
   std::ofstream ostrm(output_path, std::ios::binary);
   FILE* fin = fopen(query_path.c_str(), "r");
@@ -178,12 +180,14 @@ int main(int argc, char** argv) {
 
   const int iteration = 10000;
   int params_num = params.size();
+  LOG(INFO) << "Start to run queries...";
   double t0 = -grape::GetCurrentTime();
   for (int i = 0; i < iteration; ++i) {
     auto& pair = params[i % params_num];
     ic6.Query(pair.first, pair.second, ostrm);
   }
   t0 += grape::GetCurrentTime();
+  LOG(INFO) << "Finished queries...";
   LOG(INFO) << t0 / static_cast<double>(iteration) << " (s)";
 #endif
 
