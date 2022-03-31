@@ -28,6 +28,7 @@ int main(int argc, char** argv) {
   std::string output_path = argv[3];
 
   grape::PropertyFragment fragment;
+  LOG(INFO) << "Start to deserialize graph...";
   fragment.Deserialize(graph_path);
   LOG(INFO) << "Finished init graph...";
 
@@ -37,22 +38,20 @@ int main(int argc, char** argv) {
   std::ofstream ostrm(output_path, std::ios::binary);
   FILE* fin = fopen(query_path.c_str(), "r");
   char line_buf[4096];
-#if 0
-  while (fgets(line_buf, 4096, fin) != NULL) {
-    preprocessLine(line_buf);
-    if (line_buf[0] == 'i' && line_buf[1] == 'c' && line_buf[2] == '6') {
-      ic6.Query(line_buf, ostrm);
-    }
-  }
-#else
   std::vector<std::pair<int64_t, std::string>> params;
-  std::vector<nonstd::string_view> splits;
+  std::vector<nonstd::string_view> splits(3);
   while (fgets(line_buf, 4096, fin) != NULL) {
     preprocessLine(line_buf);
     grape::split(line_buf, splits, ',');
     params.emplace_back(std::stol(splits[1].to_string()), splits[2].to_string());
   }
-
+#if 0
+  for (auto& pair : params) {
+    ostrm << "ic6," << pair.first << "," << pair.second << std::endl;
+    ic6.Query(pair.first, pair.second, ostrm);
+    ostrm << std::endl;
+  }
+#else
   const int iteration = 10000;
   int params_num = params.size();
   LOG(INFO) << "Start to run queries...";

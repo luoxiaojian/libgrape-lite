@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
   FILE* fin = fopen(query_path.c_str(), "r");
   char line_buf[4096];
   std::vector<std::pair<int64_t, std::string>> params;
-  std::vector<nonstd::string_view> splits;
+  std::vector<nonstd::string_view> splits(3);
   while (fgets(line_buf, 4096, fin) != NULL) {
     preprocessLine(line_buf);
     grape::split(line_buf, splits, ',');

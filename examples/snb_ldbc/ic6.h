@@ -137,7 +137,7 @@ class IC6 {
     }
     for (auto iter = result.rbegin(); iter != result.rend(); ++iter) {
       uint32_t v = *iter;
-      stream << tag_names[v] << ", " << post_count[v] << "\n";
+      stream << tag_names[v] << " " << post_count[v] << "\n";
     }
   }
 

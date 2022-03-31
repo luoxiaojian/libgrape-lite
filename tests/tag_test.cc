@@ -57,19 +57,14 @@ void parse_vertex_file(const std::string& filename,
 
 int main(int argc, char** argv) {
   std::string tag_file_path = argv[1];
-  std::string target_tag_name = argv[2];
+  int line_no = atoi(argv[2]);
 
   grape::IdIndexer<int64_t, uint32_t> indexer;
   grape::Table table;
   parse_vertex_file(tag_file_path, indexer, table, {grape::PropertyType::kString, grape::PropertyType::kString});
 
-  size_t num = indexer.size();
   auto name_col = std::dynamic_pointer_cast<grape::StringColumn>(table.get_column_by_id(0));
-  for (size_t i = 0; i < num; ++i) {
-    if (name_col->get_view(i) == target_tag_name) {
-      LOG(INFO) << "Got [" << target_tag_name << "] at " << i;
-    }
-  }
+  LOG(INFO) << name_col->get_view(line_no);
 
   return 0;
 }
