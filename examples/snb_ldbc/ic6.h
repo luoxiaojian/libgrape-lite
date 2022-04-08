@@ -14,7 +14,8 @@ namespace grape {
 #define PROF
 
 #ifdef USE_BITSET
-inline void get_2d_friends(SingleLabelSubGraph& graph, uint32_t root, Bitset& friends) {
+// inline void get_2d_friends(SingleLabelSubGraph& graph, uint32_t root, Bitset& friends) {
+inline void get_2d_friends(SingleLabelSubGraph& graph, uint32_t root, std::vector<bool>& friends) {
   std::set<uint32_t> neighbors;
   AdjList<uint32_t, uint64_t> adjlist;
   adjlist = graph.GetIncomingAdjList(root);
@@ -25,19 +26,23 @@ inline void get_2d_friends(SingleLabelSubGraph& graph, uint32_t root, Bitset& fr
   for (auto& e : adjlist) {
     neighbors.insert(e.get_neighbor_lid());
   }
-  friends.clear();
+  // friends.clear();
   for (auto v : neighbors) {
-    friends.set_bit(v);
+    friends[v] = true;
+    // friends.set_bit(v);
     adjlist = graph.GetIncomingAdjList(v);
     for (auto& e : adjlist) {
-      friends.set_bit(e.get_neighbor_lid());
+      friends[e.get_neighbor_lid()] = true;
+      // friends.set_bit(e.get_neighbor_lid());
     }
     adjlist = graph.GetOutgoingAdjList(v);
     for (auto& e : adjlist) {
-      friends.set_bit(e.get_neighbor_lid());
+      friends[e.get_neighbor_lid()] = true;
+      // friends.set_bit(e.get_neighbor_lid());
     }
   }
-  friends.reset_bit(root);
+  friends[root] = false;
+  // friends.reset_bit(root);
 }
 #else
 inline void get_2d_friends(SingleLabelSubGraph& graph, uint32_t root, std::set<uint32_t>& friends) {
@@ -110,7 +115,8 @@ class IC6 {
 #endif
 
 #ifdef USE_BITSET
-    friends_.init(person_sub_graph_.vertex_num());
+    // friends_.init(person_sub_graph_.vertex_num());
+    friends_.resize(person_sub_graph_.vertex_num());
 #endif
   }
   ~IC6() {
@@ -143,9 +149,11 @@ class IC6 {
 #ifdef USE_BITSET
     uint32_t person_num = person_sub_graph_.vertex_num();
     for (uint32_t v = 0; v != person_num; ++v) {
-      if (!friends_.get_bit(v)) {
+      // if (!friends_.get_bit(v)) {
+      if (!friends_[v]) {
         continue;
       }
+      friends_[v] = false;
 #else
     for (auto v : friends_) {
 #endif
@@ -230,7 +238,7 @@ class IC6 {
 #endif
 
 #ifdef USE_BITSET
-  Bitset friends_;
+  std::vector<bool> friends_;
 #else
   std::set<uint32_t> friends_;
 #endif
