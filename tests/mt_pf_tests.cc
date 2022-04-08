@@ -29,6 +29,7 @@ int main(int argc, char** argv) {
   std::string query_path = argv[2];
   std::string output_path = argv[3];
   int thread_num = atoi(argv[4]);
+  int iteration = atoi(argv[5]);
 
   grape::PropertyFragment fragment;
   LOG(INFO) << "Start to deserialize graph...";
@@ -43,10 +44,9 @@ int main(int argc, char** argv) {
     grape::split(line_buf, splits, ',');
     params.emplace_back(std::stol(splits[1].to_string()), splits[2].to_string());
   }
-  const int iteration = 10000 * thread_num;
   std::atomic<int> cur(0);
   int params_num = params.size();
-  LOG(INFO) << "Start to run queries...";
+  LOG(INFO) << "before init apps...";
   std::vector<std::thread> threads(thread_num);
   std::vector<grape::IC6> apps;
   std::vector<std::ofstream> ostrms;
@@ -54,6 +54,7 @@ int main(int argc, char** argv) {
     apps.emplace_back(fragment);
     ostrms.emplace_back(output_path + "_t_" + std::to_string(i), std::ios::binary);
   }
+  LOG(INFO) << "Start to run queries...";
   double t0 = -grape::GetCurrentTime();
   for (int i = 0; i < thread_num; ++i) {
     threads[i] = std::thread([&](int tid) {
@@ -74,7 +75,7 @@ int main(int argc, char** argv) {
   }
   t0 += grape::GetCurrentTime();
   LOG(INFO) << "Finished queries...";
-  LOG(INFO) << t0 / static_cast<double>(iteration) << " (s)";
+  LOG(INFO) << t0 << " (s)";
 
   for (auto& ostrm : ostrms) {
     ostrm.flush();
