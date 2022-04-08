@@ -6,9 +6,40 @@
 
 #include "grape/fragment/property_fragment.h"
 #include "examples/snb_ldbc/utils.h"
+#include "grape/utils/bitset.h"
 
 namespace grape {
 
+#define USE_BITSET
+#define PROF
+
+#ifdef USE_BITSET
+inline void get_2d_friends(SingleLabelSubGraph& graph, uint32_t root, Bitset& friends) {
+  std::set<uint32_t> neighbors;
+  AdjList<uint32_t, uint64_t> adjlist;
+  adjlist = graph.GetIncomingAdjList(root);
+  for (auto& e : adjlist) {
+    neighbors.insert(e.get_neighbor_lid());
+  }
+  adjlist = graph.GetOutgoingAdjList(root);
+  for (auto& e : adjlist) {
+    neighbors.insert(e.get_neighbor_lid());
+  }
+  friends.clear();
+  for (auto v : neighbors) {
+    friends.set_bit(v);
+    adjlist = graph.GetIncomingAdjList(v);
+    for (auto& e : adjlist) {
+      friends.set_bit(e.get_neighbor_lid());
+    }
+    adjlist = graph.GetOutgoingAdjList(v);
+    for (auto& e : adjlist) {
+      friends.set_bit(e.get_neighbor_lid());
+    }
+  }
+  friends.reset_bit(root);
+}
+#else
 inline void get_2d_friends(SingleLabelSubGraph& graph, uint32_t root, std::set<uint32_t>& friends) {
   std::set<uint32_t> neighbors;
   AdjList<uint32_t, uint64_t> adjlist;
@@ -34,6 +65,7 @@ inline void get_2d_friends(SingleLabelSubGraph& graph, uint32_t root, std::set<u
   }
   friends.erase(root);
 }
+#endif
 
 struct TagComparer {
   TagComparer(std::vector<int>& counts, StringViewVector& names)
@@ -71,12 +103,20 @@ class IC6 {
     for (uint32_t tag_i = 0; tag_i != tag_num_; ++tag_i) {
       tag_indexer_._add(tag_name_buffer[tag_i]);
     }
+#ifdef PROF
     stage0_ = 0.0;
     stage1_ = 0.0;
     stage2_ = 0.0;
+#endif
+
+#ifdef USE_BITSET
+    friends_.init(person_sub_graph_.vertex_num());
+#endif
   }
   ~IC6() {
+#ifdef PROF
     LOG(INFO) << "prof: " << stage0_ << ", " << stage1_ << ", " << stage2_;
+#endif
   }
 
   void Query(const char* line, std::ostream& stream) {
@@ -89,15 +129,26 @@ class IC6 {
     uint32_t root = person_sub_graph_.GetVertex(person_id);
     uint32_t tag_id;
     CHECK(tag_indexer_.get_index(tag_name, tag_id));
-    std::set<uint32_t> friends;
+#ifdef PROF
     stage0_ -= GetCurrentTime();
-    get_2d_friends(person_sub_graph_, root, friends);
+#endif
+    get_2d_friends(person_sub_graph_, root, friends_);
+#ifdef PROF
     stage0_ += GetCurrentTime();
 
     stage1_ -= GetCurrentTime();
+#endif
     std::vector<int> post_count(tag_num_, 0);
 
-    for (auto v : friends) {
+#ifdef USE_BITSET
+    uint32_t person_num = person_sub_graph_.vertex_num();
+    for (uint32_t v = 0; v != person_num; ++v) {
+      if (!friends_.get_bit(v)) {
+        continue;
+      }
+#else
+    for (auto v : friends_) {
+#endif
       auto ie = person_post_sub_graph_.GetIncomingAdjList(v);
       for (auto& e : ie) {
         uint32_t post_id = e.get_neighbor_lid();
@@ -117,9 +168,11 @@ class IC6 {
       }
     }
     post_count[tag_id] = 0;
+#ifdef PROF
     stage1_ += GetCurrentTime();
 
     stage2_ -= GetCurrentTime();
+#endif
     auto& tag_names = tag_indexer_.keys();
     TagComparer comparer(post_count, tag_names);
     std::priority_queue<uint32_t, std::vector<uint32_t>, TagComparer> que(comparer);
@@ -152,7 +205,9 @@ class IC6 {
       stream << tag_names[v] << " " << post_count[v] << "\n";
     }
 #endif
+#ifdef PROF
     stage2_ += GetCurrentTime();
+#endif
   }
 
  private:
@@ -168,9 +223,17 @@ class IC6 {
   DoubleLabelSubGraph person_post_sub_graph_;
   DoubleLabelSubGraph post_tag_sub_graph_;
 
+#ifdef PROF
   double stage0_;
   double stage1_;
   double stage2_;
+#endif
+
+#ifdef USE_BITSET
+  Bitset friends_;
+#else
+  std::set<uint32_t> friends_;
+#endif
 
   uint32_t tag_num_;
   IdIndexer<nonstd::string_view, uint32_t> tag_indexer_;

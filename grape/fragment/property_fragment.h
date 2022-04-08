@@ -144,6 +144,10 @@ class SingleLabelSubGraph {
     return ret;
   }
 
+  uint32_t vertex_num() const {
+    return indexer_.size();
+  }
+
   adj_list_t GetIncomingAdjList(uint32_t v) {
     return adj_list_t(ie_.get_begin(v), ie_.get_end(v));
   }
