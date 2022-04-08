@@ -2,6 +2,7 @@
 #include "grape/util.h"
 
 #include "examples/snb_ldbc/ic6.h"
+#include "examples/snb_ldbc/ic6_v2.h"
 
 #include <atomic>
 #include <string>
@@ -48,7 +49,7 @@ int main(int argc, char** argv) {
   int params_num = params.size();
   LOG(INFO) << "before init apps...";
   std::vector<std::thread> threads(thread_num);
-  std::vector<grape::IC6> apps;
+  std::vector<grape::IC6V2> apps;
   std::vector<std::ofstream> ostrms;
   for (int i = 0; i < thread_num; ++i) {
     apps.emplace_back(fragment);
