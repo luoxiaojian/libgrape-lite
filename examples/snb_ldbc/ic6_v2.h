@@ -24,7 +24,8 @@ class IC6V2 {
         has_tag_label_id_(fragment.schema().get_edge_label_id("HASTAG")),
         person_sub_graph_(fragment.GetSubGraph(person_label_id_, knows_label_id_)),
         person_post_sub_graph_(fragment.GetSubGraph(person_label_id_, post_label_id_, has_creator_label_id_)),
-        post_tag_sub_graph_(fragment.GetSubGraph(post_label_id_, tag_label_id_, has_tag_label_id_)) {
+        post_tag_sub_graph_(fragment.GetSubGraph(post_label_id_, tag_label_id_, has_tag_label_id_)),
+        tag_post_sub_graph_(fragment.GetSubGraph(tag_label_id_, post_label_id_, has_tag_label_id_)) {
     auto tag_name_col = std::dynamic_pointer_cast<StringColumn>(fragment.GetVertexDataColumn(tag_label_id_, 0));
     auto& tag_name_buffer = tag_name_col->buffer();
     tag_num_ = tag_name_buffer.size();
@@ -87,7 +88,7 @@ class IC6V2 {
       }
     }
 
-    auto posts_with_tag = post_tag_sub_graph_.GetIncomingAdjList(tag_id);
+    auto posts_with_tag = tag_post_sub_graph_.GetIncomingAdjList(tag_id);
     for (auto& e : posts_with_tag) {
       uint32_t post_id = e.get_neighbor_lid();
       if (posts_[post_id]) {
@@ -153,6 +154,7 @@ class IC6V2 {
   SingleLabelSubGraph person_sub_graph_;
   DoubleLabelSubGraph person_post_sub_graph_;
   DoubleLabelSubGraph post_tag_sub_graph_;
+  DoubleLabelSubGraph tag_post_sub_graph_;
 
 #ifdef PROF
   double stage0_;
