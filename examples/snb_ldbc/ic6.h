@@ -71,6 +71,12 @@ class IC6 {
     for (uint32_t tag_i = 0; tag_i != tag_num_; ++tag_i) {
       tag_indexer_._add(tag_name_buffer[tag_i]);
     }
+    stage0_ = 0.0;
+    stage1_ = 0.0;
+    stage2_ = 0.0;
+  }
+  ~IC6() {
+    LOG(INFO) << "prof: " << stage0_ << ", " << stage1_ << ", " << stage2_;
   }
 
   void Query(const char* line, std::ostream& stream) {
@@ -84,8 +90,11 @@ class IC6 {
     uint32_t tag_id;
     CHECK(tag_indexer_.get_index(tag_name, tag_id));
     std::set<uint32_t> friends;
+    stage0_ -= GetCurrentTime();
     get_2d_friends(person_sub_graph_, root, friends);
+    stage0_ += GetCurrentTime();
 
+    stage1_ -= GetCurrentTime();
     std::vector<int> post_count(tag_num_, 0);
 
     for (auto v : friends) {
@@ -108,7 +117,9 @@ class IC6 {
       }
     }
     post_count[tag_id] = 0;
+    stage1_ += GetCurrentTime();
 
+    stage2_ -= GetCurrentTime();
     auto& tag_names = tag_indexer_.keys();
     TagComparer comparer(post_count, tag_names);
     std::priority_queue<uint32_t, std::vector<uint32_t>, TagComparer> que(comparer);
@@ -135,10 +146,13 @@ class IC6 {
       result.push_back(que.top());
       que.pop();
     }
+#if 0
     for (auto iter = result.rbegin(); iter != result.rend(); ++iter) {
       uint32_t v = *iter;
       stream << tag_names[v] << " " << post_count[v] << "\n";
     }
+#endif
+    stage2_ += GetCurrentTime();
   }
 
  private:
@@ -153,6 +167,10 @@ class IC6 {
   SingleLabelSubGraph person_sub_graph_;
   DoubleLabelSubGraph person_post_sub_graph_;
   DoubleLabelSubGraph post_tag_sub_graph_;
+
+  double stage0_;
+  double stage1_;
+  double stage2_;
 
   uint32_t tag_num_;
   IdIndexer<nonstd::string_view, uint32_t> tag_indexer_;
