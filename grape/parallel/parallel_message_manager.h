@@ -113,6 +113,9 @@ class ParallelMessageManager : public MessageManagerBase {
    */
   void FinishARound() override {
     sent_size_ = finishMsgFilling();
+#ifdef PROFILING
+    msg_size_ += sent_size_;
+#endif
     resetRecvQueue();
     round_++;
   }
@@ -144,6 +147,10 @@ class ParallelMessageManager : public MessageManagerBase {
     waitSend();
     MPI_Barrier(comm_);
     stopRecvThread();
+
+#ifdef PROFILING
+    display_profiling(msg_size_, "message size", comm_);
+#endif
 
     MPI_Comm_free(&comm_);
     comm_ = NULL_COMM;
@@ -566,6 +573,9 @@ class ParallelMessageManager : public MessageManagerBase {
 
   bool force_continue_;
   size_t sent_size_;
+#ifdef PROFILING
+  size_t msg_size_;
+#endif
 
   bool force_terminate_;
   TerminateInfo terminate_info_;

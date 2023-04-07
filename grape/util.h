@@ -100,6 +100,24 @@ void DistinctSort(std::vector<T>& vec) {
   vec.resize(size - count);
 }
 
+void display_profiling(double t, const std::string& name, MPI_Comm comm = MPI_COMM_WORLD) {
+#ifdef PROFILING
+  double min, max, sum;
+  MPI_Allreduce(&t, &min, 1, MPI_DOUBLE, MPI_MIN, comm);
+  MPI_Allreduce(&t, &max, 1, MPI_DOUBLE, MPI_MAX, comm);
+  MPI_Allreduce(&t, &sum, 1, MPI_DOUBLE, MPI_SUM, comm);
+  int worker_num, worker_id;
+  MPI_Comm_size(comm, &worker_num);
+  MPI_Comm_rank(comm, &worker_id);
+
+  if (worker_id == 0) {
+    LOG(INFO) << name << ": min = " << min << ", avg = " << sum / static_cast<double>(worker_num)
+              << ", max = " << max;
+  }
+#endif
+}
+
+
 }  // namespace grape
 
 #endif  // GRAPE_UTIL_H_

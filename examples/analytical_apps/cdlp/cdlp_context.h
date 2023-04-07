@@ -69,6 +69,12 @@ class CDLPContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> {
     auto& frag = this->fragment();
     auto inner_vertices = frag.InnerVertices();
 
+#ifdef PROFILING
+    display_profiling(preprocess_time, "preprocess_time");
+    display_profiling(exec_time, "exec_time");
+    display_profiling(postprocess_time, "postprocess_time");
+#endif
+
     for (auto v : inner_vertices) {
       os << frag.GetId(v) << " " << labels[v] << std::endl;
     }

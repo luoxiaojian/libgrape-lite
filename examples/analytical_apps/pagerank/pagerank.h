@@ -125,6 +125,9 @@ class PageRank : public BatchShuffleAppBase<FRAG_T, PageRankContext<FRAG_T>>,
         }
         ctx.next_result[u] = cur;
       });
+#ifdef PROFILING
+    ctx.exec_time += GetCurrentTime();
+#endif
 
       for (fid_t i = 2; i < frag.fnum(); ++i) {
 #ifdef PROFILING
@@ -194,14 +197,17 @@ class PageRank : public BatchShuffleAppBase<FRAG_T, PageRankContext<FRAG_T>>,
 #endif
     }
 
-#ifdef PROFILING
-    ctx.postprocess_time -= GetCurrentTime();
-#endif
     ctx.result.Swap(ctx.next_result);
 
     if (ctx.step != ctx.max_round) {
+#ifdef PROFILING
+    ctx.postprocess_time -= GetCurrentTime();
+#endif
       messages.SyncInnerVertices<fragment_t, double>(frag, ctx.result,
                                                      thread_num());
+#ifdef PROFILING
+    ctx.postprocess_time += GetCurrentTime();
+#endif
     } else {
       auto& degree = ctx.degree;
       auto& result = ctx.result;
@@ -213,9 +219,6 @@ class PageRank : public BatchShuffleAppBase<FRAG_T, PageRankContext<FRAG_T>>,
       }
       return;
     }
-#ifdef PROFILING
-    ctx.postprocess_time += GetCurrentTime();
-#endif
   }
 };
 

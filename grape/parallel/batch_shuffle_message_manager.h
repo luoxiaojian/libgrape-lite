@@ -209,6 +209,12 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       recv_thread_.join();
     }
 
+#ifdef PROFILING
+    display_profiling(generating_message_time_, "generating message time", comm_);
+    display_profiling(isend_irecv_time_, "isend irecv", comm_);
+    display_profiling(msg_size_, "message size", comm_);
+#endif
+
     MPI_Comm_free(&comm_);
     comm_ = NULL_COMM;
   }
@@ -327,6 +333,7 @@ class BatchShuffleMessageManager : public MessageManagerBase {
   typename std::enable_if<archive_shuffle_t<DATA_T>::value>::type startRecv(
       const GRAPH_T& frag,
       typename GRAPH_T::template vertex_array_t<DATA_T>& data, int thread_num) {
+    LOG(FATAL) << "not expect to reach here...";
     std::vector<std::thread> threads(thread_num);
     std::atomic<fid_t> cur_fid(0);
     std::vector<size_t> out_archive_sizes(fnum_), in_archive_sizes(fnum_);
@@ -380,10 +387,16 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       fid_t src_fid = (fid_ + fnum_ - i) % fnum_;
       auto range = frag.OuterVertices(src_fid);
       int old_req_num = recv_reqs_.size();
+#ifdef PROFILING
+      isend_irecv_time_ -= GetCurrentTime();
+#endif
       sync_comm::irecv_buffer<char>(
           reinterpret_cast<char*>(&data[*range.begin()]),
           range.size() * sizeof(DATA_T), comm_spec_.FragToWorker(src_fid), 0,
           comm_, recv_reqs_);
+#ifdef PROFILING
+      isend_irecv_time_ += GetCurrentTime();
+#endif
       int new_req_num = recv_reqs_.size();
       recv_from_.resize(new_req_num, src_fid);
       remaining_reqs_[src_fid] = new_req_num - old_req_num;
@@ -395,6 +408,7 @@ class BatchShuffleMessageManager : public MessageManagerBase {
   startRecv(const GRAPH_T& frag,
             typename GRAPH_T::template vertex_array_t<DATA_T>& data,
             int thread_num) {
+    LOG(FATAL) << "not expect to reach here...";
     for (fid_t i = 1; i < fnum_; ++i) {
       fid_t src_fid = (fid_ + fnum_ - i) % fnum_;
       auto& buffer = shuffle_in_buffers_[src_fid];
@@ -417,7 +431,22 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       const GRAPH_T& frag,
       const typename GRAPH_T::template vertex_array_t<DATA_T>& data,
       int thread_num) {
+   
+    CHECK_EQ(sending_queue_.Size(), 0);
+    sending_queue_.SetProducerNum(1);
+    std::thread send_thread = std::thread([this]() {
+      fid_t got;
+      while (sending_queue_.Get(got)) {
+        auto& vec = shuffle_out_buffers_[got];
+        sync_comm::isend_buffer<char>(vec.data(), vec.size(),
+                                      comm_spec_.FragToWorker(got), 0, comm_,
+                                      send_reqs_);
+      }
+    });
     for (fid_t i = 1; i < fnum_; ++i) {
+#ifdef PROFILING
+      generating_message_time_ -= GetCurrentTime();
+#endif
       fid_t dst_fid = (i + fid_) % fnum_;
       auto& id_vec = frag.MirrorVertices(dst_fid);
       auto& vec = shuffle_out_buffers_[dst_fid];
@@ -429,12 +458,24 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       for (size_t k = 0; k < num; ++k) {
         buf[k] = data[id_vec[k]];
       }
+#ifdef PROFILING
+      generating_message_time_ += GetCurrentTime();
+      isend_irecv_time_ -= GetCurrentTime();
+#endif
 
+      sending_queue_.Put(dst_fid);
+/*
       sync_comm::isend_buffer<char>(vec.data(), vec.size(),
                                     comm_spec_.FragToWorker(dst_fid), 0, comm_,
                                     send_reqs_);
+*/
+#ifdef PROFILING
+      isend_irecv_time_ += GetCurrentTime();
+#endif
       msg_size_ += vec.size();
     }
+    sending_queue_.DecProducerNum();
+    send_thread.join();
   }
 
   template <typename GRAPH_T, typename DATA_T>
@@ -442,6 +483,7 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       const GRAPH_T& frag,
       const typename GRAPH_T::template vertex_array_t<DATA_T>& data,
       int thread_num) {
+    LOG(FATAL) << "not expect to reach here...";
     for (fid_t i = 1; i < fnum_; ++i) {
       fid_t dst_fid = (i + fid_) % fnum_;
       auto& arc = shuffle_out_archives_[dst_fid];
@@ -502,6 +544,12 @@ class BatchShuffleMessageManager : public MessageManagerBase {
 
   bool force_terminate_;
   TerminateInfo terminate_info_;
+
+  BlockingQueue<fid_t> sending_queue_;
+#ifdef PROFILING
+  double generating_message_time_ = 0;
+  double isend_irecv_time_ = 0;
+#endif
 };
 
 }  // namespace grape

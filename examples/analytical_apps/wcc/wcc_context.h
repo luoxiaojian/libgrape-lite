@@ -58,9 +58,9 @@ class WCCContext : public WCCContextType<FRAG_T> {
       os << frag.GetId(v) << " " << comp_id[v] << std::endl;
     }
 #ifdef PROFILING
-    VLOG(2) << "preprocess_time: " << preprocess_time << "s.";
-    VLOG(2) << "eval_time: " << eval_time << "s.";
-    VLOG(2) << "postprocess_time: " << postprocess_time << "s.";
+    display_profiling(preprocess_time, "preprocess_time");
+    display_profiling(exec_time, "exec_time");
+    display_profiling(postprocess_time, "postprocess_time");
 #endif
   }
 
