@@ -215,12 +215,15 @@ class BatchShuffleMessageManager : public MessageManagerBase {
 
 #ifdef PROFILING
     display_profiling(generating_message_time_, "generating message time", comm_);
-    display_profiling(isend_irecv_time_, "isend irecv", comm_);
+    display_profiling(isend_time_, "isend", comm_);
+    display_profiling(irecv_time_, "irecv", comm_);
     display_profiling(total_msg_size_, "message size", comm_);
 #endif
 
+LOG(INFO) << "before free comm";
     MPI_Comm_free(&comm_);
     comm_ = NULL_COMM;
+LOG(INFO) << "after free comm";
   }
 
   /**
@@ -261,9 +264,12 @@ class BatchShuffleMessageManager : public MessageManagerBase {
    * is, messages from all other fragments are received.
    */
   void UpdateOuterVertices() {
+/*
     while (remaining_frags_ != 0) {
       UpdatePartialOuterVertices();
     }
+*/
+    MPI_Waitall(recv_reqs_.size(), &recv_reqs_[0], MPI_STATUSES_IGNORE);
   }
 
   /**
@@ -387,24 +393,65 @@ class BatchShuffleMessageManager : public MessageManagerBase {
   startRecv(const GRAPH_T& frag,
             typename GRAPH_T::template vertex_array_t<DATA_T>& data,
             int thread_num) {
+#ifdef PROFILING
+    irecv_time_ -= GetCurrentTime();
+#endif
+    std::vector<int> req_offsets(fnum_);
+    for (fid_t i = 1; i < fnum_; ++i) {
+      fid_t src_fid = (fid_ + fnum_ - i) % fnum_;
+      auto range = frag.OuterVertices(src_fid);
+      int old_req_num = recv_reqs_.size();
+      int new_req_num = sync_comm::chunk_num<char>(range.size() * sizeof(DATA_T)) + old_req_num;
+      recv_reqs_.resize(new_req_num);
+      req_offsets[src_fid] = old_req_num;
+      recv_from_.resize(new_req_num, src_fid);
+      remaining_reqs_[src_fid] = new_req_num - old_req_num;
+    }
+    thread_num = (fnum_ - 1) < thread_num ? (fnum_ - 1) : thread_num;
+    std::vector<std::thread> threads(thread_num);
+    std::atomic<fid_t> cur(1);
+    for (int i = 0; i < thread_num; ++i) {
+      threads[i] = std::thread([&]() {
+        while (true) {
+          fid_t got = cur.fetch_add(1);
+          if (got >= fnum_) {
+            break;
+          }
+          fid_t src_fid = (fid_ + fnum_ - got) % fnum_;
+          auto range = frag.OuterVertices(src_fid);
+          sync_comm::irecv_buffer<char>(
+              reinterpret_cast<char*>(&data[*range.begin()]),
+              range.size() * sizeof(DATA_T), comm_spec_.FragToWorker(src_fid), 0,
+              comm_, &recv_reqs_[req_offsets[src_fid]]);
+        }
+      });
+    }
+    for (auto& thrd : threads) {
+      thrd.join();
+    }
+#ifdef PROFILING
+    irecv_time_ += GetCurrentTime();
+#endif
+#if 0
     for (fid_t i = 1; i < fnum_; ++i) {
       fid_t src_fid = (fid_ + fnum_ - i) % fnum_;
       auto range = frag.OuterVertices(src_fid);
       int old_req_num = recv_reqs_.size();
 #ifdef PROFILING
-      isend_irecv_time_ -= GetCurrentTime();
+      irecv_time_ -= GetCurrentTime();
 #endif
       sync_comm::irecv_buffer<char>(
           reinterpret_cast<char*>(&data[*range.begin()]),
           range.size() * sizeof(DATA_T), comm_spec_.FragToWorker(src_fid), 0,
           comm_, recv_reqs_);
 #ifdef PROFILING
-      isend_irecv_time_ += GetCurrentTime();
+      irecv_time_ += GetCurrentTime();
 #endif
       int new_req_num = recv_reqs_.size();
       recv_from_.resize(new_req_num, src_fid);
       remaining_reqs_[src_fid] = new_req_num - old_req_num;
     }
+#endif
   }
 
   template <typename GRAPH_T, typename DATA_T>
@@ -435,50 +482,81 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       const GRAPH_T& frag,
       const typename GRAPH_T::template vertex_array_t<DATA_T>& data,
       int thread_num) {
-   
     CHECK_EQ(sending_queue_.Size(), 0);
-    sending_queue_.SetProducerNum(1);
+    sending_queue_.SetProducerNum(thread_num < fnum_ ? thread_num : 1);
     std::thread send_thread = std::thread([this]() {
       fid_t got;
       while (sending_queue_.Get(got)) {
         auto& vec = shuffle_out_buffers_[got];
+#ifdef PROFILING
+        isend_time_ -= GetCurrentTime();
+#endif
         sync_comm::isend_buffer<char>(vec.data(), vec.size(),
                                       comm_spec_.FragToWorker(got), 0, comm_,
                                       send_reqs_);
+#ifdef PROFILING
+        isend_time_ += GetCurrentTime();
+#endif
       }
     });
-    for (fid_t i = 1; i < fnum_; ++i) {
-#ifdef PROFILING
-      generating_message_time_ -= GetCurrentTime();
-#endif
-      fid_t dst_fid = (i + fid_) % fnum_;
-      auto& id_vec = frag.MirrorVertices(dst_fid);
-      auto& vec = shuffle_out_buffers_[dst_fid];
-      vec.clear();
-      vec.resize(id_vec.size() * sizeof(DATA_T));
-      DATA_T* buf = reinterpret_cast<DATA_T*>(vec.data());
-      size_t num = id_vec.size();
-#pragma omp parallel for num_threads(thread_num)
-      for (size_t k = 0; k < num; ++k) {
-        buf[k] = data[id_vec[k]];
+    if (thread_num < fnum_) {
+      std::atomic<fid_t> cur(1);
+      std::vector<std::thread> work_threads(thread_num);
+      for (int i = 0; i < thread_num; ++i) {
+        work_threads[i] = std::thread([&]() {
+          while (true) {
+            fid_t got = cur.fetch_add(1);
+            if (got >= fnum_) {
+              break;
+            }
+            fid_t dst_fid = (got + fid_) % fnum_;
+        	  auto& id_vec = frag.MirrorVertices(dst_fid);
+            auto& vec = shuffle_out_buffers_[dst_fid];
+            vec.clear();
+            vec.resize(id_vec.size() * sizeof(DATA_T));
+            DATA_T* buf = reinterpret_cast<DATA_T*>(vec.data());
+            size_t num = id_vec.size();
+            for (size_t k = 0; k < num; ++k) {
+              buf[k] = data[id_vec[k]];
+            }
+            sending_queue_.Put(dst_fid);
+          }
+          sending_queue_.DecProducerNum();
+        });
       }
+      for (auto& thrd : work_threads) {
+        thrd.join();
+      }
+    } else {
+      for (fid_t i = 1; i < fnum_; ++i) {
 #ifdef PROFILING
-      generating_message_time_ += GetCurrentTime();
-      isend_irecv_time_ -= GetCurrentTime();
+        generating_message_time_ -= GetCurrentTime();
+#endif
+        fid_t dst_fid = (i + fid_) % fnum_;
+        auto& id_vec = frag.MirrorVertices(dst_fid);
+        auto& vec = shuffle_out_buffers_[dst_fid];
+        vec.clear();
+        vec.resize(id_vec.size() * sizeof(DATA_T));
+        DATA_T* buf = reinterpret_cast<DATA_T*>(vec.data());
+        size_t num = id_vec.size();
+#pragma omp parallel for num_threads(thread_num)
+        for (size_t k = 0; k < num; ++k) {
+          buf[k] = data[id_vec[k]];
+        }
+#ifdef PROFILING
+        generating_message_time_ += GetCurrentTime();
 #endif
 
-      sending_queue_.Put(dst_fid);
+        sending_queue_.Put(dst_fid);
 /*
-      sync_comm::isend_buffer<char>(vec.data(), vec.size(),
+        sync_comm::isend_buffer<char>(vec.data(), vec.size(),
                                     comm_spec_.FragToWorker(dst_fid), 0, comm_,
                                     send_reqs_);
 */
-#ifdef PROFILING
-      isend_irecv_time_ += GetCurrentTime();
-#endif
-      msg_size_ += vec.size();
+        msg_size_ += vec.size();
+      }
+      sending_queue_.DecProducerNum();
     }
-    sending_queue_.DecProducerNum();
     send_thread.join();
   }
 
@@ -552,7 +630,8 @@ class BatchShuffleMessageManager : public MessageManagerBase {
   BlockingQueue<fid_t> sending_queue_;
 #ifdef PROFILING
   double generating_message_time_ = 0;
-  double isend_irecv_time_ = 0;
+  double irecv_time_ = 0;
+  double isend_time_ = 0;
   size_t total_msg_size_;
 #endif
 };

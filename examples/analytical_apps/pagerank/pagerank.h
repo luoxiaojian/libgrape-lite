@@ -108,15 +108,16 @@ class PageRank : public BatchShuffleAppBase<FRAG_T, PageRankContext<FRAG_T>>,
                   ctx.delta * ctx.dangling_sum / ctx.graph_vnum;
     ctx.dangling_sum = base * ctx.total_dangling_vnum;
 
-#ifdef PROFILING
-    ctx.exec_time -= GetCurrentTime();
-#endif
 
-    if (ctx.avg_degree > 10 && frag.fnum() > 1) {
+    // if (ctx.avg_degree > 10 && frag.fnum() > 1) {
+    if (false) {
       // If fragment is dense and there are multiple fragments, receiving
       // messages is overlapped with computation. Receiving and computing
       // procedures are be splitted into multiple rounds. In each round,
       // messages from a fragment are received and then processed.
+#ifdef PROFILING
+    ctx.exec_time -= GetCurrentTime();
+#endif
       ForEach(inner_vertices, [&ctx, &frag](int tid, vertex_t u) {
         double cur = 0;
         auto es = frag.GetOutgoingInnerVertexAdjList(u);
