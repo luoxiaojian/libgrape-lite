@@ -59,7 +59,7 @@ class WCCContext : public WCCContextType<FRAG_T> {
     }
 #ifdef PROFILING
     display_profiling(preprocess_time, "preprocess_time");
-    display_profiling(exec_time, "exec_time");
+    display_profiling(eval_time, "exec_time");
     display_profiling(postprocess_time, "postprocess_time");
 #endif
   }

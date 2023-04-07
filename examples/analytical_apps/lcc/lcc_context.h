@@ -41,10 +41,11 @@ class LCCContext : public VertexDataContext<FRAG_T, double> {
   void Init(ParallelMessageManager& messages,
             int degree_threshold = std::numeric_limits<int>::max()) {
     auto& frag = this->fragment();
+    auto outer_vertices = frag.OuterVertices();
     auto vertices = frag.Vertices();
 
     global_degree.Init(vertices);
-    complete_neighbor.Init(vertices);
+    complete_neighbor.Init(outer_vertices);
     tricnt.Init(vertices, 0);
     this->degree_threshold = degree_threshold;
   }
@@ -73,7 +74,7 @@ class LCCContext : public VertexDataContext<FRAG_T, double> {
   }
 
   typename FRAG_T::template vertex_array_t<int> global_degree;
-  typename FRAG_T::template vertex_array_t<std::vector<vertex_t>>
+  typename FRAG_T::template outer_vertex_array_t<std::vector<vertex_t>>
       complete_neighbor;
   typename FRAG_T::template vertex_array_t<int> tricnt;
   int degree_threshold = 0;

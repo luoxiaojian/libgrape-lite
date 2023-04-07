@@ -166,7 +166,11 @@ class BatchShuffleMessageManager : public MessageManagerBase {
   /**
    * @brief Inherit
    */
-  void FinishARound() override {}
+  void FinishARound() override {
+#ifdef PROFILING
+    total_msg_size_ += msg_size_;
+#endif
+  }
 
   /**
    * @brief Inherit
@@ -212,7 +216,7 @@ class BatchShuffleMessageManager : public MessageManagerBase {
 #ifdef PROFILING
     display_profiling(generating_message_time_, "generating message time", comm_);
     display_profiling(isend_irecv_time_, "isend irecv", comm_);
-    display_profiling(msg_size_, "message size", comm_);
+    display_profiling(total_msg_size_, "message size", comm_);
 #endif
 
     MPI_Comm_free(&comm_);
@@ -549,6 +553,7 @@ class BatchShuffleMessageManager : public MessageManagerBase {
 #ifdef PROFILING
   double generating_message_time_ = 0;
   double isend_irecv_time_ = 0;
+  size_t total_msg_size_;
 #endif
 };
 

@@ -99,22 +99,18 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T>>,
                   return;
                 }
                 vid_t u_gid, v_gid;
-                auto& nbr_vec = ctx.complete_neighbor[v];
                 int degree = ctx.global_degree[v];
-                nbr_vec.reserve(degree);
                 auto es = frag.GetOutgoingAdjList(v);
                 std::vector<vid_t> msg_vec;
                 msg_vec.reserve(degree);
                 for (auto& e : es) {
                   auto u = e.get_neighbor();
                   if (ctx.global_degree[u] < ctx.global_degree[v]) {
-                    nbr_vec.push_back(u);
                     msg_vec.push_back(frag.Vertex2Gid(u));
                   } else if (ctx.global_degree[u] == ctx.global_degree[v]) {
                     u_gid = frag.Vertex2Gid(u);
                     v_gid = frag.GetInnerVertexGid(v);
                     if (v_gid > u_gid) {
-                      nbr_vec.push_back(u);
                       msg_vec.push_back(u_gid);
                     }
                   }
@@ -165,22 +161,35 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T>>,
               return;
             }
             auto& v0_nbr_set = vertexsets[tid];
-            auto& v0_nbr_vec = ctx.complete_neighbor[v];
-            for (auto u : v0_nbr_vec) {
-              v0_nbr_set.Insert(u);
+            auto es = frag.GetOutgoingAdjList(v);
+            for (auto& e : es) {
+              v0_nbr_set.Insert(e.get_neighbor());
             }
-            for (auto u : v0_nbr_vec) {
-              auto& v1_nbr_vec = ctx.complete_neighbor[u];
-              for (auto w : v1_nbr_vec) {
-                if (v0_nbr_set.Exist(w)) {
-                  atomic_add(ctx.tricnt[u], 1);
-                  atomic_add(ctx.tricnt[v], 1);
-                  atomic_add(ctx.tricnt[w], 1);
+            for (auto& e : es) {
+              auto u = e.get_neighbor();
+              if (frag.IsInnerVertex(u)) {
+                auto es2 = frag.GetOutgoingAdjList(u);
+                for (auto& e2 : es2) {
+                  auto w = e2.get_neighbor();
+                  if (v0_nbr_set.Exist(w)) {
+                    atomic_add(ctx.tricnt[u], 1);
+                    atomic_add(ctx.tricnt[v], 1);
+                    atomic_add(ctx.tricnt[w], 1);
+                  }
+                }
+              } else {
+                auto& v1_nbr_vec = ctx.complete_neighbor[u];
+                for (auto w : v1_nbr_vec) {
+                  if (v0_nbr_set.Exist(w)) {
+                    atomic_add(ctx.tricnt[u], 1);
+                    atomic_add(ctx.tricnt[v], 1);
+                    atomic_add(ctx.tricnt[w], 1);
+                  }
                 }
               }
             }
-            for (auto u : v0_nbr_vec) {
-              v0_nbr_set.Erase(u);
+            for (auto& e : es) {
+              v0_nbr_set.Erase(e.get_neighbor());
             }
           },
           [](int tid) {});

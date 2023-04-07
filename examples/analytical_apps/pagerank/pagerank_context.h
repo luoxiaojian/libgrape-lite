@@ -80,7 +80,6 @@ class PageRankContext : public VertexDataContext<FRAG_T, double> {
   double preprocess_time = 0;
   double exec_time = 0;
   double postprocess_time = 0;
-  double generating_msg_time = 0;
 #endif
 
   vid_t total_dangling_vnum = 0;
