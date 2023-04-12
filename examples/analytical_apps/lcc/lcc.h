@@ -17,12 +17,45 @@ limitations under the License.
 #define EXAMPLES_ANALYTICAL_APPS_LCC_LCC_H_
 
 #include <grape/grape.h>
+#include <grape/serialization/out_archive.h>
 
 #include <vector>
 
 #include "lcc/lcc_context.h"
 
 namespace grape {
+
+template <typename T>
+class LCCRefVector {
+ public:
+  LCCRefVector() : p_(nullptr), limit_(nullptr) {}
+  ~LCCRefVector() {}
+
+  void reset(const T* p, size_t size) {
+    p_ = p;
+    limit_ = p + size;
+  }
+
+  bool pop(T& val) {
+    if (p_ == limit_) {
+      return false;
+    }
+    val = *p_++;
+    return true;
+  }
+
+ private:
+  const T* p_;
+  const T* limit_;
+};
+
+template <typename T>
+OutArchive& operator>>(OutArchive& arc, LCCRefVector<T>& vec) {
+  size_t size;
+  arc >> size;
+  vec.reset(static_cast<const T*>(arc.GetBytes(size * sizeof(T))), size);
+  return arc;
+}
 
 /**
  * @brief An implementation of LCC (Local CLustering Coefficient), the version
@@ -177,16 +210,17 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
 #ifdef PROFILING
       ctx.preprocess_time -= GetCurrentTime();
 #endif
-      messages.ParallelProcess<fragment_t, std::vector<vid_t>>(
+      messages.ParallelProcess<fragment_t, LCCRefVector<vid_t>>(
           thread_num(), frag,
-          [&frag, &ctx](int tid, vertex_t u, const std::vector<vid_t>& msg) {
+          [&frag, &ctx](int tid, vertex_t u, LCCRefVector<vid_t>& msg) {
             auto& nbr_vec = ctx.complete_neighbor[u];
-            for (auto gid : msg) {
+	    vid_t gid;
+	    while (msg.pop(gid)) {
               vertex_t v;
               if (frag.Gid2Vertex(gid, v)) {
                 nbr_vec.push_back(v);
               }
-            }
+	    }
           });
 
 #ifdef PROFILING

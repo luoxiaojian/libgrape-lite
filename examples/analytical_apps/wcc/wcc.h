@@ -20,6 +20,8 @@ limitations under the License.
 
 #include "wcc/wcc_context.h"
 
+#define WCC_USE_GID
+
 namespace grape {
 
 #define MIN_COMP_ID(a, b) ((a) > (b) ? (b) : (a))
@@ -67,8 +69,13 @@ class WCC : public ParallelAppBase<FRAG_T, WCCContext<FRAG_T>>,
         ctx.next_modified.Insert(v);
       }
     });
+#ifdef WCC_USE_GID
+    std::vector<vid_t> prev_msg(thread_num(), 0);
+#else
+    std::vector<oid_t> prev_msg(thread_num(), 0);
+#endif
 
-    ForEach(outer_vertices, [&frag, &ctx, &channels](int tid, vertex_t v) {
+    ForEach(outer_vertices, [&frag, &ctx, &channels, &prev_msg](int tid, vertex_t v) {
       auto old_cid = ctx.comp_id[v];
       auto new_cid = old_cid;
       auto es = frag.GetIncomingAdjList(v);
@@ -79,9 +86,21 @@ class WCC : public ParallelAppBase<FRAG_T, WCCContext<FRAG_T>>,
       ctx.comp_id[v] = new_cid;
       if (new_cid < old_cid) {
         ctx.next_modified.Insert(v);
+	ctx.msg_count.fetch_add(1);
 #ifdef WCC_USE_GID
-        channels[tid].SyncStateOnOuterVertex<fragment_t, vid_t>(frag, v,
+        bool ret = channels[tid].SyncStateOnOuterVertex<fragment_t, vid_t>(frag, v,
                                                                 new_cid);
+	vid_t gid = frag.Vertex2Gid(v);
+	if (prev_msg[tid] > gid) {
+	  LOG(INFO) << "prev = " << prev_msg[tid] << ", cur = " << gid;
+	}
+	// CHECK_LE(prev_msg[tid], gid);
+	ctx.varint_size.fetch_add(varint_length(gid - prev_msg[tid]) + varint_length(new_cid));
+	if (ret) {
+	  prev_msg[tid] = 0;
+	} else {
+	  prev_msg[tid] = gid;
+	}
 #else
         channels[tid].SyncStateOnOuterVertex<fragment_t, oid_t>(frag, v,
                                                                 new_cid);
@@ -97,6 +116,8 @@ class WCC : public ParallelAppBase<FRAG_T, WCCContext<FRAG_T>>,
     auto inner_vertices = frag.InnerVertices();
     auto outer_vertices = frag.OuterVertices();
 
+    auto& channels = messages.Channels();
+
     // propagate label to incoming and outgoing neighbors
     ForEach(ctx.curr_modified, inner_vertices,
             [&frag, &ctx](int tid, vertex_t v) {
@@ -111,14 +132,33 @@ class WCC : public ParallelAppBase<FRAG_T, WCCContext<FRAG_T>>,
               }
             });
 
-    ForEach(outer_vertices, [&messages, &frag, &ctx](int tid, vertex_t v) {
-      if (ctx.next_modified.Exist(v)) {
 #ifdef WCC_USE_GID
-        messages.SyncStateOnOuterVertex<fragment_t, vid_t>(frag, v,
-                                                           ctx.comp_id[v], tid);
+    std::vector<vid_t> prev_msg(thread_num(), 0);
 #else
-        messages.SyncStateOnOuterVertex<fragment_t, oid_t>(frag, v,
-                                                           ctx.comp_id[v], tid);
+    std::vector<oid_t> prev_msg(thread_num(), 0);
+#endif
+
+    ForEach(outer_vertices, [&channels, &frag, &ctx, &prev_msg](int tid, vertex_t v) {
+      if (ctx.next_modified.Exist(v)) {
+	ctx.msg_count.fetch_add(1);
+#ifdef WCC_USE_GID
+        bool ret = channels[tid].SyncStateOnOuterVertex<fragment_t, vid_t>(frag, v,
+                                                                           ctx.comp_id[v]);
+	
+	vid_t gid = frag.Vertex2Gid(v);
+	if (prev_msg[tid] > gid) {
+	  LOG(INFO) << "prev = " << prev_msg[tid] << ", cur = " << gid;
+	}
+	// CHECK_LE(prev_msg[tid], gid);
+	ctx.varint_size.fetch_add(varint_length(gid - prev_msg[tid]) + varint_length(ctx.comp_id[v]));
+	if (ret) {
+	  prev_msg[tid] = 0;
+	} else {
+	  prev_msg[tid] = gid;
+	}
+#else
+        channels[tid].SyncStateOnOuterVertex<fragment_t, oid_t>(frag, v,
+                                                           ctx.comp_id[v]);
 #endif
       }
     });

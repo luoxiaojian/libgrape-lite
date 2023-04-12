@@ -20,6 +20,8 @@ limitations under the License.
 
 namespace grape {
 
+#define WCC_USE_GID
+
 #ifdef WCC_USE_GID
 template <typename FRAG_T>
 using WCCContextType = VertexDataContext<FRAG_T, typename FRAG_T::vid_t>;
@@ -49,6 +51,9 @@ class WCCContext : public WCCContextType<FRAG_T> {
 
     curr_modified.Init(frag.Vertices());
     next_modified.Init(frag.Vertices());
+
+    msg_count.store(0);
+    varint_size.store(0);
   }
 
   void Output(std::ostream& os) override {
@@ -62,11 +67,18 @@ class WCCContext : public WCCContextType<FRAG_T> {
     VLOG(2) << "eval_time: " << eval_time << "s.";
     VLOG(2) << "postprocess_time: " << postprocess_time << "s.";
 #endif
+
+    LOG(INFO) << "[frag-" << frag.fid() << "]: msg_count: " << msg_count.load();
+    LOG(INFO) << "[frag-" << frag.fid() << "]: varint_size: " << varint_size.load();
+
   }
 
   typename FRAG_T::template vertex_array_t<cid_t>& comp_id;
 
   DenseVertexSet<typename FRAG_T::vertices_t> curr_modified, next_modified;
+
+  std::atomic<size_t> msg_count;
+  std::atomic<size_t> varint_size;
 
 #ifdef PROFILING
   double preprocess_time = 0;

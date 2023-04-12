@@ -100,6 +100,83 @@ void DistinctSort(std::vector<T>& vec) {
   vec.resize(size - count);
 }
 
+int varint_length(uint64_t v) {
+  int len = 1;
+  while (v >= 128) {
+    v >>= 7;
+    len++;
+  }
+  return len;
+}
+
+size_t varint_array_length(const std::vector<uint32_t>& vec) {
+  size_t ret = 0;
+  uint32_t base = 0;
+  for (auto v : vec) {
+    // CHECK_LE(base, v);
+    if (base >= v) {
+      LOG(INFO) << "base = " << base << ", v = " << v;
+    }
+    ret += varint_length(v - base);
+    base = v;
+  }
+  return ret;
+}
+
+size_t varint_array_length(const std::vector<uint64_t>& vec) {
+  size_t ret = 0;
+  uint64_t base = 0;
+  for (auto v : vec) {
+    // CHECK_LE(base, v);
+    if (base >= v) {
+      LOG(INFO) << "base = " << base << ", v = " << v;
+    }
+    ret += varint_length(v - base);
+    base = v;
+  }
+  return ret;
+}
+
+template <typename T>
+struct IdHasher {};
+
+template <>
+struct IdHasher<uint32_t> {
+  static uint32_t hash(uint32_t x) {
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = (x >> 16) ^ x;
+    return x;
+  }
+};
+
+template <>
+struct IdHasher<uint64_t> {
+  static uint64_t hash(uint64_t x) {
+    x = (x ^ (x >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
+    x = (x ^ (x >> 27)) * UINT64_C(0x94d049bb133111eb);
+    x = x ^ (x >> 31);
+    return x;
+  }
+};
+
+template <typename T>
+struct IdHasherLegacy {};
+
+template <>
+struct IdHasherLegacy<uint32_t> {
+  static uint32_t hash(uint32_t x) {
+    return x;
+  }
+};
+
+template <>
+struct IdHasherLegacy<uint64_t> {
+  static uint64_t hash(uint64_t x) {
+    return x;
+  }
+};
+
 }  // namespace grape
 
 #endif  // GRAPE_UTIL_H_

@@ -524,6 +524,7 @@ struct DestList {
       : begin(begin_), end(end_) {}
   DEV_HOST_INLINE bool Empty() { return begin == end; }
   DEV_HOST_INLINE bool NotEmpty() { return !Empty(); }
+  size_t size() const { return end - begin; }
   const fid_t* begin;
   const fid_t* end;
 };

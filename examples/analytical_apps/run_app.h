@@ -78,7 +78,11 @@ using LCCDirected32 = LCCDirected<FRAG_T, uint32_t>;
 
 void Init() {
   if (FLAGS_out_prefix.empty()) {
-    LOG(FATAL) << "Please assign an output prefix.";
+    LOG(INFO) << "out_prefix is not assigned, no result file will be generated";
+  } else {
+    if (access(FLAGS_out_prefix.c_str(), 0) != 0) {
+      mkdir(FLAGS_out_prefix.c_str(), 0777);
+    }
   }
   if (FLAGS_deserialize && FLAGS_serialization_prefix.empty()) {
     LOG(FATAL) << "Please assign a serialization prefix.";
@@ -89,9 +93,6 @@ void Init() {
                   "Please assign vertex files or use Hash Partitioner";
   }
 
-  if (access(FLAGS_out_prefix.c_str(), 0) != 0) {
-    mkdir(FLAGS_out_prefix.c_str(), 0777);
-  }
 
   InitMPIComm();
   CommSpec comm_spec;
@@ -117,15 +118,19 @@ void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
   worker->Query(std::forward<Args>(args)...);
   timer_next("print output");
 
-  std::ofstream ostream;
-  std::string output_path =
-      grape::GetResultFilename(out_prefix, fragment->fid());
-  ostream.open(output_path);
-  worker->Output(ostream);
-  ostream.close();
+  if (!out_prefix.empty()) {
+    std::ofstream ostream;
+    std::string output_path =
+        grape::GetResultFilename(out_prefix, fragment->fid());
+    ostream.open(output_path);
+    worker->Output(ostream);
+    ostream.close();
+    VLOG(1) << "Worker-" << comm_spec.worker_id() << " finished: " << output_path;
+  } else {
+    VLOG(1) << "Worker-" << comm_spec.worker_id() << " finished";
+  }
   worker->Finalize();
   timer_end();
-  VLOG(1) << "Worker-" << comm_spec.worker_id() << " finished: " << output_path;
 }
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,

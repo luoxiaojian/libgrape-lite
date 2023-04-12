@@ -68,13 +68,16 @@ class ThreadLocalMessageBuffer {
    * @param msg
    */
   template <typename GRAPH_T, typename MESSAGE_T>
-  inline void SyncStateOnOuterVertex(const GRAPH_T& frag,
+  inline bool SyncStateOnOuterVertex(const GRAPH_T& frag,
                                      const typename GRAPH_T::vertex_t& v,
                                      const MESSAGE_T& msg) {
     fid_t fid = frag.GetFragId(v);
     to_send_[fid] << frag.GetOuterVertexGid(v) << msg;
     if (to_send_[fid].GetSize() > block_size_) {
       flushLocalBuffer(fid);
+      return true;
+    } else {
+      return false;
     }
   }
 
@@ -184,7 +187,6 @@ class ThreadLocalMessageBuffer {
   inline void FlushMessages() {
     for (fid_t fid = 0; fid < fnum_; ++fid) {
       if (to_send_[fid].GetSize() > 0) {
-        sent_size_ += to_send_[fid].GetSize();
         flushLocalBuffer(fid);
       }
     }
@@ -196,6 +198,7 @@ class ThreadLocalMessageBuffer {
 
  private:
   inline void flushLocalBuffer(fid_t fid) {
+    sent_size_ += to_send_[fid].GetSize();
     mm_->SendRawMsgByFid(fid, std::move(to_send_[fid]));
     to_send_[fid].Reserve(block_cap_);
   }
