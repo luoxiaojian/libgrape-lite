@@ -184,7 +184,6 @@ class ThreadLocalMessageBuffer {
   inline void FlushMessages() {
     for (fid_t fid = 0; fid < fnum_; ++fid) {
       if (to_send_[fid].GetSize() > 0) {
-        sent_size_ += to_send_[fid].GetSize();
         flushLocalBuffer(fid);
       }
     }
@@ -196,6 +195,7 @@ class ThreadLocalMessageBuffer {
 
  private:
   inline void flushLocalBuffer(fid_t fid) {
+    sent_size_ += to_send_[fid].GetSize();
     mm_->SendRawMsgByFid(fid, std::move(to_send_[fid]));
     to_send_[fid].Reserve(block_cap_);
   }

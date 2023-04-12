@@ -81,6 +81,7 @@ class ParallelMessageManager : public MessageManagerBase {
     round_ = 0;
 
     sent_size_ = 0;
+    total_sent_size_ = 0;
   }
 
   /**
@@ -115,6 +116,7 @@ class ParallelMessageManager : public MessageManagerBase {
     sent_size_ = finishMsgFilling();
     resetRecvQueue();
     round_++;
+    total_sent_size_ += sent_size_;
   }
 
   /**
@@ -143,6 +145,7 @@ class ParallelMessageManager : public MessageManagerBase {
   void Finalize() override {
     waitSend();
     MPI_Barrier(comm_);
+    LOG(INFO) << "[worker-" << comm_spec_.worker_id() << "] sent size: " << total_sent_size_;
     stopRecvThread();
 
     MPI_Comm_free(&comm_);
@@ -566,6 +569,7 @@ class ParallelMessageManager : public MessageManagerBase {
 
   bool force_continue_;
   size_t sent_size_;
+  size_t total_sent_size_;
 
   bool force_terminate_;
   TerminateInfo terminate_info_;

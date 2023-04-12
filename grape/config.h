@@ -34,7 +34,7 @@ namespace grape {
 #ifdef GFLAGS_NAMESPACE
 namespace gflags = GFLAGS_NAMESPACE;
 #else
-namespace gflags = google;
+namespace gflags = gflags;
 #endif
 
 // type alias
