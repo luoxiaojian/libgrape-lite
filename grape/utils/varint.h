@@ -296,6 +296,11 @@ class DeltaVarintEncoder {
     return encoder_.size();
   }
 
+  const char* data() const {
+    return reinterpret_cast<const char*>(encoder_.data());
+  }
+
+
   const VarintEncoder& encoder() const {
     return encoder_;
   }
@@ -308,6 +313,7 @@ class DeltaVarintEncoder {
 template <typename T>
 class DeltaVarintDecoder {
  public:
+  DeltaVarintDecoder() : decoder_(nullptr, 0), last_(0) {}
   DeltaVarintDecoder(const char* p, size_t size)
       : decoder_(p, size), last_(0) {}
   ~DeltaVarintDecoder() = default;

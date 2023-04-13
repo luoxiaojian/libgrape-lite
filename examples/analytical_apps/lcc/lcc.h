@@ -157,19 +157,19 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
                   msg_vec.reserve(degree);
                   for (auto& e : es) {
                     auto u = e.get_neighbor();
-                    if (ctx.global_degree[u] < ctx.global_degree[v]) {
+                    if (ctx.global_degree[u] > ctx.global_degree[v]) {
                       nbr_vec.push_back(u);
                       msg_vec.push_back(frag.Vertex2Gid(u));
                     } else if (ctx.global_degree[u] == ctx.global_degree[v]) {
                       u_gid = frag.Vertex2Gid(u);
                       v_gid = frag.GetInnerVertexGid(v);
-                      if (v_gid > u_gid) {
+                      if (IdHasher<vid_t>::hash(v_gid) > IdHasher<vid_t>::hash(u_gid)) {
                         nbr_vec.push_back(u);
                         msg_vec.push_back(u_gid);
                       }
                     }
                   }
-                  messages.SendMsgThroughOEdges<fragment_t, std::vector<vid_t>>(
+                  messages.SendMsgThroughOEdges<fragment_t, VecOutType>(
                       frag, v, msg_vec, tid);
                 });
       } else {
@@ -187,19 +187,19 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
                   msg_vec.reserve(degree);
                   for (auto& e : es) {
                     auto u = e.get_neighbor();
-                    if (ctx.global_degree[u] < ctx.global_degree[v]) {
+                    if (ctx.global_degree[u] > ctx.global_degree[v]) {
                       nbr_vec.push_back(u);
                       msg_vec.push_back(frag.Vertex2Gid(u));
                     } else if (ctx.global_degree[u] == ctx.global_degree[v]) {
                       u_gid = frag.Vertex2Gid(u);
                       v_gid = frag.GetInnerVertexGid(v);
-                      if (v_gid > u_gid) {
+                      if (IdHasher<vid_t>::hash(v_gid) > IdHasher<vid_t>::hash(u_gid)) {
                         nbr_vec.push_back(u);
                         msg_vec.push_back(u_gid);
                       }
                     }
                   }
-                  messages.SendMsgThroughOEdges<fragment_t, std::vector<vid_t>>(
+                  messages.SendMsgThroughOEdges<fragment_t, VecOutType>(
                       frag, v, msg_vec, tid);
                 });
       }
