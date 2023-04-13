@@ -27,7 +27,8 @@ namespace grape {
 template <typename LABEL_T, typename VERTEX_ARRAY_T, typename ADJ_LIST_T>
 inline LABEL_T update_label_fast(const ADJ_LIST_T& edges,
                                  const VERTEX_ARRAY_T& labels) {
-  std::vector<LABEL_T> local_labels;
+  static thread_local std::vector<LABEL_T> local_labels;
+  local_labels.clear();
   for (auto& e : edges) {
     local_labels.emplace_back(labels[e.get_neighbor()]);
   }

@@ -56,6 +56,7 @@ class CDLPContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> {
 
     this->max_round = max_round;
     changed.Init(inner_vertices);
+    new_ilabels.Init(inner_vertices);
 
 #ifdef PROFILING
     preprocess_time = 0;
@@ -67,6 +68,11 @@ class CDLPContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> {
 
   void Output(std::ostream& os) override {
     auto& frag = this->fragment();
+#ifdef PROFILING
+    VLOG(2) << "[frag-" << frag.fid() << "]: preprocessing_time = " << preprocess_time;
+    VLOG(2) << "[frag-" << frag.fid() << "]: exec_time = " << exec_time;
+    VLOG(2) << "[frag-" << frag.fid() << "]: postprocess_time = " << postprocess_time;
+#endif
     auto inner_vertices = frag.InnerVertices();
 
     for (auto v : inner_vertices) {
@@ -76,6 +82,7 @@ class CDLPContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> {
 
   typename FRAG_T::template vertex_array_t<label_t>& labels;
   typename FRAG_T::template inner_vertex_array_t<bool> changed;
+  typename FRAG_T::template inner_vertex_array_t<label_t> new_ilabels;
 
 #ifdef PROFILING
   double preprocess_time = 0;

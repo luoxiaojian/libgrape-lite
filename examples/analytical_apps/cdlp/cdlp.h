@@ -49,8 +49,7 @@ class CDLP : public ParallelAppBase<FRAG_T, CDLPContext<FRAG_T>>,
 #endif
 
     auto inner_vertices = frag.InnerVertices();
-    typename FRAG_T::template inner_vertex_array_t<label_t> new_ilabels;
-    new_ilabels.Init(inner_vertices);
+    auto& new_ilabels = ctx.new_ilabels;
 
 #ifdef PROFILING
     ctx.preprocess_time += GetCurrentTime();
@@ -81,11 +80,11 @@ class CDLP : public ParallelAppBase<FRAG_T, CDLPContext<FRAG_T>>,
     ctx.postprocess_time -= GetCurrentTime();
 #endif
 
-    for (auto v : inner_vertices) {
+    ForEach(inner_vertices, [&ctx, &new_ilabels](int tid, vertex_t v) {
       if (ctx.changed[v]) {
         ctx.labels[v] = new_ilabels[v];
       }
-    }
+    });
 
 #ifdef PROFILING
     ctx.postprocess_time += GetCurrentTime();
