@@ -51,6 +51,8 @@ namespace grape {
  *
  */
 
+#if 0
+
 class ParallelMessageManager : public MessageManagerBase {
   static constexpr size_t default_msg_send_block_size = 2 * 1023 * 1024;
   static constexpr size_t default_msg_send_block_capacity = 2 * 1023 * 1024;
@@ -574,6 +576,354 @@ class ParallelMessageManager : public MessageManagerBase {
   bool force_terminate_;
   TerminateInfo terminate_info_;
 };
+
+#else
+
+class ParallelMessageManagerBeta : public MessageManagerBase {
+  static constexpr int RECV_SLOT_NUM = 128;
+  static constexpr int THREAD_NUM = 8;
+  static constexpr size_t default_msg_send_block_size = 2 * 1023 * 1024;
+  static constexpr size_t default_msg_send_block_capacity = 2 * 1023 * 1024;
+
+ public:
+  ParallelMessageManagerBeta() : comm_(NULL_COMM), send_queues_(NULL), recv_reqs_(NULL) {}
+  ~ParallelMessageManagerBeta() override {
+    if (ValidComm(comm_)) {
+      MPI_Comm_free(&comm_);
+    }
+    if (send_queues_ != NULL) {
+      delete[] send_queues_;
+    }
+    if (recv_reqs_ != NULL) {
+      delete[] recv_reqs_;
+    }
+  }
+
+  void Init(MPI_Comm comm) override {
+    MPI_Comm_dup(comm, &comm_);
+    comm_spec_.Init(comm_);
+
+    fid_ = comm_spec_.fid();
+    fnum_ = comm_spec_.fnum();
+
+    force_terminate_ = false;
+    terminate_info_.Init(fnum_);
+
+    recv_thread_num_ = send_thread_num_ = std::min(comm_spec_.worker_num() - 1, THREAD_NUM);
+
+    round_ = 0;
+
+    send_queues_ = new BlockingQueue<std::pair<fid_t, InArchive>>[send_thread_num_];
+    for (int i = 0; i < send_thread_num_; ++i) {
+      send_queues_[i].SetProducerNum(1);
+    }
+
+    recv_reqs_ = new BlockingQueue<MPI_Status>[recv_thread_num_];
+    for (int i = 0; i < recv_thread_num_; ++i) {
+      recv_reqs_[i].SetProducerNum(1);
+    }
+
+    sent_size_ = 0;
+    total_sent_size_ = 0;
+  }
+
+  void Start() override {
+    for (int i = 0; i < send_thread_num_; ++i) {
+      send_threads_.emplace_back([&](int tid) {
+        auto& send_queue = send_queues_[tid];
+        std::pair<fid_t, InArchive> item;
+        std::vector<InArchive> cache;
+        std::vector<MPI_Request> reqs;
+        std::vector<fid_t> target_fids;
+        bool to_self = false;
+        for (fid_t k = 0; k < fnum_; ++k) {
+          if (k % send_thread_num_ == tid) {
+            if (k == fid_) {
+              to_self = true;
+            } else {
+              target_fids.push_back(k);
+            }
+          }
+        }
+        if (target_fids.empty() && !to_self) {
+          LOG(INFO) << "send thread " << tid << " is empty";
+          return;
+        }
+        int round = 0;
+        while (send_queue.Get(item)) {
+          if (item.first == fnum_) {
+            CHECK(item.second.Empty());
+            if (to_self) {
+              recv_queues_[tid].DecProducerNum();
+            }
+            for (auto f : target_fids) {
+              MPI_Request req;
+              sync_comm::isend_small_buffer<char>(NULL, 0, comm_spec_.FragToWorker(f), round, comm_, req);
+              reqs.push_back(req);
+            }
+            MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
+            cache.clear();
+            ++round;
+          } else {
+            if (item.first == fid_) {
+              OutArchive oarc(std::move(item.second));
+              recv_queues_[round % RECV_SLOT_NUM].Put(std::move(oarc));
+            } else {
+              MPI_Request req;
+              sync_comm::isend_small_buffer<char>(item.second.GetBuffer(), item.second.GetSize(), comm_spec_.FragToWorker(item.first), round, comm_, req);
+              reqs.push_back(req);
+              cache.emplace_back(std::move(item.second));
+            }
+          }
+        }
+      }, i);
+    }
+
+    for (int i = 0; i < recv_thread_num_; ++i) {
+      recv_threads_.emplace_back([&](int tid) {
+        auto& recv_req = recv_reqs_[tid];
+        MPI_Status status;
+        while (recv_req.Get(status)) {
+          int count;
+          MPI_Get_count(&status, MPI_CHAR, &count);
+          int round = status.MPI_TAG;
+          int source = status.MPI_SOURCE;
+          if (count == 0) {
+            sync_comm::recv_small_buffer<char>(NULL, 0, source, round, comm_);
+            recv_queues_[round % RECV_SLOT_NUM].DecProducerNum();
+          } else {
+            OutArchive arc(count);
+            sync_comm::recv_small_buffer<char>(arc.GetBuffer(), count, source, round, comm_);
+            recv_queues_[round % RECV_SLOT_NUM].Put(std::move(arc));
+          }
+        }
+      }, i);
+    }
+
+    probe_thread_ = std::thread([&]() {
+      MPI_Status status;
+      int worker_id = comm_spec_.worker_id();
+      while (true) {
+        MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, comm_, &status);
+        if (status.MPI_SOURCE == worker_id) {
+          sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, status.MPI_TAG, comm_);
+          for (int i = 0; i < recv_thread_num_; ++i) {
+            recv_reqs_[i].DecProducerNum();
+          }
+          return ;
+        }
+        auto& que = recv_reqs_[status.MPI_SOURCE % recv_thread_num_];
+        que.Put(status);
+      }
+    });
+  }
+
+  void StartARound() override {
+    sent_size_ = 0;
+    force_continue_ = false;
+  }
+
+  void FinishARound() override {
+    sent_size_ = finishMsgFilling();
+    resetRecvQueue();
+    round_++;
+    total_sent_size_ += sent_size_;
+  }
+
+  bool ToTerminate() override {
+    int flag[2];
+    flag[0] = 1;
+    if (sent_size_ == 0 && !force_continue_) {
+      flag[0] = 0;
+    }
+    flag[1] = force_terminate_ ? 1 : 0;
+    int ret[2];
+    MPI_Allreduce(&flag[0], &ret[0], 2, MPI_INT, MPI_SUM, comm_);
+    if (ret[1] > 0) {
+      terminate_info_.success = false;
+      sync_comm::AllGather(terminate_info_.info, comm_);
+      return true;
+    }
+    return (ret[0] == 0);
+  }
+
+  void Finalize() override {
+    for (int i = 0; i < send_thread_num_; ++i) {
+      send_queues_[i].DecProducerNum();
+    }
+    for (auto& thrd : send_threads_) {
+      thrd.join();
+    }
+
+    sync_comm::send_small_buffer<char>(NULL, 0, comm_spec_.worker_id(), 0, comm_);
+    probe_thread_.join();
+
+    for (auto& thrd : recv_threads_) {
+      thrd.join();
+    }
+  }
+
+  void ForceContinue() override { force_continue_ = true; }
+
+  void ForceTerminate(const std::string& terminate_info) override {
+    force_terminate_ = true;
+    terminate_info_.info[comm_spec_.fid()] = terminate_info;
+  }
+
+  const TerminateInfo& GetTerminateInfo() const override { return terminate_info_; }
+
+  size_t GetMsgSize() const override { return sent_size_; }
+
+  void InitChannels(int channel_num = 1,
+                    size_t block_size = default_msg_send_block_size,
+                    size_t block_cap = default_msg_send_block_capacity) {
+    channels_.resize(channel_num);
+    for (auto& channel : channels_) {
+      channel.Init(fnum_, this, block_size, block_cap);
+    }
+  }
+
+  std::vector<ThreadLocalMessageBuffer<ParallelMessageManagerBeta>>& Channels() {
+    return channels_;
+  }
+
+  template <typename GRAPH_T, typename MESSAGE_T>
+  inline void SyncStateOnOuterVertex(const GRAPH_T& frag,
+                                     const typename GRAPH_T::vertex_t& v,
+                                     const MESSAGE_T& msg, int channel_id = 0) {
+    channels_[channel_id].SyncStateOnOuterVertex<GRAPH_T, MESSAGE_T>(frag, v,
+                                                                     msg);
+  }
+
+  template <typename GRAPH_T>
+  inline void SyncStateOnOuterVertex(const GRAPH_T& frag,
+                                     const typename GRAPH_T::vertex_t& v,
+                                     int channel_id = 0) {
+    channels_[channel_id].SyncStateOnOuterVertex<GRAPH_T>(frag, v);
+  }
+
+  template <typename GRAPH_T, typename MESSAGE_T>
+  inline void SendMsgThroughIEdges(const GRAPH_T& frag,
+                                   const typename GRAPH_T::vertex_t& v,
+                                   const MESSAGE_T& msg, int channel_id = 0) {
+    channels_[channel_id].SendMsgThroughIEdges<GRAPH_T, MESSAGE_T>(frag, v,
+                                                                   msg);
+  }
+
+  template <typename GRAPH_T, typename MESSAGE_T>
+  inline void SendMsgThroughOEdges(const GRAPH_T& frag,
+                                   const typename GRAPH_T::vertex_t& v,
+                                   const MESSAGE_T& msg, int channel_id = 0) {
+    channels_[channel_id].SendMsgThroughOEdges<GRAPH_T, MESSAGE_T>(frag, v,
+                                                                   msg);
+  }
+
+  template <typename GRAPH_T, typename MESSAGE_T>
+  inline void SendMsgThroughEdges(const GRAPH_T& frag,
+                                  const typename GRAPH_T::vertex_t& v,
+                                  const MESSAGE_T& msg, int channel_id = 0) {
+    channels_[channel_id].SendMsgThroughEdges<GRAPH_T, MESSAGE_T>(frag, v, msg);
+  }
+
+  template <typename GRAPH_T, typename MESSAGE_T, typename FUNC_T>
+  inline void ParallelProcess(int thread_num, const GRAPH_T& frag,
+                              const FUNC_T& func) {
+    std::vector<std::thread> threads(thread_num);
+
+    for (int i = 0; i < thread_num; ++i) {
+      threads[i] = std::thread(
+          [&](int tid) {
+            typename GRAPH_T::vid_t id;
+            typename GRAPH_T::vertex_t vertex(0);
+            MESSAGE_T msg;
+            auto& que = recv_queues_[round_ % RECV_SLOT_NUM];
+            OutArchive arc;
+            while (que.Get(arc)) {
+              while (!arc.Empty()) {
+                arc >> id >> msg;
+                frag.Gid2Vertex(id, vertex);
+                func(tid, vertex, msg);
+              }
+            }
+          },
+          i);
+    }
+
+    for (auto& thrd : threads) {
+      thrd.join();
+    }
+  }
+
+  void SendRawMsgByFid(fid_t fid, InArchive&& arc) {
+    std::pair<fid_t, InArchive> item;
+    item.first = fid;
+    item.second = std::move(arc);
+    send_queues_[fid % send_thread_num_].Put(std::move(item));
+  }
+
+ private:
+  size_t finishMsgFilling() {
+    std::atomic<size_t> ret(0);
+
+    int channel_num = channels_.size();
+    std::vector<std::thread> threads(channel_num);
+    for (int i = 0; i < channel_num; ++i) {
+      threads[i] = std::thread([&](int tid) {
+        auto& channel = channels_[tid];
+        channel.FlushMessages();
+        ret.fetch_add(channel.SentMsgSize());
+        channel.Reset();
+      }, i);
+    }
+    for (auto& thrd : threads) {
+      thrd.join();
+    }
+
+    for (int i = 0; i < send_thread_num_; ++i) {
+      send_queues_[i].Put(std::make_pair(fnum_, InArchive()));
+    }
+
+    return ret.load();
+  }
+
+  void resetRecvQueue() {
+    auto& curr_recv_queue = recv_queues_[round_ % RECV_SLOT_NUM];
+    if (round_) {
+      OutArchive arc;
+      while (curr_recv_queue.Get(arc)) {}
+    }
+    curr_recv_queue.SetProducerNum(fnum_);
+  }
+
+  fid_t fid_;
+  fid_t fnum_;
+  CommSpec comm_spec_;
+
+  MPI_Comm comm_;
+
+  std::vector<ThreadLocalMessageBuffer<ParallelMessageManagerBeta>> channels_;
+
+  std::array<BlockingQueue<OutArchive>, RECV_SLOT_NUM> recv_queues_;
+  BlockingQueue<MPI_Status>* recv_reqs_;
+  std::vector<std::thread> recv_threads_;
+  int recv_thread_num_;
+
+  BlockingQueue<std::pair<fid_t, InArchive>>* send_queues_;
+  std::vector<std::thread> send_threads_;
+  int send_thread_num_;
+
+  std::thread probe_thread_;
+
+  int round_;
+
+  bool force_continue_;
+  bool force_terminate_;
+  TerminateInfo terminate_info_;
+
+  size_t sent_size_;
+  size_t total_sent_size_;
+};
+#endif
 
 }  // namespace grape
 
