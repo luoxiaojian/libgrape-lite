@@ -586,16 +586,13 @@ class ParallelMessageManager : public MessageManagerBase {
   static constexpr size_t default_msg_send_block_capacity = 2 * 1023 * 1024;
 
  public:
-  ParallelMessageManager() : comm_(NULL_COMM), recv_reqs_(NULL), send_queues_(NULL) {}
+  ParallelMessageManager() : comm_(NULL_COMM), send_queues_(NULL) {}
   ~ParallelMessageManager() override {
     if (ValidComm(comm_)) {
       MPI_Comm_free(&comm_);
     }
     if (send_queues_ != NULL) {
       delete[] send_queues_;
-    }
-    if (recv_reqs_ != NULL) {
-      delete[] recv_reqs_;
     }
   }
 
@@ -609,18 +606,14 @@ class ParallelMessageManager : public MessageManagerBase {
     force_terminate_ = false;
     terminate_info_.Init(fnum_);
 
-    recv_thread_num_ = send_thread_num_ = std::min(comm_spec_.worker_num() - 1, THREAD_NUM);
+    send_thread_num_ = std::min(comm_spec_.worker_num() - 1, THREAD_NUM);
+    recv_thread_num_ = comm_spec_.worker_num() - 1;
 
     round_ = 0;
 
     send_queues_ = new BlockingQueue<std::pair<fid_t, InArchive>>[send_thread_num_];
     for (int i = 0; i < send_thread_num_; ++i) {
       send_queues_[i].SetProducerNum(1);
-    }
-
-    recv_reqs_ = new BlockingQueue<MPI_Status>[recv_thread_num_];
-    for (int i = 0; i < recv_thread_num_; ++i) {
-      recv_reqs_[i].SetProducerNum(1);
     }
 
     sent_size_ = 0;
@@ -681,14 +674,23 @@ class ParallelMessageManager : public MessageManagerBase {
 
     for (int i = 0; i < recv_thread_num_; ++i) {
       recv_threads_.emplace_back([&](int tid) {
-        auto& recv_req = recv_reqs_[tid];
+        fid_t src_fid = static_cast<fid_t>(tid);
+        if (src_fid >= fid_) {
+          ++src_fid;
+        }
+        int source = comm_spec_.FragToWorker(src_fid);
+
         MPI_Status status;
-        while (recv_req.Get(status)) {
+        while (true) {
+          MPI_Probe(source, MPI_ANY_TAG, comm_, &status);
+          int round = status.MPI_TAG;
           int count;
           MPI_Get_count(&status, MPI_CHAR, &count);
-          int round = status.MPI_TAG;
-          int source = status.MPI_SOURCE;
-          if (count == 0) {
+          if (round == std::numeric_limits<int>::max()) {
+            CHECK_EQ(count, 0);
+            sync_comm::recv_small_buffer<char>(NULL, 0, source, round, comm_);
+            break;
+          } else if (count == 0) {
             sync_comm::recv_small_buffer<char>(NULL, 0, source, round, comm_);
             recv_queues_[round % RECV_SLOT_NUM].DecProducerNum();
           } else {
@@ -699,23 +701,6 @@ class ParallelMessageManager : public MessageManagerBase {
         }
       }, i);
     }
-
-    probe_thread_ = std::thread([&]() {
-      MPI_Status status;
-      int worker_id = comm_spec_.worker_id();
-      while (true) {
-        MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, comm_, &status);
-        if (status.MPI_SOURCE == worker_id) {
-          sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, status.MPI_TAG, comm_);
-          for (int i = 0; i < recv_thread_num_; ++i) {
-            recv_reqs_[i].DecProducerNum();
-          }
-          return ;
-        }
-        auto& que = recv_reqs_[status.MPI_SOURCE % recv_thread_num_];
-        que.Put(status);
-      }
-    });
   }
 
   void StartARound() override {
@@ -748,16 +733,18 @@ class ParallelMessageManager : public MessageManagerBase {
   }
 
   void Finalize() override {
+    for (fid_t i = 0; i < fnum_; ++i) {
+      if (i != fid_) {
+        int target = comm_spec_.FragToWorker(i);
+        sync_comm::send_small_buffer<char>(NULL, 0, target, std::numeric_limits<int>::max(), comm_);
+      }
+    }
     for (int i = 0; i < send_thread_num_; ++i) {
       send_queues_[i].DecProducerNum();
     }
     for (auto& thrd : send_threads_) {
       thrd.join();
     }
-
-    sync_comm::send_small_buffer<char>(NULL, 0, comm_spec_.worker_id(), 0, comm_);
-    probe_thread_.join();
-
     for (auto& thrd : recv_threads_) {
       thrd.join();
     }
@@ -904,15 +891,12 @@ class ParallelMessageManager : public MessageManagerBase {
   std::vector<ThreadLocalMessageBuffer<ParallelMessageManager>> channels_;
 
   std::array<BlockingQueue<OutArchive>, RECV_SLOT_NUM> recv_queues_;
-  BlockingQueue<MPI_Status>* recv_reqs_;
   std::vector<std::thread> recv_threads_;
   int recv_thread_num_;
 
   BlockingQueue<std::pair<fid_t, InArchive>>* send_queues_;
   std::vector<std::thread> send_threads_;
   int send_thread_num_;
-
-  std::thread probe_thread_;
 
   int round_;
 
