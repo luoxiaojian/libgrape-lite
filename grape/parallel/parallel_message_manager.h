@@ -606,7 +606,7 @@ class ParallelMessageManager : public MessageManagerBase {
     force_terminate_ = false;
     terminate_info_.Init(fnum_);
 
-    send_thread_num_ = std::min(comm_spec_.worker_num() - 1, THREAD_NUM);
+    send_thread_num_ = std::min(comm_spec_.worker_num(), THREAD_NUM);
     recv_thread_num_ = comm_spec_.worker_num() - 1;
 
     round_ = 0;
@@ -614,6 +614,9 @@ class ParallelMessageManager : public MessageManagerBase {
     send_queues_ = new BlockingQueue<std::pair<fid_t, InArchive>>[send_thread_num_];
     for (int i = 0; i < send_thread_num_; ++i) {
       send_queues_[i].SetProducerNum(1);
+    }
+    for (auto& que : recv_queues_) {
+      que.SetProducerNum(fnum_);
     }
 
     sent_size_ = 0;
@@ -642,20 +645,21 @@ class ParallelMessageManager : public MessageManagerBase {
           LOG(INFO) << "send thread " << tid << " is empty";
           return;
         }
-        int round = 0;
+        int round = 1;
         while (send_queue.Get(item)) {
           if (item.first == fnum_) {
             CHECK(item.second.Empty());
             if (to_self) {
-              recv_queues_[tid].DecProducerNum();
+              recv_queues_[round % RECV_SLOT_NUM].DecProducerNum();
             }
             for (auto f : target_fids) {
               MPI_Request req;
-              sync_comm::isend_small_buffer<char>(NULL, 0, comm_spec_.FragToWorker(f), round, comm_, req);
+              sync_comm::isend_small_buffer<char>(NULL, 0, comm_spec_.FragToWorker(f), round % RECV_SLOT_NUM, comm_, req);
               reqs.push_back(req);
             }
             MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
             cache.clear();
+	    reqs.clear();
             ++round;
           } else {
             if (item.first == fid_) {
@@ -663,7 +667,7 @@ class ParallelMessageManager : public MessageManagerBase {
               recv_queues_[round % RECV_SLOT_NUM].Put(std::move(oarc));
             } else {
               MPI_Request req;
-              sync_comm::isend_small_buffer<char>(item.second.GetBuffer(), item.second.GetSize(), comm_spec_.FragToWorker(item.first), round, comm_, req);
+              sync_comm::isend_small_buffer<char>(item.second.GetBuffer(), item.second.GetSize(), comm_spec_.FragToWorker(item.first), round % RECV_SLOT_NUM, comm_, req);
               reqs.push_back(req);
               cache.emplace_back(std::move(item.second));
             }
@@ -686,17 +690,17 @@ class ParallelMessageManager : public MessageManagerBase {
           int round = status.MPI_TAG;
           int count;
           MPI_Get_count(&status, MPI_CHAR, &count);
-          if (round == std::numeric_limits<int>::max()) {
+          if (round == RECV_SLOT_NUM) {
             CHECK_EQ(count, 0);
             sync_comm::recv_small_buffer<char>(NULL, 0, source, round, comm_);
             break;
           } else if (count == 0) {
             sync_comm::recv_small_buffer<char>(NULL, 0, source, round, comm_);
-            recv_queues_[round % RECV_SLOT_NUM].DecProducerNum();
+            recv_queues_[round].DecProducerNum();
           } else {
             OutArchive arc(count);
             sync_comm::recv_small_buffer<char>(arc.GetBuffer(), count, source, round, comm_);
-            recv_queues_[round % RECV_SLOT_NUM].Put(std::move(arc));
+            recv_queues_[round].Put(std::move(arc));
           }
         }
       }, i);
@@ -736,7 +740,7 @@ class ParallelMessageManager : public MessageManagerBase {
     for (fid_t i = 0; i < fnum_; ++i) {
       if (i != fid_) {
         int target = comm_spec_.FragToWorker(i);
-        sync_comm::send_small_buffer<char>(NULL, 0, target, std::numeric_limits<int>::max(), comm_);
+        sync_comm::send_small_buffer<char>(NULL, 0, target, RECV_SLOT_NUM, comm_);
       }
     }
     for (int i = 0; i < send_thread_num_; ++i) {
