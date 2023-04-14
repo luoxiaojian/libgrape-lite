@@ -579,15 +579,15 @@ class ParallelMessageManager : public MessageManagerBase {
 
 #else
 
-class ParallelMessageManagerBeta : public MessageManagerBase {
+class ParallelMessageManager : public MessageManagerBase {
   static constexpr int RECV_SLOT_NUM = 128;
   static constexpr int THREAD_NUM = 8;
   static constexpr size_t default_msg_send_block_size = 2 * 1023 * 1024;
   static constexpr size_t default_msg_send_block_capacity = 2 * 1023 * 1024;
 
  public:
-  ParallelMessageManagerBeta() : comm_(NULL_COMM), send_queues_(NULL), recv_reqs_(NULL) {}
-  ~ParallelMessageManagerBeta() override {
+  ParallelMessageManager() : comm_(NULL_COMM), recv_reqs_(NULL), send_queues_(NULL) {}
+  ~ParallelMessageManager() override {
     if (ValidComm(comm_)) {
       MPI_Comm_free(&comm_);
     }
@@ -637,7 +637,7 @@ class ParallelMessageManagerBeta : public MessageManagerBase {
         std::vector<fid_t> target_fids;
         bool to_self = false;
         for (fid_t k = 0; k < fnum_; ++k) {
-          if (k % send_thread_num_ == tid) {
+          if (k % send_thread_num_ == static_cast<fid_t>(tid)) {
             if (k == fid_) {
               to_self = true;
             } else {
@@ -783,7 +783,7 @@ class ParallelMessageManagerBeta : public MessageManagerBase {
     }
   }
 
-  std::vector<ThreadLocalMessageBuffer<ParallelMessageManagerBeta>>& Channels() {
+  std::vector<ThreadLocalMessageBuffer<ParallelMessageManager>>& Channels() {
     return channels_;
   }
 
@@ -901,7 +901,7 @@ class ParallelMessageManagerBeta : public MessageManagerBase {
 
   MPI_Comm comm_;
 
-  std::vector<ThreadLocalMessageBuffer<ParallelMessageManagerBeta>> channels_;
+  std::vector<ThreadLocalMessageBuffer<ParallelMessageManager>> channels_;
 
   std::array<BlockingQueue<OutArchive>, RECV_SLOT_NUM> recv_queues_;
   BlockingQueue<MPI_Status>* recv_reqs_;
