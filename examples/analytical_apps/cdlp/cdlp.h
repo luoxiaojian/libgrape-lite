@@ -79,7 +79,54 @@ class CDLP : public ParallelAppBase<FRAG_T, CDLPContext<FRAG_T>>,
     ForEach(inner_vertices, [&ctx, &new_ilabels](int tid, vertex_t v) {
       if (ctx.changed[v]) {
         ctx.labels[v] = new_ilabels[v];
-	ctx.changed[v] = false;
+        ctx.changed[v] = false;
+      }
+    });
+
+#ifdef PROFILING
+    ctx.postprocess_time += GetCurrentTime();
+#endif
+  }
+
+  void PropagateLabelSparse(const fragment_t& frag, context_t& ctx,
+                            message_manager_t& messages) {
+#ifdef PROFILING
+    ctx.preprocess_time -= GetCurrentTime();
+#endif
+
+    auto inner_vertices = frag.InnerVertices();
+    auto& new_ilabels = ctx.new_ilabels;
+
+#ifdef PROFILING
+    ctx.preprocess_time += GetCurrentTime();
+    ctx.exec_time -= GetCurrentTime();
+#endif
+
+    // touch neighbor and send messages in parallel
+    ForEach(ctx.potential_change,
+            [&frag, &ctx, &new_ilabels, &messages](int tid, vertex_t v) {
+              auto es = frag.GetOutgoingAdjList(v);
+              if (!es.Empty()) {
+                label_t new_label = update_label_fast<label_t>(es, ctx.labels);
+                if (ctx.labels[v] != new_label) {
+                  new_ilabels[v] = new_label;
+                  ctx.changed[v] = true;
+                  messages.SendMsgThroughOEdges<fragment_t, label_t>(
+                      frag, v, new_label, tid);
+                }
+              }
+            });
+    ctx.potential_change.ParallelClear(thread_num());
+
+#ifdef PROFILING
+    ctx.exec_time += GetCurrentTime();
+    ctx.postprocess_time -= GetCurrentTime();
+#endif
+
+    ForEach(inner_vertices, [&ctx, &new_ilabels](int tid, vertex_t v) {
+      if (ctx.changed[v]) {
+        ctx.labels[v] = new_ilabels[v];
+        ctx.changed[v] = false;
       }
     });
 
@@ -136,24 +183,51 @@ class CDLP : public ParallelAppBase<FRAG_T, CDLPContext<FRAG_T>>,
 #endif
 
     // receive messages and set labels
-    {
-      messages.ParallelProcess<fragment_t, label_t>(
+
+    if (ctx.dense) {
+      size_t recv_cnt = messages.ParallelProcessCount<fragment_t, label_t>(
           thread_num(), frag, [&ctx](int tid, vertex_t u, const label_t& msg) {
             ctx.labels[u] = msg;
           });
-    }
 
-    if (ctx.step > ctx.max_round) {
-      return;
-    } else {
-      messages.ForceContinue();
-    }
+      if (recv_cnt * 10 < frag.GetOuterVerticesNum()) {
+        ctx.dense = false;
+      }
+
+      if (ctx.step > ctx.max_round) {
+        return;
+      } else {
+        messages.ForceContinue();
+      }
 
 #ifdef PROFILING
-    ctx.preprocess_time += GetCurrentTime();
+      ctx.preprocess_time += GetCurrentTime();
 #endif
 
-    PropagateLabel(frag, ctx, messages);
+      PropagateLabel(frag, ctx, messages);
+    } else {
+      messages.ParallelProcess<fragment_t, label_t>(
+          thread_num(), frag,
+          [&ctx, &frag](int tid, vertex_t u, const label_t& msg) {
+            ctx.labels[u] = msg;
+            auto ie = frag.GetIncomingAdjList(u);
+            for (auto& e : ie) {
+              ctx.potential_change.Insert(e.neighbor);
+            }
+          });
+
+      if (ctx.step > ctx.max_round) {
+        return;
+      } else {
+        messages.ForceContinue();
+      }
+
+#ifdef PROFILING
+      ctx.preprocess_time += GetCurrentTime();
+#endif
+
+      PropagateLabelSparse(frag, ctx, messages);
+    }
   }
 };
 }  // namespace grape

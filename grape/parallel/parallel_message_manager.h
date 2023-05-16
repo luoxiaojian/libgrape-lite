@@ -147,7 +147,8 @@ class ParallelMessageManager : public MessageManagerBase {
   void Finalize() override {
     waitSend();
     MPI_Barrier(comm_);
-    LOG(INFO) << "[worker-" << comm_spec_.worker_id() << "] sent size: " << total_sent_size_;
+    LOG(INFO) << "[worker-" << comm_spec_.worker_id()
+              << "] sent size: " << total_sent_size_;
     stopRecvThread();
 
     MPI_Comm_free(&comm_);
@@ -359,6 +360,40 @@ class ParallelMessageManager : public MessageManagerBase {
     for (auto& thrd : threads) {
       thrd.join();
     }
+  }
+
+  template <typename GRAPH_T, typename MESSAGE_T, typename FUNC_T>
+  inline size_t ParallelProcessCount(int thread_num, const GRAPH_T& frag,
+                                     const FUNC_T& func) {
+    std::vector<std::thread> threads(thread_num);
+    std::atomic<size_t> ret(0);
+
+    for (int i = 0; i < thread_num; ++i) {
+      threads[i] = std::thread(
+          [&](int tid) {
+            typename GRAPH_T::vid_t id;
+            typename GRAPH_T::vertex_t vertex(0);
+            MESSAGE_T msg;
+            auto& que = recv_queues_[round_ % 2];
+            OutArchive arc;
+            size_t local_count = 0;
+            while (que.Get(arc)) {
+              while (!arc.Empty()) {
+                arc >> id >> msg;
+                frag.Gid2Vertex(id, vertex);
+                func(tid, vertex, msg);
+                ++local_count;
+              }
+            }
+            ret.fetch_add(local_count, std::memory_order_relaxed);
+          },
+          i);
+    }
+
+    for (auto& thrd : threads) {
+      thrd.join();
+    }
+    return ret.load();
   }
 
   /**
@@ -611,7 +646,8 @@ class ParallelMessageManager : public MessageManagerBase {
 
     round_ = 0;
 
-    send_queues_ = new BlockingQueue<std::pair<fid_t, InArchive>>[send_thread_num_];
+    send_queues_ =
+        new BlockingQueue<std::pair<fid_t, InArchive>>[send_thread_num_];
     for (int i = 0; i < send_thread_num_; ++i) {
       send_queues_[i].SetProducerNum(1);
     }
@@ -625,85 +661,97 @@ class ParallelMessageManager : public MessageManagerBase {
 
   void Start() override {
     for (int i = 0; i < send_thread_num_; ++i) {
-      send_threads_.emplace_back([&](int tid) {
-        auto& send_queue = send_queues_[tid];
-        std::pair<fid_t, InArchive> item;
-        std::vector<InArchive> cache;
-        std::vector<MPI_Request> reqs;
-        std::vector<fid_t> target_fids;
-        bool to_self = false;
-        for (fid_t k = 0; k < fnum_; ++k) {
-          if (k % send_thread_num_ == static_cast<fid_t>(tid)) {
-            if (k == fid_) {
-              to_self = true;
-            } else {
-              target_fids.push_back(k);
+      send_threads_.emplace_back(
+          [&](int tid) {
+            auto& send_queue = send_queues_[tid];
+            std::pair<fid_t, InArchive> item;
+            std::vector<InArchive> cache;
+            std::vector<MPI_Request> reqs;
+            std::vector<fid_t> target_fids;
+            bool to_self = false;
+            for (fid_t k = 0; k < fnum_; ++k) {
+              if (k % send_thread_num_ == static_cast<fid_t>(tid)) {
+                if (k == fid_) {
+                  to_self = true;
+                } else {
+                  target_fids.push_back(k);
+                }
+              }
             }
-          }
-        }
-        if (target_fids.empty() && !to_self) {
-          LOG(INFO) << "send thread " << tid << " is empty";
-          return;
-        }
-        int round = 1;
-        while (send_queue.Get(item)) {
-          if (item.first == fnum_) {
-            CHECK(item.second.Empty());
-            if (to_self) {
-              recv_queues_[round % RECV_SLOT_NUM].DecProducerNum();
+            if (target_fids.empty() && !to_self) {
+              LOG(INFO) << "send thread " << tid << " is empty";
+              return;
             }
-            for (auto f : target_fids) {
-              MPI_Request req;
-              sync_comm::isend_small_buffer<char>(NULL, 0, comm_spec_.FragToWorker(f), round % RECV_SLOT_NUM, comm_, req);
-              reqs.push_back(req);
+            int round = 1;
+            while (send_queue.Get(item)) {
+              if (item.first == fnum_) {
+                CHECK(item.second.Empty());
+                if (to_self) {
+                  recv_queues_[round % RECV_SLOT_NUM].DecProducerNum();
+                }
+                for (auto f : target_fids) {
+                  MPI_Request req;
+                  sync_comm::isend_small_buffer<char>(
+                      NULL, 0, comm_spec_.FragToWorker(f),
+                      round % RECV_SLOT_NUM, comm_, req);
+                  reqs.push_back(req);
+                }
+                MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
+                cache.clear();
+                reqs.clear();
+                ++round;
+              } else {
+                if (item.first == fid_) {
+                  OutArchive oarc(std::move(item.second));
+                  recv_queues_[round % RECV_SLOT_NUM].Put(std::move(oarc));
+                } else {
+                  MPI_Request req;
+                  sync_comm::isend_small_buffer<char>(
+                      item.second.GetBuffer(), item.second.GetSize(),
+                      comm_spec_.FragToWorker(item.first),
+                      round % RECV_SLOT_NUM, comm_, req);
+                  reqs.push_back(req);
+                  cache.emplace_back(std::move(item.second));
+                }
+              }
             }
-            MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
-            cache.clear();
-	    reqs.clear();
-            ++round;
-          } else {
-            if (item.first == fid_) {
-              OutArchive oarc(std::move(item.second));
-              recv_queues_[round % RECV_SLOT_NUM].Put(std::move(oarc));
-            } else {
-              MPI_Request req;
-              sync_comm::isend_small_buffer<char>(item.second.GetBuffer(), item.second.GetSize(), comm_spec_.FragToWorker(item.first), round % RECV_SLOT_NUM, comm_, req);
-              reqs.push_back(req);
-              cache.emplace_back(std::move(item.second));
-            }
-          }
-        }
-      }, i);
+          },
+          i);
     }
 
     for (int i = 0; i < recv_thread_num_; ++i) {
-      recv_threads_.emplace_back([&](int tid) {
-        fid_t src_fid = static_cast<fid_t>(tid);
-        if (src_fid >= fid_) {
-          ++src_fid;
-        }
-        int source = comm_spec_.FragToWorker(src_fid);
+      recv_threads_.emplace_back(
+          [&](int tid) {
+            fid_t src_fid = static_cast<fid_t>(tid);
+            if (src_fid >= fid_) {
+              ++src_fid;
+            }
+            int source = comm_spec_.FragToWorker(src_fid);
 
-        MPI_Status status;
-        while (true) {
-          MPI_Probe(source, MPI_ANY_TAG, comm_, &status);
-          int round = status.MPI_TAG;
-          int count;
-          MPI_Get_count(&status, MPI_CHAR, &count);
-          if (round == RECV_SLOT_NUM) {
-            CHECK_EQ(count, 0);
-            sync_comm::recv_small_buffer<char>(NULL, 0, source, round, comm_);
-            break;
-          } else if (count == 0) {
-            sync_comm::recv_small_buffer<char>(NULL, 0, source, round, comm_);
-            recv_queues_[round].DecProducerNum();
-          } else {
-            OutArchive arc(count);
-            sync_comm::recv_small_buffer<char>(arc.GetBuffer(), count, source, round, comm_);
-            recv_queues_[round].Put(std::move(arc));
-          }
-        }
-      }, i);
+            MPI_Status status;
+            while (true) {
+              MPI_Probe(source, MPI_ANY_TAG, comm_, &status);
+              int round = status.MPI_TAG;
+              int count;
+              MPI_Get_count(&status, MPI_CHAR, &count);
+              if (round == RECV_SLOT_NUM) {
+                CHECK_EQ(count, 0);
+                sync_comm::recv_small_buffer<char>(NULL, 0, source, round,
+                                                   comm_);
+                break;
+              } else if (count == 0) {
+                sync_comm::recv_small_buffer<char>(NULL, 0, source, round,
+                                                   comm_);
+                recv_queues_[round].DecProducerNum();
+              } else {
+                OutArchive arc(count);
+                sync_comm::recv_small_buffer<char>(arc.GetBuffer(), count,
+                                                   source, round, comm_);
+                recv_queues_[round].Put(std::move(arc));
+              }
+            }
+          },
+          i);
     }
   }
 
@@ -740,7 +788,8 @@ class ParallelMessageManager : public MessageManagerBase {
     for (fid_t i = 0; i < fnum_; ++i) {
       if (i != fid_) {
         int target = comm_spec_.FragToWorker(i);
-        sync_comm::send_small_buffer<char>(NULL, 0, target, RECV_SLOT_NUM, comm_);
+        sync_comm::send_small_buffer<char>(NULL, 0, target, RECV_SLOT_NUM,
+                                           comm_);
       }
     }
     for (int i = 0; i < send_thread_num_; ++i) {
@@ -761,7 +810,9 @@ class ParallelMessageManager : public MessageManagerBase {
     terminate_info_.info[comm_spec_.fid()] = terminate_info;
   }
 
-  const TerminateInfo& GetTerminateInfo() const override { return terminate_info_; }
+  const TerminateInfo& GetTerminateInfo() const override {
+    return terminate_info_;
+  }
 
   size_t GetMsgSize() const override { return sent_size_; }
 
@@ -859,12 +910,14 @@ class ParallelMessageManager : public MessageManagerBase {
     int channel_num = channels_.size();
     std::vector<std::thread> threads(channel_num);
     for (int i = 0; i < channel_num; ++i) {
-      threads[i] = std::thread([&](int tid) {
-        auto& channel = channels_[tid];
-        channel.FlushMessages();
-        ret.fetch_add(channel.SentMsgSize());
-        channel.Reset();
-      }, i);
+      threads[i] = std::thread(
+          [&](int tid) {
+            auto& channel = channels_[tid];
+            channel.FlushMessages();
+            ret.fetch_add(channel.SentMsgSize());
+            channel.Reset();
+          },
+          i);
     }
     for (auto& thrd : threads) {
       thrd.join();

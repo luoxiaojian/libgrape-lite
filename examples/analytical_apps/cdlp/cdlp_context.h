@@ -48,7 +48,8 @@ class CDLPContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> {
 #else
       : VertexDataContext<FRAG_T, typename FRAG_T::oid_t>(fragment, true),
 #endif
-        labels(this->data()) {}
+        labels(this->data()) {
+  }
 
   void Init(ParallelMessageManager& messages, int max_round) {
     auto& frag = this->fragment();
@@ -69,9 +70,11 @@ class CDLPContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> {
   void Output(std::ostream& os) override {
     auto& frag = this->fragment();
 #ifdef PROFILING
-    VLOG(2) << "[frag-" << frag.fid() << "]: preprocessing_time = " << preprocess_time;
+    VLOG(2) << "[frag-" << frag.fid()
+            << "]: preprocessing_time = " << preprocess_time;
     VLOG(2) << "[frag-" << frag.fid() << "]: exec_time = " << exec_time;
-    VLOG(2) << "[frag-" << frag.fid() << "]: postprocess_time = " << postprocess_time;
+    VLOG(2) << "[frag-" << frag.fid()
+            << "]: postprocess_time = " << postprocess_time;
 #endif
     auto inner_vertices = frag.InnerVertices();
 
@@ -83,6 +86,7 @@ class CDLPContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> {
   typename FRAG_T::template vertex_array_t<label_t>& labels;
   typename FRAG_T::template inner_vertex_array_t<bool> changed;
   typename FRAG_T::template inner_vertex_array_t<label_t> new_ilabels;
+  DenseVertexSet<typename FRAG_T::inner_vertices_t> potential_change;
 
 #ifdef PROFILING
   double preprocess_time = 0;
@@ -92,6 +96,7 @@ class CDLPContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> {
 
   int step = 0;
   int max_round = 0;
+  bool dense = true;
 
 #ifdef RANDOM_LABEL
   std::vector<std::mt19937> random_engines;
