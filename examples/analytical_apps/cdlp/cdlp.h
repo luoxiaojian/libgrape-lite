@@ -60,17 +60,13 @@ class CDLP : public ParallelAppBase<FRAG_T, CDLPContext<FRAG_T>>,
     ForEach(inner_vertices,
             [&frag, &ctx, &new_ilabels, &messages](int tid, vertex_t v) {
               auto es = frag.GetOutgoingAdjList(v);
-              if (es.Empty()) {
-                ctx.changed[v] = false;
-              } else {
+              if (!es.Empty()) {
                 label_t new_label = update_label_fast<label_t>(es, ctx.labels);
                 if (ctx.labels[v] != new_label) {
                   new_ilabels[v] = new_label;
                   ctx.changed[v] = true;
                   messages.SendMsgThroughOEdges<fragment_t, label_t>(
                       frag, v, new_label, tid);
-                } else {
-                  ctx.changed[v] = false;
                 }
               }
             });
@@ -83,6 +79,7 @@ class CDLP : public ParallelAppBase<FRAG_T, CDLPContext<FRAG_T>>,
     ForEach(inner_vertices, [&ctx, &new_ilabels](int tid, vertex_t v) {
       if (ctx.changed[v]) {
         ctx.labels[v] = new_ilabels[v];
+	ctx.changed[v] = false;
       }
     });
 

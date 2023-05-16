@@ -13,49 +13,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef EXAMPLES_ANALYTICAL_APPS_LCC_LCC_H_
-#define EXAMPLES_ANALYTICAL_APPS_LCC_LCC_H_
+#ifndef EXAMPLES_ANALYTICAL_APPS_LCC_LCC_SORT_H_
+#define EXAMPLES_ANALYTICAL_APPS_LCC_LCC_SORT_H_
 
 #include <grape/grape.h>
 
 #include <vector>
 
 #include "lcc/lcc_context.h"
+#include "lcc/lcc.h"
 #include "grape/utils/varint.h"
 
 namespace grape {
-
-template <typename T>
-class LCCRefVector {
- public:
-  LCCRefVector() : p_(nullptr), limit_(nullptr) {}
-  ~LCCRefVector() {}
-
-  void reset(const T* p, size_t size) {
-    p_ = p;
-    limit_ = p + size;
-  }
-
-  bool pop(T& val) {
-    if (p_ == limit_) {
-      return false;
-    }
-    val = *p_++;
-    return true;
-  }
-
- private:
-  const T* p_;
-  const T* limit_;
-};
-
-template <typename T>
-OutArchive& operator>>(OutArchive& arc, LCCRefVector<T>& vec) {
-  size_t size;
-  arc >> size;
-  vec.reset(static_cast<const T*>(arc.GetBytes(size * sizeof(T))), size);
-  return arc;
-}
 
 /**
  * @brief An implementation of LCC (Local CLustering Coefficient), the version
@@ -68,7 +37,7 @@ OutArchive& operator>>(OutArchive& arc, LCCRefVector<T>& vec) {
  * @tparam FRAG_T
  */
 template <typename FRAG_T, typename COUNT_T=uint32_t>
-class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
+class LCCSort : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
             public ParallelEngine {
 #if 0
   using VecOutType = std::vector<typename FRAG_T::vid_t>;
@@ -81,18 +50,19 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
   using fragment_t = FRAG_T;
   using context_t = LCCContext<FRAG_T, COUNT_T>;
   using message_manager_t = ParallelMessageManager;
-  using worker_t = ParallelWorker<LCC<FRAG_T, COUNT_T>>;
+  using worker_t = ParallelWorker<LCCSort<FRAG_T, COUNT_T>>;
+  using vid_t = typename fragment_t::vid_t;
+  using vertex_t = typename fragment_t::vertex_t;
+  using count_t = COUNT_T;
+  using tricnt_list_t = typename fragment_t::template vertex_array_t<count_t>;
 
   static constexpr bool sort_neighbor_by_global_id = true;
 
-  virtual ~LCC() {}
+  virtual ~LCCSort() {}
 
-  static std::shared_ptr<worker_t> CreateWorker(std::shared_ptr<LCC<FRAG_T, COUNT_T>> app, std::shared_ptr<FRAG_T> frag) {
+  static std::shared_ptr<worker_t> CreateWorker(std::shared_ptr<LCCSort<FRAG_T, COUNT_T>> app, std::shared_ptr<FRAG_T> frag) {
     return std::shared_ptr<worker_t>(new worker_t(app, frag));
   }
-
-  using vertex_t = typename fragment_t::vertex_t;
-  using count_t = COUNT_T;
 
   static constexpr MessageStrategy message_strategy =
       MessageStrategy::kAlongOutgoingEdgeToOuterVertex;
@@ -125,6 +95,26 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
     messages.ForceContinue();
   }
 
+  count_t intersect(const std::vector<vertex_t>& lhs, const std::vector<vertex_t>& rhs, tricnt_list_t& result) {
+    count_t count = 0;
+    vid_t v_size = lhs.size();
+    vid_t u_size = rhs.size();
+    vid_t i = 0, j = 0;
+    while (i < v_size && j < u_size) {
+      if (lhs[i] == rhs[j]) {
+        atomic_add(result[lhs[i]], static_cast<count_t>(1));
+        ++count;
+        ++i;
+        ++j;
+      } else if (lhs[i] < rhs[j]) {
+        ++i;
+      } else {
+        ++j;
+      }
+    }
+    return count;
+  }
+
   void IncEval(const fragment_t& frag, context_t& ctx,
                message_manager_t& messages) {
     using vid_t = typename context_t::vid_t;
@@ -140,7 +130,6 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
       messages.ParallelProcess<fragment_t, int>(
           thread_num(), frag,
           [&ctx](int tid, vertex_t u, int msg) { ctx.global_degree[u] = msg; });
-
 #ifdef PROFILING
       ctx.preprocess_time += GetCurrentTime();
       ctx.exec_time -= GetCurrentTime();
@@ -169,6 +158,7 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
                       }
                     }
                   }
+		  std::sort(nbr_vec.begin(), nbr_vec.end());
                   messages.SendMsgThroughOEdges<fragment_t, VecOutType>(
                       frag, v, msg_vec, tid);
                 });
@@ -199,11 +189,11 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
                       }
                     }
                   }
+		  std::sort(nbr_vec.begin(), nbr_vec.end());
                   messages.SendMsgThroughOEdges<fragment_t, VecOutType>(
                       frag, v, msg_vec, tid);
                 });
       }
-
 #ifdef PROFILING
       ctx.exec_time += GetCurrentTime();
       ctx.postprocess_time -= GetCurrentTime();
@@ -226,97 +216,54 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
                 nbr_vec.push_back(v);
               }
             }
+	    std::sort(nbr_vec.begin(), nbr_vec.end());
           });
-
 #ifdef PROFILING
       ctx.preprocess_time += GetCurrentTime();
       ctx.exec_time -= GetCurrentTime();
 #endif
-
-      std::vector<DenseVertexSet<typename FRAG_T::vertices_t>> vertexsets(
-          thread_num());
-
       if (ctx.degree_threshold == std::numeric_limits<int>::max()) {
         ForEach(
             inner_vertices,
-            [&vertexsets, &frag](int tid) {
-              auto& ns = vertexsets[tid];
-              ns.Init(frag.Vertices());
-            },
-            [&vertexsets, &ctx](int tid, vertex_t v) {
-              auto& v0_nbr_set = vertexsets[tid];
+            [this, &ctx](int tid, vertex_t v) {
               auto& v0_nbr_vec = ctx.complete_neighbor[v];
-              for (auto u : v0_nbr_vec) {
-                v0_nbr_set.Insert(u);
-              }
               count_t v_count = 0;
               for (auto u : v0_nbr_vec) {
-                count_t u_count = 0;
                 auto& v1_nbr_vec = ctx.complete_neighbor[u];
-                for (auto w : v1_nbr_vec) {
-                  if (v0_nbr_set.Exist(w)) {
-                    ++u_count;
-                    ++v_count;
-                    atomic_add(ctx.tricnt[w], static_cast<count_t>(1));
-                  }
-                }
+                count_t u_count = intersect(v0_nbr_vec, v1_nbr_vec, ctx.tricnt);
                 atomic_add(ctx.tricnt[u], u_count);
+		v_count += u_count;
               }
               atomic_add(ctx.tricnt[v], v_count);
-              for (auto u : v0_nbr_vec) {
-                v0_nbr_set.Erase(u);
-              }
-            },
-            [](int tid) {});
+            });
       } else {
         ForEach(
             inner_vertices,
-            [&vertexsets, &frag](int tid) {
-              auto& ns = vertexsets[tid];
-              ns.Init(frag.Vertices());
-            },
-            [this, &vertexsets, &frag, &ctx](int tid, vertex_t v) {
+            [this, &frag, &ctx](int tid, vertex_t v) {
               if (filterByDegree(frag, ctx, v)) {
                 return;
               }
-              auto& v0_nbr_set = vertexsets[tid];
               auto& v0_nbr_vec = ctx.complete_neighbor[v];
-              for (auto u : v0_nbr_vec) {
-                v0_nbr_set.Insert(u);
-              }
               count_t v_count = 0;
               for (auto u : v0_nbr_vec) {
-                count_t u_count = 0;
                 auto& v1_nbr_vec = ctx.complete_neighbor[u];
-                for (auto w : v1_nbr_vec) {
-                  if (v0_nbr_set.Exist(w)) {
-                    ++u_count;
-                    ++v_count;
-                    atomic_add(ctx.tricnt[w], static_cast<count_t>(1));
-                  }
-                }
+                count_t u_count = intersect(v0_nbr_vec, v1_nbr_vec, ctx.tricnt);
                 atomic_add(ctx.tricnt[u], u_count);
+		v_count += u_count;
               }
               atomic_add(ctx.tricnt[v], v_count);
-              for (auto u : v0_nbr_vec) {
-                v0_nbr_set.Erase(u);
-              }
-            },
-            [](int tid) {});
+            });
       }
-
 #ifdef PROFILING
       ctx.exec_time += GetCurrentTime();
       ctx.postprocess_time -= GetCurrentTime();
 #endif
-
       ForEach(outer_vertices, [&messages, &frag, &ctx](int tid, vertex_t v) {
         if (ctx.tricnt[v] != 0) {
           messages.SyncStateOnOuterVertex<fragment_t, count_t>(frag, v,
                                                                ctx.tricnt[v], tid);
         }
       });
-
 #ifdef PROFILING
       ctx.postprocess_time += GetCurrentTime();
 #endif
@@ -364,4 +311,4 @@ class LCC : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
 };
 }  // namespace grape
 
-#endif  // EXAMPLES_ANALYTICAL_APPS_LCC_LCC_H_
+#endif  // EXAMPLES_ANALYTICAL_APPS_LCC_LCC_SORT_H_

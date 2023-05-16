@@ -44,6 +44,7 @@ limitations under the License.
 #include "cdlp/cdlp_auto.h"
 #include "flags.h"
 #include "lcc/lcc.h"
+#include "lcc/lcc_sort.h"
 #include "lcc/lcc_directed.h"
 #include "lcc/lcc_auto.h"
 #include "pagerank/pagerank.h"
@@ -68,10 +69,16 @@ template <typename FRAG_T>
 using LCC64 = LCC<FRAG_T, uint64_t>;
 
 template <typename FRAG_T>
+using LCCSort64 = LCCSort<FRAG_T, uint64_t>;
+
+template <typename FRAG_T>
 using LCCDirected64 = LCCDirected<FRAG_T, uint64_t>;
 
 template <typename FRAG_T>
 using LCC32 = LCC<FRAG_T, uint32_t>;
+
+template <typename FRAG_T>
+using LCCSort32 = LCCSort<FRAG_T, uint32_t>;
 
 template <typename FRAG_T>
 using LCCDirected32 = LCCDirected<FRAG_T, uint32_t>;
@@ -310,13 +317,25 @@ void Run() {
 	}
       } else {
         if (FLAGS_edge_num > static_cast<int64_t>(std::numeric_limits<uint32_t>::max()) * 2) {
-          CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-              LCC64>(comm_spec, out_prefix, fnum, spec,
-                   FLAGS_degree_threshold);
+          if (FLAGS_edge_num > FLAGS_vertex_num * 60) {
+            CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                LCC64>(comm_spec, out_prefix, fnum, spec,
+                     FLAGS_degree_threshold);
+	  } else {
+            CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                LCCSort64>(comm_spec, out_prefix, fnum, spec,
+                     FLAGS_degree_threshold);
+	  }
 	} else {
-          CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-              LCC32>(comm_spec, out_prefix, fnum, spec,
-                   FLAGS_degree_threshold);
+          if (FLAGS_edge_num > FLAGS_vertex_num * 60) {
+            CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                LCC32>(comm_spec, out_prefix, fnum, spec,
+                     FLAGS_degree_threshold);
+	  } else {
+            CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                LCCSort32>(comm_spec, out_prefix, fnum, spec,
+                     FLAGS_degree_threshold);
+	  }
 	}
       }
     }

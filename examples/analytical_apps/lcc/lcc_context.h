@@ -52,6 +52,7 @@ class LCCContext : public VertexDataContext<FRAG_T, double> {
 
   void Output(std::ostream& os) override {
     auto& frag = this->fragment();
+#if 1
     auto inner_vertices = frag.InnerVertices();
     for (auto v : inner_vertices) {
       if (global_degree[v] == 0 || global_degree[v] == 1) {
@@ -65,6 +66,24 @@ class LCCContext : public VertexDataContext<FRAG_T, double> {
            << re << std::endl;
       }
     }
+#else
+    uint32_t ivnum = frag.GetInnerVerticesNum();
+    uint32_t tvnum = frag.GetVerticesNum();
+    os.write(reinterpret_cast<char*>(&ivnum), sizeof(uint32_t));
+    os.write(reinterpret_cast<char*>(&tvnum), sizeof(uint32_t));
+    for (auto v : frag.InnerVertices()) {
+      auto& vec = complete_neighbor[v];
+      uint32_t nbr_size = vec.size();
+      os.write(reinterpret_cast<char*>(&nbr_size), sizeof(uint32_t));
+      os.write(reinterpret_cast<char*>(vec.data()), sizeof(vertex_t) * nbr_size);
+    }
+    for (auto v : frag.OuterVertices()) {
+      auto& vec = complete_neighbor[v];
+      uint32_t nbr_size = vec.size();
+      os.write(reinterpret_cast<char*>(&nbr_size), sizeof(uint32_t));
+      os.write(reinterpret_cast<char*>(vec.data()), sizeof(vertex_t) * nbr_size);
+    }
+#endif
 
 #ifdef PROFILING
     VLOG(2) << "preprocess_time: " << preprocess_time << "s.";

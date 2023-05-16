@@ -51,7 +51,7 @@ namespace grape {
  *
  */
 
-#if 0
+#if 1
 
 class ParallelMessageManager : public MessageManagerBase {
   static constexpr size_t default_msg_send_block_size = 2 * 1023 * 1024;
