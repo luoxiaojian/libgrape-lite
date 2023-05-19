@@ -65,6 +65,15 @@ class CSREdgecutFragmentBase
     return ie_.degree(v.GetValue());
   }
 
+  using vertex_range_t = VertexRange<VID_T>;
+  inline size_t GetLocalInEdgesNum(const vertex_range_t& range) const {
+    return ie_.range_degree((*range.begin()).GetValue(), (*range.end()).GetValue());
+  }
+
+  inline size_t GetLocalOutEdgesNum(const vertex_range_t& range) const {
+    return oe_.range_degree((*range.begin()).GetValue(), (*range.end()).GetValue());
+  }
+
   /**
    * @brief Returns the incoming adjacent vertices of v.
    *

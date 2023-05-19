@@ -165,6 +165,37 @@ class ImmutableEdgecutFragment
   using base_t::buildCSR;
   using base_t::init;
   using base_t::IsInnerVertexGid;
+
+  static std::string type_info() {
+    std::string ret = "";
+    if (std::is_same<EDATA_T, EmptyType>::value) {
+      ret += "empty";
+    } else if (std::is_same<EDATA_T, double>::value) {
+      ret += "double";
+    } else {
+      LOG(FATAL) << "Edge data type not supported...";
+    }
+
+    if (_load_strategy == LoadStrategy::kOnlyOut) {
+      ret += "_out";
+    } else if (_load_strategy == LoadStrategy::kOnlyIn) {
+      ret += "_in";
+    } else if (_load_strategy == LoadStrategy::kBothOutIn) {
+      ret += "_both";
+    } else {
+      LOG(FATAL) << "Invalid load strategy...";
+    }
+
+    using partitioner_t = typename VERTEX_MAP_T::partitioner_t;
+    if (std::is_same<partitioner_t, HashPartitioner<OID_T>>::value) {
+      ret += "_hash";
+    } else if (std::is_same<partitioner_t, SegmentedPartitioner<OID_T>>::value) {
+      ret += "_seg";
+    }
+
+    return ret;
+  }
+
   void Init(fid_t fid, bool directed, std::vector<internal_vertex_t>& vertices,
             std::vector<edge_t>& edges) override {
     init(fid, directed);

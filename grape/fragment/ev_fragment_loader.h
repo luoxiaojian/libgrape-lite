@@ -72,9 +72,9 @@ class EVFragmentLoader {
                                            const std::string& vfile,
                                            const LoadGraphSpec& spec) {
     std::shared_ptr<fragment_t> fragment(nullptr);
-    if (spec.deserialize && (!spec.serialize)) {
+    if (!spec.serialization_prefix.empty()) {
       bool deserialized = basic_fragment_loader_.DeserializeFragment(
-          fragment, spec.deserialization_prefix);
+          fragment, spec.serialization_prefix);
       int flag = 0;
       int sum = 0;
       if (!deserialized) {
@@ -173,7 +173,7 @@ class EVFragmentLoader {
 
     basic_fragment_loader_.ConstructFragment(fragment, spec.directed);
 
-    if (spec.serialize) {
+    if (!spec.serialization_prefix.empty()) {
       bool serialized = basic_fragment_loader_.SerializeFragment(
           fragment, spec.serialization_prefix);
       if (!serialized) {

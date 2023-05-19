@@ -25,6 +25,7 @@ limitations under the License.
 #include <glog/logging.h>
 #include <stdio.h>
 #include <sys/time.h>
+#include <sys/stat.h>
 
 #include <algorithm>
 #include <fstream>
@@ -139,6 +140,11 @@ struct IdenticalHasher<uint64_t> {
     return x;
   }
 };
+
+bool exists_file(const std::string& name) {
+  struct stat buffer;   
+  return (stat (name.c_str(), &buffer) == 0); 
+}
 
 }  // namespace grape
 

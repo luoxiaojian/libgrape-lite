@@ -46,11 +46,7 @@ struct LoadGraphSpec {
   bool rebalance;
   int rebalance_vertex_factor;
 
-  bool serialize;
   std::string serialization_prefix;
-
-  bool deserialize;
-  std::string deserialization_prefix;
 
   void set_directed(bool val = true) { directed = val; }
   void set_rebalance(bool flag, int weight) {
@@ -58,14 +54,8 @@ struct LoadGraphSpec {
     rebalance_vertex_factor = weight;
   }
 
-  void set_serialize(bool flag, const std::string& prefix) {
-    serialize = flag;
+  void set_serialization_prefix(const std::string& prefix) {
     serialization_prefix = prefix;
-  }
-
-  void set_deserialize(bool flag, const std::string& prefix) {
-    deserialize = flag;
-    deserialization_prefix = prefix;
   }
 };
 
@@ -74,8 +64,7 @@ inline LoadGraphSpec DefaultLoadGraphSpec() {
   spec.directed = true;
   spec.rebalance = true;
   spec.rebalance_vertex_factor = 0;
-  spec.serialize = false;
-  spec.deserialize = false;
+  spec.serialization_prefix = "";
   return spec;
 }
 
@@ -173,27 +162,47 @@ class BasicFragmentLoader {
 
   bool SerializeFragment(std::shared_ptr<fragment_t>& fragment,
                          const std::string& serialization_prefix) {
+    std::string type_prefix = fragment_t::type_info();
+    std::string typed_prefix = serialization_prefix + "/" + type_prefix;
     char serial_file[1024];
     snprintf(serial_file, sizeof(serial_file), "%s/%s",
-             serialization_prefix.c_str(), kSerializationVertexMapFilename);
-    vm_ptr_->template Serialize<IOADAPTOR_T>(serialization_prefix);
-    fragment->template Serialize<IOADAPTOR_T>(serialization_prefix);
+             typed_prefix.c_str(), kSerializationVertexMapFilename);
+    vm_ptr_->template Serialize<IOADAPTOR_T>(typed_prefix);
+    fragment->template Serialize<IOADAPTOR_T>(typed_prefix);
 
     return true;
   }
 
+  bool existSerializationFile(const std::string& prefix) {
+    char vm_fbuf[1024], frag_fbuf[1024];
+    snprintf(vm_fbuf, sizeof(vm_fbuf), "%s/%s", prefix.c_str(),
+             kSerializationVertexMapFilename);
+    snprintf(frag_fbuf, sizeof(frag_fbuf), kSerializationFilenameFormat, prefix.c_str(),
+             comm_spec_.fid());
+    std::string vm_path = vm_fbuf;
+    std::string frag_path = frag_fbuf;
+    return exists_file(vm_path) && exists_file(frag_path);
+  }
+
   bool DeserializeFragment(std::shared_ptr<fragment_t>& fragment,
                            const std::string& deserialization_prefix) {
+    std::string type_prefix = fragment_t::type_info();
+    std::string typed_prefix = deserialization_prefix + "/" + type_prefix;
+    if (!existSerializationFile(typed_prefix)) {
+      return false;
+    }
     auto io_adaptor =
-        std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(deserialization_prefix));
+        std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(typed_prefix));
     if (io_adaptor->IsExist()) {
-      vm_ptr_->template Deserialize<IOADAPTOR_T>(deserialization_prefix,
+      vm_ptr_->template Deserialize<IOADAPTOR_T>(typed_prefix,
                                                  comm_spec_.fid());
       fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr_));
-      fragment->template Deserialize<IOADAPTOR_T>(deserialization_prefix,
+      fragment->template Deserialize<IOADAPTOR_T>(typed_prefix,
                                                   comm_spec_.fid());
+      return true;
+    } else {
+      return false;
     }
-    return true;
   }
 
   void ConstructFragment(std::shared_ptr<fragment_t>& fragment, bool directed) {

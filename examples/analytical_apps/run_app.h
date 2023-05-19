@@ -41,11 +41,13 @@ limitations under the License.
 #include "bfs/bfs.h"
 #include "bfs/bfs_auto.h"
 #include "cdlp/cdlp.h"
+#include "cdlp/cdlp_beta.h"
 #include "cdlp/cdlp_auto.h"
 #include "flags.h"
 #include "lcc/lcc.h"
 #include "lcc/lcc_sort.h"
 #include "lcc/lcc_directed.h"
+#include "lcc/lcc_directed_sort.h"
 #include "lcc/lcc_auto.h"
 #include "pagerank/pagerank.h"
 #include "pagerank/pagerank_directed.h"
@@ -57,6 +59,7 @@ limitations under the License.
 #include "sssp/sssp_auto.h"
 #include "timer.h"
 #include "wcc/wcc.h"
+#include "wcc/wcc_beta.h"
 #include "wcc/wcc_auto.h"
 
 #ifndef __AFFINITY__
@@ -91,9 +94,7 @@ void Init() {
       mkdir(FLAGS_out_prefix.c_str(), 0777);
     }
   }
-  if (FLAGS_deserialize && FLAGS_serialization_prefix.empty()) {
-    LOG(FATAL) << "Please assign a serialization prefix.";
-  } else if (FLAGS_efile.empty()) {
+  if (FLAGS_efile.empty()) {
     LOG(FATAL) << "Please assign input edge files.";
   } else if (FLAGS_vfile.empty() && FLAGS_segmented_partition) {
     LOG(FATAL) << "EFragmentLoader dosen't support Segmented Partitioner. "
@@ -148,11 +149,7 @@ void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
   LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
   graph_spec.set_directed(FLAGS_directed);
   graph_spec.set_rebalance(FLAGS_rebalance, FLAGS_rebalance_vertex_factor);
-  if (FLAGS_deserialize) {
-    graph_spec.set_deserialize(true, FLAGS_serialization_prefix);
-  } else if (FLAGS_serialize) {
-    graph_spec.set_serialize(true, FLAGS_serialization_prefix);
-  }
+  graph_spec.set_serialization_prefix(FLAGS_serialization_prefix);
   if (FLAGS_segmented_partition) {
     using VertexMapType =
         GlobalVertexMap<OID_T, VID_T, SegmentedPartitioner<OID_T>>;
@@ -288,9 +285,20 @@ void Run() {
                      CDLPAuto, int>(comm_spec, out_prefix, fnum, spec,
                                     FLAGS_cdlp_mr);
     } else if (name == "cdlp") {
-      FLAGS_directed = false;
+      if (FLAGS_directed) {
+        FLAGS_directed = false;
+	FLAGS_segmented_partition = false;
+      }
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      CDLP, int>(comm_spec, out_prefix, fnum, spec,
+                                FLAGS_cdlp_mr);
+    } else if (name == "cdlp_beta") {
+      if (FLAGS_directed) {
+        FLAGS_directed = false;
+	FLAGS_segmented_partition = false;
+      }
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                     CDLPBeta, int>(comm_spec, out_prefix, fnum, spec,
                                 FLAGS_cdlp_mr);
     } else if (name == "wcc_auto") {
       FLAGS_directed = false;
@@ -300,6 +308,10 @@ void Run() {
       FLAGS_directed = false;
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      WCC>(comm_spec, out_prefix, fnum, spec);
+    } else if (name == "wcc_beta") {
+      FLAGS_directed = false;
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                     WCCBeta>(comm_spec, out_prefix, fnum, spec);
     } else if (name == "lcc_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      LCCAuto>(comm_spec, out_prefix, fnum, spec);

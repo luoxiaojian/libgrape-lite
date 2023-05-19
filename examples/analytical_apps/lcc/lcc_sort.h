@@ -97,32 +97,18 @@ class LCCSort : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
     messages.ForceContinue();
   }
 
-  int bsearch(vertex_t v, const std::vector<vertex_t>& vec, int from, int to) {
-    int result = -1;
-    while (from <= to) {
-      int mid = from + ((to - from) >> 1);
-      if (vec[mid] >= v) {
-        result = mid;
-        to = mid - 1;
-      } else {
-        from = mid + 1;
-      }
-    }
-    return result;
-  }
-
   count_t intersect_with_bs(const std::vector<vertex_t>& small,
                             const std::vector<vertex_t>& large,
                             tricnt_list_t& result) {
     count_t ret = 0;
-    int from = 0;
-    int to = large.size() - 1;
+    auto from = large.begin();
+    auto to = large.end();
     for (auto v : small) {
-      from = bsearch(v, large, from, to);
-      if (from == -1) {
+      from = std::lower_bound(from, to, v);
+      if (from == to) {
         return ret;
       }
-      if (large[from] == v) {
+      if (*from == v) {
         ++ret;
         ++from;
         atomic_add(result[v], static_cast<count_t>(1));
@@ -133,31 +119,32 @@ class LCCSort : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
 
   count_t intersect(const std::vector<vertex_t>& lhs,
                     const std::vector<vertex_t>& rhs, tricnt_list_t& result) {
-#if 0
-    count_t count = 0;
+    if (lhs.empty() || rhs.empty()) { return 0; }
     vid_t v_size = lhs.size();
     vid_t u_size = rhs.size();
-    vid_t i = 0, j = 0;
-    while (i < v_size && j < u_size) {
-      if (lhs[i] == rhs[j]) {
-        atomic_add(result[lhs[i]], static_cast<count_t>(1));
-        ++count;
-        ++i;
-        ++j;
-      } else if (lhs[i] < rhs[j]) {
-        ++i;
+    if (static_cast<double>(v_size + u_size) < std::min<double>(v_size, u_size) * ilogb(std::max<double>(v_size, u_size))) {
+      count_t count = 0;
+      vid_t i = 0, j = 0;
+      while (i < v_size && j < u_size) {
+        if (lhs[i] == rhs[j]) {
+          atomic_add(result[lhs[i]], static_cast<count_t>(1));
+          ++count;
+          ++i;
+          ++j;
+        } else if (lhs[i] < rhs[j]) {
+          ++i;
+        } else {
+          ++j;
+        }
+      }
+      return count;
+    } else {
+      if (v_size > u_size) {
+        return intersect_with_bs(rhs, lhs, result);
       } else {
-        ++j;
+        return intersect_with_bs(lhs, rhs, result);
       }
     }
-    return count;
-#else
-    if (lhs.size() > rhs.size()) {
-      return intersect_with_bs(rhs, lhs, result);
-    } else {
-      return intersect_with_bs(lhs, rhs, result);
-    }
-#endif
   }
 
   void IncEval(const fragment_t& frag, context_t& ctx,

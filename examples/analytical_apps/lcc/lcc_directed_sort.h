@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef EXAMPLES_ANALYTICAL_APPS_LCC_LCC_DIRECTED_H_
-#define EXAMPLES_ANALYTICAL_APPS_LCC_LCC_DIRECTED_H_
+#ifndef EXAMPLES_ANALYTICAL_APPS_LCC_LCC_DIRECTED_SORT_H_
+#define EXAMPLES_ANALYTICAL_APPS_LCC_LCC_DIRECTED_SORT_H_
 
 #include <grape/grape.h>
 
@@ -35,7 +35,7 @@ namespace grape {
  * @tparam FRAG_T
  */
 template <typename FRAG_T, typename COUNT_T=uint32_t>
-class LCCDirected : public ParallelAppBase<FRAG_T, LCCDirectedContext<FRAG_T, COUNT_T>>,
+class LCCDirectedSort : public ParallelAppBase<FRAG_T, LCCDirectedContext<FRAG_T, COUNT_T>>,
             public ParallelEngine {
  public:
   // using app_t = LCCDirected<FRAG_T, COUNT_T>;
@@ -45,11 +45,11 @@ class LCCDirected : public ParallelAppBase<FRAG_T, LCCDirectedContext<FRAG_T, CO
   using fragment_t = FRAG_T;
   using context_t = LCCDirectedContext<FRAG_T, COUNT_T>;
   using message_manager_t = ParallelMessageManager;
-  using worker_t = ParallelWorker<LCCDirected<FRAG_T, COUNT_T>>;
+  using worker_t = ParallelWorker<LCCDirectedSort<FRAG_T, COUNT_T>>;
 
-  virtual ~LCCDirected() {}
+  virtual ~LCCDirectedSort() {}
 
-  static std::shared_ptr<worker_t> CreateWorker(std::shared_ptr<LCCDirected<FRAG_T, COUNT_T>> app, std::shared_ptr<FRAG_T> frag) {
+  static std::shared_ptr<worker_t> CreateWorker(std::shared_ptr<LCCDirectedSort<FRAG_T, COUNT_T>> app, std::shared_ptr<FRAG_T> frag) {
     return std::shared_ptr<worker_t>(new worker_t(app, frag));
   }
   using vertex_t = typename fragment_t::vertex_t;
@@ -85,6 +85,7 @@ class LCCDirected : public ParallelAppBase<FRAG_T, LCCDirectedContext<FRAG_T, CO
         nbr_vec.push_back(u);
         msg_vec.push_back(frag.Vertex2Gid(u));
       }
+      std::sort(nbr_vec.begin(), nbr_vec.end());
       messages.SendMsgThroughEdges<fragment_t, std::vector<vid_t>>(frag, v, msg_vec, tid);
     });
 
@@ -111,60 +112,50 @@ class LCCDirected : public ParallelAppBase<FRAG_T, LCCDirectedContext<FRAG_T, CO
             for (auto gid : msg) {
               vertex_t v;
               if (frag.Gid2Vertex(gid, v)) {
-	        if (u < v) {
-                  nbr_vec.push_back(v);
-		}
+                nbr_vec.push_back(v);
               }
             }
+	    std::sort(nbr_vec.begin(), nbr_vec.end());
           });
-
-      std::vector<DenseVertexSet<typename FRAG_T::vertices_t>> vertexsets(
-          thread_num());
 
       ForEach(
           inner_vertices,
-          [&vertexsets, &frag](int tid) {
-            auto& ns = vertexsets[tid];
-            ns.Init(frag.Vertices());
-          },
-          [&vertexsets, &ctx, &frag](int tid, vertex_t v) {
-            auto& v0_nbr_set = vertexsets[tid];
+          [&ctx](int tid, vertex_t v) {
             auto& v0_nbr_vec = ctx.complete_neighbor[v];
+	    if (v0_nbr_vec.empty()) {
+	      return ;
+	    }
             std::vector<vertex_t> deduped_v0_nbr_vec;
-            for (auto u : v0_nbr_vec) {
-              if (v0_nbr_set.Exist(u)) {
-                continue;
-              } else {
-                deduped_v0_nbr_vec.push_back(u);
-                v0_nbr_set.Insert(u);
-              }
-            }
+	    deduped_v0_nbr_vec.push_back(v0_nbr_vec[0]);
+	    int v0_nbr_num = v0_nbr_vec.size();
+	    for (int i = 1; i < v0_nbr_num; ++i) {
+	      if (v0_nbr_vec[i] != v0_nbr_vec[i - 1]) {
+	        deduped_v0_nbr_vec.push_back(v0_nbr_vec[i]);
+	      }
+	    }
             ctx.global_degree[v] = deduped_v0_nbr_vec.size();
             int count = 0;
+	    const vertex_t* end1 = deduped_v0_nbr_vec.data() + deduped_v0_nbr_vec.size();
             for (auto u : deduped_v0_nbr_vec) {
-              auto& v1_nbr_vec = ctx.complete_neighbor[u];
-	      if (frag.IsOuterVertex(u)) {
-                for (auto w : v1_nbr_vec) {
-                  if (v0_nbr_set.Exist(w)) {
-                    ++count;
-                  }
-                }
-	      } else {
-                for (auto w : v1_nbr_vec) {
-                  if (u < w) {
-                    if (v0_nbr_set.Exist(w)) {
-                      ++count;
-                    }
-                  }
-                }
+	      const vertex_t* ptr1 = deduped_v0_nbr_vec.data();
+
+              const auto& v1_nbr_vec = ctx.complete_neighbor[u];
+	      const vertex_t* end2 = v1_nbr_vec.data() + v1_nbr_vec.size();
+	      const vertex_t* ptr2 = std::lower_bound(v1_nbr_vec.data(), end2, u);
+
+	      while (ptr1 != end1 && ptr2 != end2) {
+                if (*ptr1 == *ptr2) {
+                  ++ptr2;
+		  ++count;
+		} else if (*ptr1 < *ptr2) {
+                  ++ptr1;
+		} else {
+                  ++ptr2;
+		}
 	      }
             }
             ctx.tricnt[v] = count;
-            for (auto u : deduped_v0_nbr_vec) {
-              v0_nbr_set.Erase(u);
-            }
-          },
-          [](int tid) {});
+          });
 
 #ifdef PROFILING
       ctx.exec_time += GetCurrentTime();
@@ -174,4 +165,4 @@ class LCCDirected : public ParallelAppBase<FRAG_T, LCCDirectedContext<FRAG_T, CO
 };
 }  // namespace grape
 
-#endif  // EXAMPLES_ANALYTICAL_APPS_LCC_LCC_DIRECTED_H_
+#endif  // EXAMPLES_ANALYTICAL_APPS_LCC_LCC_DIRECTED_SORT_H_

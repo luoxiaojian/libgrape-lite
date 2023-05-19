@@ -170,6 +170,13 @@ class ImmutableCSR {
 
   int degree(VID_T i) const { return offsets_[i + 1] - offsets_[i]; }
 
+  size_t range_degree(VID_T from, VID_T to) const {
+    assert(from >= 0);
+    assert(from <= to);
+    assert(to <= vertex_num());
+    return offsets_[to] - offsets_[from];
+  }
+
   bool is_empty(VID_T i) const { return offsets_[i + 1] == offsets_[i]; }
 
   nbr_t* get_begin(VID_T i) { return offsets_[i]; }
