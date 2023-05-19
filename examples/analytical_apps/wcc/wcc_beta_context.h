@@ -34,40 +34,30 @@ class WCCBetaContext : public WCCBetaContextType<FRAG_T> {
   using oid_t = typename FRAG_T::oid_t;
   using vid_t = typename FRAG_T::vid_t;
   using cid_t = typename WCCBetaContextType<FRAG_T>::data_t;
+  using vertex_t = typename FRAG_T::vertex_t;
 
   explicit WCCBetaContext(const FRAG_T& fragment)
-      : WCCBetaContextType<FRAG_T>(fragment, true),
-        comp_id(this->data()) {}
+      : WCCBetaContextType<FRAG_T>(fragment), comp_id(this->data()) {}
 
   void Init(ParallelMessageManager& messages) {
     auto& frag = this->fragment();
 
-    curr_modified.Init(frag.Vertices());
-    next_modified.Init(frag.Vertices());
+    tree.Init(frag.Vertices());
+    modified.Init(frag.Vertices());
   }
 
   void Output(std::ostream& os) override {
     auto& frag = this->fragment();
     auto inner_vertices = frag.InnerVertices();
     for (auto v : inner_vertices) {
-      os << frag.GetId(v) << " " << comp_id[v] << std::endl;
+      os << frag.GetId(v) << " " << comp_id[tree[v]] << std::endl;
     }
-#ifdef PROFILING
-    VLOG(2) << "preprocess_time: " << preprocess_time << "s.";
-    VLOG(2) << "eval_time: " << eval_time << "s.";
-    VLOG(2) << "postprocess_time: " << postprocess_time << "s.";
-#endif
   }
 
-  typename FRAG_T::template vertex_array_t<cid_t>& comp_id;
+  typename FRAG_T::template inner_vertex_array_t<cid_t>& comp_id;
+  typename FRAG_T::template vertex_array_t<vertex_t> tree;
 
-  DenseVertexSet<typename FRAG_T::vertices_t> curr_modified, next_modified;
-
-#ifdef PROFILING
-  double preprocess_time = 0;
-  double eval_time = 0;
-  double postprocess_time = 0;
-#endif
+  DenseVertexSet<typename FRAG_T::inner_vertices_t> modified;
 };
 }  // namespace grape
 

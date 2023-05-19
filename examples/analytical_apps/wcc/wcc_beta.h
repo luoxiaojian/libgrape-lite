@@ -36,7 +36,7 @@ namespace grape {
  */
 template <typename FRAG_T>
 class WCCBeta : public ParallelAppBase<FRAG_T, WCCBetaContext<FRAG_T>>,
-            public ParallelEngine {
+                public ParallelEngine {
   INSTALL_PARALLEL_WORKER(WCCBeta<FRAG_T>, WCCBetaContext<FRAG_T>, FRAG_T)
   using vertex_t = typename fragment_t::vertex_t;
   using oid_t = typename fragment_t::oid_t;
@@ -44,203 +44,90 @@ class WCCBeta : public ParallelAppBase<FRAG_T, WCCBetaContext<FRAG_T>>,
 
   static constexpr bool need_split_edges = true;
 
- private:
-  // Propagate label through pulling.
-  // Each vertex update its state by pulling neighbors' states.
-  void PropagateLabelPull(const fragment_t& frag, context_t& ctx,
-                          message_manager_t& messages) {
-    auto inner_vertices = frag.InnerVertices();
-    auto outer_vertices = frag.OuterVertices();
-
-    auto& channels = messages.Channels();
-
-    ForEach(inner_vertices, [&frag, &ctx](int tid, vertex_t v) {
-      auto old_cid = ctx.comp_id[v];
-      auto new_cid = old_cid;
-      auto es = frag.GetOutgoingInnerVertexAdjList(v);
-      for (auto& e : es) {
-        auto u = e.get_neighbor();
-        new_cid = MIN_COMP_ID(ctx.comp_id[u], new_cid);
-      }
-      if (new_cid < old_cid) {
-        ctx.comp_id[v] = new_cid;
-        ctx.next_modified.Insert(v);
-      }
-    });
-
-    ForEach(outer_vertices, [&frag, &ctx, &channels](int tid, vertex_t v) {
-      auto old_cid = ctx.comp_id[v];
-      auto new_cid = old_cid;
-      auto es = frag.GetIncomingAdjList(v);
-      for (auto& e : es) {
-        auto u = e.get_neighbor();
-        new_cid = MIN_COMP_ID(ctx.comp_id[u], new_cid);
-      }
-      ctx.comp_id[v] = new_cid;
-      if (new_cid < old_cid) {
-        ctx.next_modified.Insert(v);
-        channels[tid].SyncStateOnOuterVertex<fragment_t, oid_t>(frag, v,
-                                                                new_cid);
-      }
-    });
-  }
-
-  // Propagate label through pushing
-  // Each vertex pushes its state to update neighbors.
-  void PropagateLabelPush(const fragment_t& frag, context_t& ctx,
-                          message_manager_t& messages) {
-    auto inner_vertices = frag.InnerVertices();
-    auto outer_vertices = frag.OuterVertices();
-
-    // propagate label to incoming and outgoing neighbors
-    ForEach(ctx.curr_modified, inner_vertices,
-            [&frag, &ctx](int tid, vertex_t v) {
-              auto cid = ctx.comp_id[v];
-              auto es = frag.GetOutgoingAdjList(v);
-              for (auto& e : es) {
-                auto u = e.get_neighbor();
-                if (ctx.comp_id[u] > cid) {
-                  atomic_min(ctx.comp_id[u], cid);
-                  ctx.next_modified.Insert(u);
-                }
-              }
-            });
-
-    ForEach(outer_vertices, [&messages, &frag, &ctx](int tid, vertex_t v) {
-      if (ctx.next_modified.Exist(v)) {
-        messages.SyncStateOnOuterVertex<fragment_t, oid_t>(frag, v,
-                                                           ctx.comp_id[v], tid);
-      }
-    });
-  }
-
  public:
   void PEval(const fragment_t& frag, context_t& ctx,
              message_manager_t& messages) {
     auto inner_vertices = frag.InnerVertices();
     auto outer_vertices = frag.OuterVertices();
 
-    typename fragment_t::template inner_vertex_array_t<vid_t> local_comp_id;
-    local_comp_id.Init(inner_vertices);
-
     messages.InitChannels(thread_num());
     auto& channels = messages.Channels();
 
-#ifdef PROFILING
-    ctx.eval_time -= GetCurrentTime();
-#endif
-    ForEach(inner_vertices, [&frag, &local_comp_id](int tid, vertex_t v) {
-      vid_t cur_lid = v.GetValue();
-      oid_t cur_cid = frag.GetInnerVertexId(v);
-      auto es = frag.GetOutgoingInnerVertexAdjList(v);
-      for (auto& e : es) {
-        auto u = e.get_neighbor();
-	oid_t u_cid = frag.GetInnerVertexId(u);
-	if (u_cid < cur_cid) {
-	  cur_cid = u_cid;
-	  cur_lid = u.GetValue();
-	}
-      }
-      local_comp_id[v] = cur_lid;
-    });
-    ForEach(inner_vertices, [&frag, &ctx, &local_comp_id](int tid, vertex_t v) {
-      vid_t cur_lid = local_comp_id[v];
-      while (true) {
-        vertex_t parent(cur_lid);
-	vid_t parent_comp_id = local_comp_id[parent];
-	if (parent_comp_id == cur_lid) {
-	  ctx.comp_id[v] = frag.GetInnerVertexId(parent);
-	  if (parent != v) {
-	    ctx.next_modified.Insert(v);
-	  }
-	  break;
-	}
-	cur_lid = parent_comp_id;
-      }
-      local_comp_id[v] = cur_lid;
-    });
-
-    ForEach(outer_vertices, [&frag, &ctx, &channels](int tid, vertex_t v) {
-      auto old_cid = frag.GetOuterVertexId(v);
-      auto new_cid = old_cid;
+    ForEach(outer_vertices, [&frag, &ctx](int tid, vertex_t v) {
       auto es = frag.GetIncomingAdjList(v);
+      vertex_t parent = v;
       for (auto& e : es) {
         auto u = e.get_neighbor();
-        new_cid = MIN_COMP_ID(ctx.comp_id[u], new_cid);
+        if (u < parent) {
+          parent = u;
+        }
       }
-      ctx.comp_id[v] = new_cid;
-      if (new_cid != old_cid) {
-        ctx.next_modified.Insert(v);
-        channels[tid].SyncStateOnOuterVertex<fragment_t, oid_t>(frag, v,
-                                                                new_cid);
+      ctx.tree[v] = parent;
+    });
+    ForEach(inner_vertices, [&frag, &ctx](int tid, vertex_t v) {
+      auto es = frag.GetOutgoingInnerVertexAdjList(v);
+      vertex_t parent = v;
+      for (auto& e : es) {
+        parent = MIN_COMP_ID(parent, e.get_neighbor());
       }
+      auto oes = frag.GetOutgoingOuterVertexAdjList(v);
+      for (auto& e : oes) {
+        parent = MIN_COMP_ID(parent, ctx.tree[e.get_neighbor()]);
+      }
+      ctx.comp_id[v] = std::numeric_limits<oid_t>::max();
+    });
+    ForEach(inner_vertices, [&ctx, &frag](int tid, vertex_t v) {
+      auto cur = v;
+      while (cur != ctx.tree[cur]) {
+        cur = ctx.tree[cur];
+      }
+      ctx.tree[v] = cur;
+      oid_t cid = frag.GetInnerVertexId(v);
+      atomic_min(ctx.comp_id[cur], cid);
+    });
+    ForEach(outer_vertices, [&ctx, &frag](int tid, vertex_t v) {
+      auto cur = v;
+      while (cur != ctx.tree[cur]) {
+        cur = ctx.tree[cur];
+      }
+      ctx.tree[v] = cur;
+      oid_t cid = frag.GetOuterVertexId(v);
+      atomic_min(ctx.comp_id[cur], cid);
     });
 
-
-    if (!ctx.next_modified.PartialEmpty(
-          frag.Vertices().begin_value(),
-          frag.Vertices().begin_value() + frag.GetInnerVerticesNum())) {
-      messages.ForceContinue();
-    }
-
-    ctx.curr_modified.Swap(ctx.next_modified);
-#ifdef PROFILING
-    ctx.postprocess_time += GetCurrentTime();
-#endif
+    ForEach(outer_vertices, [&ctx, &frag, &channels](int tid, vertex_t v) {
+      oid_t origin_cid = frag.GetOuterVertexId(v);
+      if (ctx.comp_id[v] < origin_cid) {
+        channels[tid].SyncStateOnOuterVertex<fragment_t, oid_t>(frag, v,
+                                                                ctx.comp_id[v]);
+      }
+    });
   }
 
   void IncEval(const fragment_t& frag, context_t& ctx,
                message_manager_t& messages) {
-    using vid_t = typename context_t::vid_t;
+    ctx.modified.ParallelClear(GetThreadPool());
 
-    ctx.next_modified.ParallelClear(GetThreadPool());
-
-#ifdef PROFILING
-    ctx.preprocess_time -= GetCurrentTime();
-#endif
     // aggregate messages
     messages.ParallelProcess<fragment_t, oid_t>(
         thread_num(), frag, [&ctx](int tid, vertex_t u, oid_t msg) {
-          if (ctx.comp_id[u] > msg) {
-            atomic_min(ctx.comp_id[u], msg);
-            ctx.curr_modified.Insert(u);
+          vertex_t root = ctx.tree[u];
+          if (ctx.comp_id[root] > msg) {
+            atomic_min(ctx.comp_id[root], msg);
+            ctx.modified.Insert(root);
           }
         });
 
-#ifdef PROFILING
-    ctx.preprocess_time += GetCurrentTime();
-    ctx.eval_time -= GetCurrentTime();
-#endif
+    auto& channels = messages.Channels();
 
-    vid_t ivnum = frag.GetInnerVerticesNum();
-    double rate = static_cast<double>(ctx.curr_modified.ParallelPartialCount(
-                      GetThreadPool(),
-                      frag.Vertices().begin_value(),
-                      frag.Vertices().begin_value() + ivnum)) /
-                  static_cast<double>(ivnum);
-    // If active vertices are few, pushing will be used.
-    if (rate > 0.1) {
-      PropagateLabelPull(frag, ctx, messages);
-    } else {
-      PropagateLabelPush(frag, ctx, messages);
-    }
-
-#ifdef PROFILING
-    ctx.eval_time += GetCurrentTime();
-    ctx.postprocess_time -= GetCurrentTime();
-#endif
-
-    if (!ctx.next_modified.PartialEmpty(
-          frag.Vertices().begin_value(),
-          frag.Vertices().begin_value() + frag.GetInnerVerticesNum())) {
-      messages.ForceContinue();
-    }
-
-    ctx.curr_modified.Swap(ctx.next_modified);
-
-#ifdef PROFILING
-    ctx.postprocess_time += GetCurrentTime();
-#endif
+    ForEach(frag.OuterVertices(),
+            [&frag, &ctx, &channels](int tid, vertex_t v) {
+              vertex_t root = ctx.tree[v];
+              if (ctx.modified.Exist(root)) {
+                channels[tid].SyncStateOnOuterVertex<fragment_t, oid_t>(
+                    frag, v, ctx.comp_id[root]);
+              }
+            });
   }
 };
 
