@@ -196,16 +196,18 @@ class WCC : public ParallelAppBase<FRAG_T, WCCContext<FRAG_T>>,
 #endif
 
     vid_t ivnum = frag.GetInnerVerticesNum();
-    double rate = static_cast<double>(ctx.curr_modified.ParallelPartialCount(
+    vid_t active_ivnum = ctx.curr_modified.ParallelPartialCount(
                       GetThreadPool(),
                       frag.Vertices().begin_value(),
-                      frag.Vertices().begin_value() + ivnum)) /
-                  static_cast<double>(ivnum);
+                      frag.Vertices().begin_value() + ivnum);
+    double rate = static_cast<double>(active_ivnum) / static_cast<double>(ivnum);
     // If active vertices are few, pushing will be used.
     if (rate > 0.1) {
       PropagateLabelPull(frag, ctx, messages);
     } else {
-      PropagateLabelPush(frag, ctx, messages);
+      if (active_ivnum) {
+        PropagateLabelPush(frag, ctx, messages);
+      }
     }
 
 #ifdef PROFILING
@@ -226,6 +228,8 @@ class WCC : public ParallelAppBase<FRAG_T, WCCContext<FRAG_T>>,
 #endif
   }
 };
+
+#undef MIN_COMP_ID
 
 }  // namespace grape
 #endif  // EXAMPLES_ANALYTICAL_APPS_WCC_WCC_H_

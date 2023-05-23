@@ -156,16 +156,32 @@ class PageRank : public BatchShuffleAppBase<FRAG_T, PageRankContext<FRAG_T>>,
       ctx.preprocess_time += GetCurrentTime();
       ctx.exec_time -= GetCurrentTime();
 #endif
-      ForEach(
-          inner_vertices, [src_fid, &frag, &ctx, base](int tid, vertex_t u) {
-            double cur = ctx.next_result[u];
-            auto es = frag.GetOutgoingAdjList(u, src_fid);
-            for (auto& e : es) {
-              cur += ctx.result[e.get_neighbor()];
-            }
-            int en = frag.GetLocalOutDegree(u);
-            ctx.next_result[u] = en > 0 ? (ctx.delta * cur + base) / en : base;
-          });
+      if (ctx.step != ctx.max_round) {
+        ForEach(
+            inner_vertices, [src_fid, &frag, &ctx, base](int tid, vertex_t u) {
+              double cur = ctx.next_result[u];
+              auto es = frag.GetOutgoingAdjList(u, src_fid);
+              for (auto& e : es) {
+                cur += ctx.result[e.get_neighbor()];
+              }
+              int en = frag.GetLocalOutDegree(u);
+              ctx.result[u] = en > 0 ? (ctx.delta * cur + base) / en : base;
+            });
+
+        messages.SyncInnerVertices<fragment_t, double>(frag, ctx.result,
+                                                       thread_num());
+      } else {
+        ForEach(
+            inner_vertices, [src_fid, &frag, &ctx, base](int tid, vertex_t u) {
+              double cur = ctx.next_result[u];
+              auto es = frag.GetOutgoingAdjList(u, src_fid);
+              for (auto& e : es) {
+                cur += ctx.result[e.get_neighbor()];
+              }
+              int en = frag.GetLocalOutDegree(u);
+              ctx.result[u] = en > 0 ? (ctx.delta * cur + base) : base;
+            });
+      }
 #ifdef PROFILING
       ctx.exec_time += GetCurrentTime();
 #endif
@@ -180,42 +196,33 @@ class PageRank : public BatchShuffleAppBase<FRAG_T, PageRankContext<FRAG_T>>,
       ctx.preprocess_time += GetCurrentTime();
       ctx.exec_time -= GetCurrentTime();
 #endif
-      ForEach(inner_vertices, [&ctx, &frag, base](int tid, vertex_t u) {
-        double cur = 0;
-        auto es = frag.GetOutgoingAdjList(u);
-        for (auto& e : es) {
-          cur += ctx.result[e.get_neighbor()];
-        }
-        int en = frag.GetLocalOutDegree(u);
-        ctx.next_result[u] = en > 0 ? (ctx.delta * cur + base) / en : base;
-      });
+      if (ctx.step != ctx.max_round) {
+        ForEach(inner_vertices, [&ctx, &frag, base](int tid, vertex_t u) {
+          double cur = 0;
+          auto es = frag.GetOutgoingAdjList(u);
+          for (auto& e : es) {
+            cur += ctx.result[e.get_neighbor()];
+          }
+          int en = frag.GetLocalOutDegree(u);
+          ctx.result[u] = en > 0 ? (ctx.delta * cur + base) / en : base;
+        });
+
+        messages.SyncInnerVertices<fragment_t, double>(frag, ctx.result,
+                                                       thread_num());
+      } else {
+        ForEach(inner_vertices, [&ctx, &frag, base](int tid, vertex_t u) {
+          double cur = 0;
+          auto es = frag.GetOutgoingAdjList(u);
+          for (auto& e : es) {
+            cur += ctx.result[e.get_neighbor()];
+          }
+          ctx.result[u] = ctx.delta * cur + base;
+        });
+      }
 #ifdef PROFILING
       ctx.exec_time += GetCurrentTime();
 #endif
     }
-
-#ifdef PROFILING
-    ctx.postprocess_time -= GetCurrentTime();
-#endif
-    ctx.result.Swap(ctx.next_result);
-
-    if (ctx.step != ctx.max_round) {
-      messages.SyncInnerVertices<fragment_t, double>(frag, ctx.result,
-                                                     thread_num());
-    } else {
-      auto& degree = ctx.degree;
-      auto& result = ctx.result;
-
-      for (auto v : inner_vertices) {
-        if (degree[v] != 0) {
-          result[v] *= degree[v];
-        }
-      }
-      return;
-    }
-#ifdef PROFILING
-    ctx.postprocess_time += GetCurrentTime();
-#endif
   }
 };
 

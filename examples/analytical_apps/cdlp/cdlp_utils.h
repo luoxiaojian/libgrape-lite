@@ -23,7 +23,15 @@ limitations under the License.
 #include <unordered_map>
 #include <vector>
 
+#include "flat_hash_map/flat_hash_map.hpp"
+
 namespace grape {
+
+template <typename LABEL_T>
+using LabelMapType = std::map<LABEL_T, int>;
+// using LabelMapType = std::unordered_map<LABEL_T, int>;
+// using LabelMapType = ska::flat_hash_map<LABEL_T, int>;
+
 template <typename LABEL_T, typename VERTEX_ARRAY_T, typename ADJ_LIST_T>
 inline LABEL_T update_label_fast(const ADJ_LIST_T& edges,
                                  const VERTEX_ARRAY_T& labels) {
@@ -58,6 +66,25 @@ inline LABEL_T update_label_fast(const ADJ_LIST_T& edges,
   } else {
     return best_label;
   }
+}
+
+template <typename LABEL_T, typename VERTEX_ARRAY_T, typename ADJ_LIST_T>
+inline LABEL_T update_label_fast_sparse(const ADJ_LIST_T& edges,
+                                 const VERTEX_ARRAY_T& labels) {
+  static thread_local LabelMapType<LABEL_T> labels_map;
+  labels_map.clear();
+  for (auto& e : edges) {
+    ++labels_map[labels[e.get_neighbor()]];
+  }
+  LABEL_T ret{};
+  int max_count = 0;
+  for (auto& pair : labels_map) {
+    if (pair.second > max_count || (pair.second == max_count && ret > pair.first)) {
+      ret = pair.first;
+      max_count = pair.second;
+    }
+  }
+  return ret;
 }
 
 }  // namespace grape

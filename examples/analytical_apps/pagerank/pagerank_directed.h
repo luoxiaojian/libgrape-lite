@@ -77,7 +77,6 @@ class PageRankDirected : public BatchShuffleAppBase<FRAG_T, PageRankDirectedCont
                 ++dangling_vnum_tid[tid];
                 ctx.result[u] = p;
               }
-              ctx.result[u] = EdgeNum > 0 ? p / EdgeNum : p;
             });
 
     for (auto vn : dangling_vnum_tid) {

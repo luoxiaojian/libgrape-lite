@@ -41,7 +41,7 @@ limitations under the License.
 #include "bfs/bfs.h"
 #include "bfs/bfs_auto.h"
 #include "cdlp/cdlp.h"
-#include "cdlp/cdlp_beta.h"
+#include "cdlp/cdlp_opt.h"
 #include "cdlp/cdlp_auto.h"
 #include "flags.h"
 #include "lcc/lcc.h"
@@ -50,6 +50,7 @@ limitations under the License.
 #include "lcc/lcc_directed_sort.h"
 #include "lcc/lcc_auto.h"
 #include "pagerank/pagerank.h"
+#include "pagerank/pagerank_push.h"
 #include "pagerank/pagerank_directed.h"
 #include "pagerank/pagerank_auto.h"
 #include "pagerank/pagerank_local.h"
@@ -59,7 +60,7 @@ limitations under the License.
 #include "sssp/sssp_auto.h"
 #include "timer.h"
 #include "wcc/wcc.h"
-#include "wcc/wcc_beta.h"
+#include "wcc/wcc_opt.h"
 #include "wcc/wcc_auto.h"
 
 #ifndef __AFFINITY__
@@ -174,6 +175,55 @@ void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
   }
 }
 
+template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T, LoadStrategy load_strategy>
+void RunUndirectedPageRank(const CommSpec& comm_spec, const std::string& out_prefix, int fnum, const ParallelEngineSpec& spec, double delta, int mr) {
+  timer_next("load graph");
+  LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
+  graph_spec.set_directed(FLAGS_directed);
+  graph_spec.set_rebalance(FLAGS_rebalance, FLAGS_rebalance_vertex_factor);
+  graph_spec.set_serialization_prefix(FLAGS_serialization_prefix);
+  if (FLAGS_segmented_partition) {
+    using VertexMapType = GlobalVertexMap<OID_T, VID_T, SegmentedPartitioner<OID_T>>;
+    using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy, VertexMapType>;
+    std::shared_ptr<FRAG_T> fragment = LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+    uint64_t local_ivnum = fragment->GetInnerVerticesNum();
+    uint64_t local_ovnum = fragment->GetOuterVerticesNum();
+    uint64_t total_ivnum, total_ovnum;
+    MPI_Allreduce(&local_ivnum, &total_ivnum, 1, MPI_UINT64_T, MPI_SUM, comm_spec.comm());
+    MPI_Allreduce(&local_ovnum, &total_ovnum, 1, MPI_UINT64_T, MPI_SUM, comm_spec.comm());
+
+    if (static_cast<double>(total_ovnum) > static_cast<double>(total_ivnum) * 3.2) {
+      using AppType = PageRank<FRAG_T>;
+      auto app = std::make_shared<AppType>();
+      DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec, out_prefix, delta, mr);
+    } else {
+      using AppType = PageRankPush<FRAG_T>;
+      auto app = std::make_shared<AppType>();
+      DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec, out_prefix, delta, mr);
+    }
+  } else {
+    graph_spec.set_rebalance(false, 0);
+    using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy>;
+    std::shared_ptr<FRAG_T> fragment = LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+
+    uint64_t local_ivnum = fragment->GetInnerVerticesNum();
+    uint64_t local_ovnum = fragment->GetOuterVerticesNum();
+    uint64_t total_ivnum, total_ovnum;
+    MPI_Allreduce(&local_ivnum, &total_ivnum, 1, MPI_UINT64_T, MPI_SUM, comm_spec.comm());
+    MPI_Allreduce(&local_ovnum, &total_ovnum, 1, MPI_UINT64_T, MPI_SUM, comm_spec.comm());
+
+    if (static_cast<double>(total_ovnum) > static_cast<double>(total_ivnum) * 3.2) {
+      using AppType = PageRank<FRAG_T>;
+      auto app = std::make_shared<AppType>();
+      DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec, out_prefix, delta, mr);
+    } else {
+      using AppType = PageRankPush<FRAG_T>;
+      auto app = std::make_shared<AppType>();
+      DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec, out_prefix, delta, mr);
+    }
+  }
+}
+
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
 void Run() {
   CommSpec comm_spec;
@@ -272,9 +322,7 @@ void Run() {
             PageRankDirected, double, int>(comm_spec, out_prefix, fnum, spec,
                                    FLAGS_pr_d, FLAGS_pr_mr);
       } else {
-        CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-            PageRank, double, int>(comm_spec, out_prefix, fnum, spec,
-                                   FLAGS_pr_d, FLAGS_pr_mr);
+        RunUndirectedPageRank<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut>(comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
       }
     } else if (name == "pagerank_parallel") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
@@ -284,7 +332,7 @@ void Run() {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
                      CDLPAuto, int>(comm_spec, out_prefix, fnum, spec,
                                     FLAGS_cdlp_mr);
-    } else if (name == "cdlp") {
+    } else if (name == "cdlp_legacy") {
       if (FLAGS_directed) {
         FLAGS_directed = false;
 	FLAGS_segmented_partition = false;
@@ -292,26 +340,26 @@ void Run() {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      CDLP, int>(comm_spec, out_prefix, fnum, spec,
                                 FLAGS_cdlp_mr);
-    } else if (name == "cdlp_beta") {
+    } else if (name == "cdlp") {
       if (FLAGS_directed) {
         FLAGS_directed = false;
 	FLAGS_segmented_partition = false;
       }
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     CDLPBeta, int>(comm_spec, out_prefix, fnum, spec,
+                     CDLPOpt, int>(comm_spec, out_prefix, fnum, spec,
                                 FLAGS_cdlp_mr);
     } else if (name == "wcc_auto") {
       FLAGS_directed = false;
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      WCCAuto>(comm_spec, out_prefix, fnum, spec);
-    } else if (name == "wcc") {
+    } else if (name == "wcc_legacy") {
       FLAGS_directed = false;
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      WCC>(comm_spec, out_prefix, fnum, spec);
-    } else if (name == "wcc_beta") {
+    } else if (name == "wcc") {
       FLAGS_directed = false;
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     WCCBeta>(comm_spec, out_prefix, fnum, spec);
+                     WCCOpt>(comm_spec, out_prefix, fnum, spec);
     } else if (name == "lcc_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      LCCAuto>(comm_spec, out_prefix, fnum, spec);

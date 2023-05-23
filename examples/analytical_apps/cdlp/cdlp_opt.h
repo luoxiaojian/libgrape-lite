@@ -13,12 +13,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_BETA_H_
-#define EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_BETA_H_
+#ifndef EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_OPT_H_
+#define EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_OPT_H_
 
 #include <grape/grape.h>
 
-#include "cdlp/cdlp_beta_context.h"
+#include "cdlp/cdlp_opt_context.h"
 #include "cdlp/cdlp_utils.h"
 
 namespace grape {
@@ -34,9 +34,9 @@ namespace grape {
  * @tparam FRAG_T
  */
 template <typename FRAG_T>
-class CDLPBeta : public ParallelAppBase<FRAG_T, CDLPBetaContext<FRAG_T>>,
+class CDLPOpt : public ParallelAppBase<FRAG_T, CDLPOptContext<FRAG_T>>,
              public ParallelEngine {
-  INSTALL_PARALLEL_WORKER(CDLPBeta<FRAG_T>, CDLPBetaContext<FRAG_T>, FRAG_T)
+  INSTALL_PARALLEL_WORKER(CDLPOpt<FRAG_T>, CDLPOptContext<FRAG_T>, FRAG_T)
 
  private:
   using label_t = typename context_t::label_t;
@@ -64,7 +64,7 @@ class CDLPBeta : public ParallelAppBase<FRAG_T, CDLPBetaContext<FRAG_T>>,
                 label_t new_label = update_label_fast<label_t>(es, ctx.labels);
                 if (ctx.labels[v] != new_label) {
                   new_ilabels[v] = new_label;
-                  ctx.changed[v] = true;
+		  ctx.changed.Insert(v);
                   messages.SendMsgThroughOEdges<fragment_t, label_t>(
                       frag, v, new_label, tid);
                 }
@@ -76,11 +76,8 @@ class CDLPBeta : public ParallelAppBase<FRAG_T, CDLPBetaContext<FRAG_T>>,
     ctx.postprocess_time -= GetCurrentTime();
 #endif
 
-    ForEach(inner_vertices, [&ctx, &new_ilabels](int tid, vertex_t v) {
-      if (ctx.changed[v]) {
-        ctx.labels[v] = new_ilabels[v];
-        ctx.changed[v] = false;
-      }
+    ForEach(ctx.changed, [&ctx, &new_ilabels](int tid, vertex_t v) {
+      ctx.labels[v] = new_ilabels[v];
     });
 
 #ifdef PROFILING
@@ -90,27 +87,34 @@ class CDLPBeta : public ParallelAppBase<FRAG_T, CDLPBetaContext<FRAG_T>>,
 
   void PropagateLabelSparse(const fragment_t& frag, context_t& ctx,
                             message_manager_t& messages) {
+	  LOG(INFO) << "[frag-" << frag.fid() << "] sparse";
 #ifdef PROFILING
     ctx.preprocess_time -= GetCurrentTime();
 #endif
 
-    auto inner_vertices = frag.InnerVertices();
     auto& new_ilabels = ctx.new_ilabels;
 
 #ifdef PROFILING
     ctx.preprocess_time += GetCurrentTime();
     ctx.exec_time -= GetCurrentTime();
 #endif
+    ForEach(ctx.changed, [&frag, &ctx](int tid, vertex_t v) {
+      auto es = frag.GetOutgoingInnerVertexAdjList(v);
+      for (auto& e : es) {
+        ctx.potential_change.Insert(e.get_neighbor());
+      }
+    });
+    ctx.changed.ParallelClear(GetThreadPool());
 
     // touch neighbor and send messages in parallel
     ForEach(ctx.potential_change,
             [&frag, &ctx, &new_ilabels, &messages](int tid, vertex_t v) {
               auto es = frag.GetOutgoingAdjList(v);
               if (!es.Empty()) {
-                label_t new_label = update_label_fast<label_t>(es, ctx.labels);
+                label_t new_label = update_label_fast_sparse<label_t>(es, ctx.labels);
                 if (ctx.labels[v] != new_label) {
                   new_ilabels[v] = new_label;
-                  ctx.changed[v] = true;
+		  ctx.changed.Insert(v);
                   messages.SendMsgThroughOEdges<fragment_t, label_t>(
                       frag, v, new_label, tid);
                 }
@@ -123,11 +127,8 @@ class CDLPBeta : public ParallelAppBase<FRAG_T, CDLPBetaContext<FRAG_T>>,
     ctx.postprocess_time -= GetCurrentTime();
 #endif
 
-    ForEach(inner_vertices, [&ctx, &new_ilabels](int tid, vertex_t v) {
-      if (ctx.changed[v]) {
-        ctx.labels[v] = new_ilabels[v];
-        ctx.changed[v] = false;
-      }
+    ForEach(ctx.changed, [&ctx, &new_ilabels](int tid, vertex_t v) {
+      ctx.labels[v] = new_ilabels[v];
     });
 
 #ifdef PROFILING
@@ -139,6 +140,7 @@ class CDLPBeta : public ParallelAppBase<FRAG_T, CDLPBetaContext<FRAG_T>>,
   static constexpr MessageStrategy message_strategy =
       MessageStrategy::kAlongOutgoingEdgeToOuterVertex;
   static constexpr LoadStrategy load_strategy = LoadStrategy::kOnlyOut;
+  static constexpr bool need_split_edges = true;
   using vertex_t = typename fragment_t::vertex_t;
 
   void PEval(const fragment_t& frag, context_t& ctx,
@@ -183,17 +185,14 @@ class CDLPBeta : public ParallelAppBase<FRAG_T, CDLPBetaContext<FRAG_T>>,
 #endif
 
     // receive messages and set labels
+    double rate = static_cast<double>(ctx.changed.ParallelCount(GetThreadPool())) / static_cast<double>(frag.GetInnerVerticesNum());
 
-    if (ctx.dense) {
-      size_t recv_cnt = messages.ParallelProcessCount<fragment_t, label_t>(
+    if (rate > ctx.threshold) {
+      messages.ParallelProcess<fragment_t, label_t>(
           thread_num(), frag, [&ctx](int tid, vertex_t u, const label_t& msg) {
             ctx.labels[u] = msg;
           });
-      double rate = static_cast<double>(recv_cnt) * ctx.k;
-
-      if (rate <= ctx.threshold) {
-        ctx.dense = false;
-      }
+      ctx.changed.ParallelClear(GetThreadPool());
 
       if (ctx.step > ctx.max_round) {
         return;
@@ -237,4 +236,4 @@ class CDLPBeta : public ParallelAppBase<FRAG_T, CDLPBetaContext<FRAG_T>>,
 };
 }  // namespace grape
 
-#endif  // EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_BETA_H_
+#endif  // EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_OPT_H_

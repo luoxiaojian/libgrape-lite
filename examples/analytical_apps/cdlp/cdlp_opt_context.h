@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_BETA_CONTEXT_H_
-#define EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_BETA_CONTEXT_H_
+#ifndef EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_OPT_CONTEXT_H_
+#define EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_OPT_CONTEXT_H_
 
 #include <grape/grape.h>
 
@@ -28,9 +28,9 @@ namespace grape {
  */
 template <typename FRAG_T>
 #ifdef GID_AS_LABEL
-class CDLPBetaContext : public VertexDataContext<FRAG_T, typename FRAG_T::vid_t> {
+class CDLPOptContext : public VertexDataContext<FRAG_T, typename FRAG_T::vid_t> {
 #else
-class CDLPBetaContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> {
+class CDLPOptContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> {
 #endif
 
  public:
@@ -42,7 +42,7 @@ class CDLPBetaContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t>
 #else
   using label_t = oid_t;
 #endif
-  explicit CDLPBetaContext(const FRAG_T& fragment)
+  explicit CDLPOptContext(const FRAG_T& fragment)
 #ifdef GID_AS_LABEL
       : VertexDataContext<FRAG_T, typename FRAG_T::vid_t>(fragment, true),
 #else
@@ -51,7 +51,7 @@ class CDLPBetaContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t>
         labels(this->data()) {
   }
 
-  void Init(ParallelMessageManager& messages, int max_round, double threshold = 0.2) {
+  void Init(ParallelMessageManager& messages, int max_round, double threshold = 0.002) {
     auto& frag = this->fragment();
     auto inner_vertices = frag.InnerVertices();
 
@@ -67,7 +67,6 @@ class CDLPBetaContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t>
     postprocess_time = 0;
 #endif
     step = 0;
-    k = static_cast<double>(frag.GetLocalInEdgesNum(frag.OuterVertices())) / static_cast<double>(frag.GetOuterVerticesNum()) / static_cast<double>(frag.GetLocalOutEdgesNum(inner_vertices));
   }
 
   void Output(std::ostream& os) override {
@@ -87,9 +86,8 @@ class CDLPBetaContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t>
   }
 
   typename FRAG_T::template vertex_array_t<label_t>& labels;
-  typename FRAG_T::template inner_vertex_array_t<bool> changed;
   typename FRAG_T::template inner_vertex_array_t<label_t> new_ilabels;
-  DenseVertexSet<typename FRAG_T::inner_vertices_t> potential_change;
+  DenseVertexSet<typename FRAG_T::inner_vertices_t> potential_change, changed;
 
 #ifdef PROFILING
   double preprocess_time = 0;
@@ -100,8 +98,6 @@ class CDLPBetaContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t>
   int step = 0;
   int max_round = 0;
   double threshold = 0;
-  bool dense = true;
-  double k;
 
 #ifdef RANDOM_LABEL
   std::vector<std::mt19937> random_engines;
@@ -109,4 +105,4 @@ class CDLPBetaContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t>
 };
 }  // namespace grape
 
-#endif  // EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_BETA_CONTEXT_H_
+#endif  // EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_OPT_CONTEXT_H_
