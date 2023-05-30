@@ -28,7 +28,6 @@ limitations under the License.
 
 #include "grape/communication/shuffle.h"
 #include "grape/config.h"
-#include "grape/fragment/rebalancer.h"
 #include "grape/graph/edge.h"
 #include "grape/graph/vertex.h"
 #include "grape/utils/concurrent_queue.h"
@@ -114,11 +113,6 @@ class BasicFragmentLoader {
     vm_ptr_->SetPartitioner(std::move(partitioner));
   }
 
-  void SetRebalance(bool rebalance, int rebalance_vertex_factor) {
-    rebalance_ = rebalance;
-    rebalance_vertex_factor_ = rebalance_vertex_factor;
-  }
-
   void Start() {
     vertex_recv_thread_ =
         std::thread(&BasicFragmentLoader::vertexRecvRoutine, this);
@@ -188,6 +182,7 @@ class BasicFragmentLoader {
                            const std::string& deserialization_prefix) {
     std::string type_prefix = fragment_t::type_info();
     std::string typed_prefix = deserialization_prefix + "/" + type_prefix;
+    LOG(INFO) << "typed_prefix = " << typed_prefix;
     if (!existSerializationFile(typed_prefix)) {
       return false;
     }
@@ -367,9 +362,6 @@ class BasicFragmentLoader {
 
   static constexpr int vertex_tag = 5;
   static constexpr int edge_tag = 6;
-
-  bool rebalance_;
-  int rebalance_vertex_factor_;
 };
 
 }  // namespace grape

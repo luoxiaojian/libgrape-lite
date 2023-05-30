@@ -338,7 +338,7 @@ class ShuffleOut {
   ShuffleOut() {}
   ~ShuffleOut() {}
 
-  void Init(MPI_Comm comm, int tag = 0, size_t cs = 4096) {
+  void Init(MPI_Comm comm, int tag = 0, size_t cs = 4096000) {
     comm_ = comm;
     tag_ = tag;
     chunk_size_ = cs;
