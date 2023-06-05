@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef EXAMPLES_ANALYTICAL_APPS_LCC_LCC_CONTEXT_H_
-#define EXAMPLES_ANALYTICAL_APPS_LCC_LCC_CONTEXT_H_
+#ifndef EXAMPLES_ANALYTICAL_APPS_LCC_LCC_DIRECTED_OPT_CONTEXT_H_
+#define EXAMPLES_ANALYTICAL_APPS_LCC_LCC_DIRECTED_OPT_CONTEXT_H_
 
 #include <grape/grape.h>
 
@@ -29,14 +29,14 @@ namespace grape {
  * @tparam FRAG_T
  */
 template <typename FRAG_T, typename COUNT_T>
-class LCCContext : public VertexDataContext<FRAG_T, double> {
+class LCCDirectedOptContext : public VertexDataContext<FRAG_T, double> {
  public:
   using oid_t = typename FRAG_T::oid_t;
   using vid_t = typename FRAG_T::vid_t;
   using vertex_t = typename FRAG_T::vertex_t;
   using count_t = COUNT_T;
 
-  explicit LCCContext(const FRAG_T& fragment)
+  explicit LCCDirectedOptContext(const FRAG_T& fragment)
       : VertexDataContext<FRAG_T, double>(fragment) {}
 
   void Init(ParallelMessageManager& messages,
@@ -45,45 +45,28 @@ class LCCContext : public VertexDataContext<FRAG_T, double> {
     auto vertices = frag.Vertices();
 
     global_degree.Init(vertices);
+    deduped_degree.Init(frag.InnerVertices());
     complete_neighbor.Init(vertices);
+    neighbor_weight.Init(vertices);
     tricnt.Init(vertices, 0);
     this->degree_threshold = degree_threshold;
   }
 
   void Output(std::ostream& os) override {
     auto& frag = this->fragment();
-#if 1
     auto inner_vertices = frag.InnerVertices();
     for (auto v : inner_vertices) {
-      if (global_degree[v] == 0 || global_degree[v] == 1) {
+      if (deduped_degree[v] == 0 || deduped_degree[v] == 1) {
         os << frag.GetId(v) << " " << std::scientific << std::setprecision(15)
            << 0.0 << std::endl;
       } else {
-        double re = 2.0 * (static_cast<count_t>(tricnt[v])) /
-                    (static_cast<int64_t>(global_degree[v]) *
-                     (static_cast<int64_t>(global_degree[v]) - 1));
+        double re = static_cast<double>(tricnt[v]) /
+                    (static_cast<int64_t>(deduped_degree[v]) *
+                     (static_cast<int64_t>(deduped_degree[v]) - 1));
         os << frag.GetId(v) << " " << std::scientific << std::setprecision(15)
            << re << std::endl;
       }
     }
-#else
-    uint32_t ivnum = frag.GetInnerVerticesNum();
-    uint32_t tvnum = frag.GetVerticesNum();
-    os.write(reinterpret_cast<char*>(&ivnum), sizeof(uint32_t));
-    os.write(reinterpret_cast<char*>(&tvnum), sizeof(uint32_t));
-    for (auto v : frag.InnerVertices()) {
-      auto& vec = complete_neighbor[v];
-      uint32_t nbr_size = vec.size();
-      os.write(reinterpret_cast<char*>(&nbr_size), sizeof(uint32_t));
-      os.write(reinterpret_cast<char*>(vec.data()), sizeof(vertex_t) * nbr_size);
-    }
-    for (auto v : frag.OuterVertices()) {
-      auto& vec = complete_neighbor[v];
-      uint32_t nbr_size = vec.size();
-      os.write(reinterpret_cast<char*>(&nbr_size), sizeof(uint32_t));
-      os.write(reinterpret_cast<char*>(vec.data()), sizeof(vertex_t) * nbr_size);
-    }
-#endif
 
 #ifdef PROFILING
     VLOG(2) << "preprocess_time: " << preprocess_time << "s.";
@@ -93,13 +76,14 @@ class LCCContext : public VertexDataContext<FRAG_T, double> {
   }
 
   typename FRAG_T::template vertex_array_t<int> global_degree;
+  typename FRAG_T::template inner_vertex_array_t<int> deduped_degree;
   typename FRAG_T::template vertex_array_t<std::vector<vertex_t>>
       complete_neighbor;
+  typename FRAG_T::template vertex_array_t<std::vector<uint8_t>>
+      neighbor_weight;
   typename FRAG_T::template vertex_array_t<count_t> tricnt;
   int degree_threshold = 0;
   int stage = 0;
-
-  size_t degree_x = 0;
 
 #ifdef PROFILING
   double preprocess_time = 0;
@@ -109,4 +93,4 @@ class LCCContext : public VertexDataContext<FRAG_T, double> {
 };
 }  // namespace grape
 
-#endif  // EXAMPLES_ANALYTICAL_APPS_LCC_LCC_CONTEXT_H_
+#endif  // EXAMPLES_ANALYTICAL_APPS_LCC_LCC_DIRECTED_OPT_CONTEXT_H_

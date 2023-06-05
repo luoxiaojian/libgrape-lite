@@ -41,7 +41,7 @@ DEFINE_int32(degree_threshold, std::numeric_limits<int>::max(),
 
 DEFINE_bool(segmented_partition, true,
             "whether to use segmented partitioning.");
-DEFINE_bool(rebalance, true, "whether to rebalance graph after loading.");
+DEFINE_bool(rebalance, false, "whether to rebalance graph after loading.");
 DEFINE_int32(rebalance_vertex_factor, 0, "vertex factor of rebalancing.");
 
 DEFINE_string(serialization_prefix, "",

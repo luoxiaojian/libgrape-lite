@@ -18,10 +18,13 @@ limitations under the License.
 
 #include <assert.h>
 
+#include <thread>
+
 #include "grape/fragment/edgecut_fragment_base.h"
 #include "grape/graph/adj_list.h"
 #include "grape/graph/immutable_csr.h"
 #include "grape/vertex_map/global_vertex_map.h"
+#include "grape/util.h"
 
 namespace grape {
 
@@ -234,6 +237,7 @@ class CSREdgecutFragmentBase
 
   void initDestFidList(bool in_edge, bool out_edge,
                        ImmutableCSR<VID_T, fid_t>& csr) {
+#if 0
     std::set<fid_t> dstset;
     ImmutableCSRStreamBuilder<VID_T, fid_t> builder;
 
@@ -264,16 +268,102 @@ class CSREdgecutFragmentBase
     }
 
     builder.finish(csr);
+#else
+    VID_T ivnum = GetInnerVerticesNum();
+
+    int concurrency = std::thread::hardware_concurrency();
+    std::vector<std::thread> threads;
+    std::vector<int> degree_list(ivnum);
+    std::vector<std::vector<fid_t>> dst_lists(concurrency);
+
+    for (int i = 0; i < concurrency; ++i) {
+      threads.emplace_back(std::thread([&](int tid) {
+        VID_T batch = (ivnum + concurrency - 1) / concurrency;
+	VID_T from = std::min(batch * tid, ivnum);
+	VID_T to = std::min(from + batch, ivnum);
+	auto& dst_list = dst_lists[tid];
+	std::set<fid_t> fidset;
+	for (VID_T k = from; k != to; ++k) {
+	  fidset.clear();
+          if (in_edge) {
+            nbr_t* ptr = ie_.get_begin(k);
+            nbr_t* end = ie_.get_end(k);
+            while (ptr != end) {
+              if (IsOuterVertex(ptr->neighbor)) {
+	        fidset.insert(GetFragId(ptr->neighbor));
+              }
+              ++ptr;
+            }
+          }
+          if (out_edge) {
+            nbr_t* ptr = oe_.get_begin(k);
+            nbr_t* end = oe_.get_end(k);
+            while (ptr != end) {
+              if (IsOuterVertex(ptr->neighbor)) {
+	        fidset.insert(GetFragId(ptr->neighbor));
+              }
+              ++ptr;
+            }
+          }
+	  for (auto f : fidset) {
+            dst_list.push_back(f);
+	  }
+	  degree_list[k] = fidset.size();
+	}
+      }, i));
+    }
+    for (auto& thrd : threads) {
+      thrd.join();
+    }
+    threads.clear();
+
+    std::vector<size_t> offsets(concurrency + 1);
+    offsets[0] = 0;
+    for (int i = 0; i < concurrency; ++i) {
+      offsets[i + 1] = offsets[i] + dst_lists[i].size();
+    }
+
+    auto& csr_offsets = csr.get_offsets_mut();
+    auto& csr_edges = csr.get_edges_mut();
+    csr_edges.resize(offsets[concurrency]);
+    csr_offsets.resize(ivnum + 1);
+    csr_offsets[ivnum] = csr_edges.data() + offsets[concurrency];
+
+    for (int i = 0; i < concurrency; ++i) {
+      threads.emplace_back(std::thread([&](int tid) {
+        VID_T batch = (ivnum + concurrency - 1) / concurrency;
+	VID_T from = std::min(batch * tid, ivnum);
+	VID_T to = std::min(from + batch, ivnum);
+	size_t edges_from = offsets[tid];
+	auto& dst_list = dst_lists[tid];
+
+	fid_t* ptr = csr_edges.data() + edges_from;
+	memcpy(ptr, dst_list.data(), dst_list.size() * sizeof(fid_t));
+
+	for (VID_T k = from; k != to; ++k) {
+	  csr_offsets[k] = ptr;
+	  ptr += degree_list[k];
+	}
+      }, i));
+    }
+    for (auto& thrd : threads) {
+      thrd.join();
+    }
+
+#endif
   }
 
   void buildMessageDestination(const MessageStrategy& msg_strategy) {
-    if (msg_strategy == MessageStrategy::kAlongOutgoingEdgeToOuterVertex) {
+    if (msg_strategy == MessageStrategy::kAlongOutgoingEdgeToOuterVertex && !odst_built_) {
       initDestFidList(false, true, odst_);
+      odst_built_ = true;
     } else if (msg_strategy ==
-               MessageStrategy::kAlongIncomingEdgeToOuterVertex) {
+               MessageStrategy::kAlongIncomingEdgeToOuterVertex && !idst_built_) {
       initDestFidList(true, false, idst_);
-    } else if (msg_strategy == MessageStrategy::kAlongEdgeToOuterVertex) {
+      idst_built_ = true;
+    } else if (msg_strategy == MessageStrategy::kAlongEdgeToOuterVertex && !iodst_built_) {
       initDestFidList(true, true, iodst_);
+      iodst_built_ = true;
     }
   }
 
@@ -288,8 +378,9 @@ class CSREdgecutFragmentBase
       buildMessageDestination(conf.message_strategy);
     }
 
-    if (conf.need_mirror_info) {
+    if (conf.need_mirror_info && !mirror_info_initialized_) {
       initMirrorInfo(comm_spec);
+      mirror_info_initialized_ = true;
     }
   }
 
@@ -562,6 +653,10 @@ class CSREdgecutFragmentBase
 
   csr_t ie_, oe_;
   ImmutableCSR<VID_T, fid_t> idst_, odst_, iodst_;
+  bool idst_built_ = false;
+  bool odst_built_ = false;
+  bool iodst_built_ = false;
+  bool mirror_info_initialized_ = false;
 };
 
 }  // namespace grape

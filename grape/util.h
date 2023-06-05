@@ -102,6 +102,21 @@ void DistinctSort(std::vector<T>& vec) {
 }
 
 template <typename T>
+void DistinctSortFrom(std::vector<T>& vec, size_t from) {
+  std::sort(vec.begin() + from, vec.end());
+  size_t size = vec.size();
+  size_t count = 0;
+  for (size_t i = from + 1; i < size; ++i) {
+    if (vec[i] == vec[i - 1]) {
+      ++count;
+    } else {
+      vec[i - count] = vec[i];
+    }
+  }
+  vec.resize(size - count + from);
+}
+
+template <typename T>
 struct IdHasher {};
 
 template <>

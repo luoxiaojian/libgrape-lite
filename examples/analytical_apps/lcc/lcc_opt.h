@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef EXAMPLES_ANALYTICAL_APPS_LCC_LCC_SORT_H_
-#define EXAMPLES_ANALYTICAL_APPS_LCC_LCC_SORT_H_
+#ifndef EXAMPLES_ANALYTICAL_APPS_LCC_LCC_OPT_H_
+#define EXAMPLES_ANALYTICAL_APPS_LCC_LCC_OPT_H_
 
 #include <grape/grape.h>
 
@@ -37,7 +37,7 @@ namespace grape {
  * @tparam FRAG_T
  */
 template <typename FRAG_T, typename COUNT_T = uint32_t>
-class LCCSort : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
+class LCCOpt : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
                 public ParallelEngine {
 #if 0
   using VecOutType = std::vector<typename FRAG_T::vid_t>;
@@ -50,7 +50,7 @@ class LCCSort : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
   using fragment_t = FRAG_T;
   using context_t = LCCContext<FRAG_T, COUNT_T>;
   using message_manager_t = ParallelMessageManager;
-  using worker_t = ParallelWorker<LCCSort<FRAG_T, COUNT_T>>;
+  using worker_t = ParallelWorker<LCCOpt<FRAG_T, COUNT_T>>;
   using vid_t = typename fragment_t::vid_t;
   using vertex_t = typename fragment_t::vertex_t;
   using count_t = COUNT_T;
@@ -58,10 +58,10 @@ class LCCSort : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
 
   static constexpr bool sort_neighbor_by_global_id = true;
 
-  virtual ~LCCSort() {}
+  virtual ~LCCOpt() {}
 
   static std::shared_ptr<worker_t> CreateWorker(
-      std::shared_ptr<LCCSort<FRAG_T, COUNT_T>> app,
+      std::shared_ptr<LCCOpt<FRAG_T, COUNT_T>> app,
       std::shared_ptr<FRAG_T> frag) {
     return std::shared_ptr<worker_t>(new worker_t(app, frag));
   }
@@ -166,65 +166,79 @@ class LCCSort : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
       ctx.preprocess_time += GetCurrentTime();
       ctx.exec_time -= GetCurrentTime();
 #endif
+      std::vector<size_t> max_degrees(thread_num(), 0);
       if (ctx.degree_threshold == std::numeric_limits<int>::max()) {
-        ForEach(inner_vertices, [&frag, &ctx, &messages](int tid, vertex_t v) {
-          vid_t u_gid, v_gid;
+        ForEach(inner_vertices, [&frag, &ctx, &messages, &max_degrees](int tid, vertex_t v) {
+          vid_t v_gid_hash = IdHasher<vid_t>::hash(frag.GetInnerVertexGid(v));
           auto& nbr_vec = ctx.complete_neighbor[v];
           int degree = ctx.global_degree[v];
-          nbr_vec.reserve(degree);
           auto es = frag.GetOutgoingAdjList(v);
-          VecOutType msg_vec;
-          msg_vec.reserve(degree);
+          static thread_local VecOutType msg_vec;
+	  msg_vec.clear();
           for (auto& e : es) {
             auto u = e.get_neighbor();
-            if (ctx.global_degree[u] > ctx.global_degree[v]) {
+            if (ctx.global_degree[u] > degree) {
               nbr_vec.push_back(u);
               msg_vec.push_back(frag.Vertex2Gid(u));
-            } else if (ctx.global_degree[u] == ctx.global_degree[v]) {
-              u_gid = frag.Vertex2Gid(u);
-              v_gid = frag.GetInnerVertexGid(v);
-              if (IdHasher<vid_t>::hash(v_gid) > IdHasher<vid_t>::hash(u_gid)) {
+            } else if (ctx.global_degree[u] == degree) {
+	      vid_t u_gid = frag.Vertex2Gid(u);
+              if (v_gid_hash > IdHasher<vid_t>::hash(u_gid)) {
                 nbr_vec.push_back(u);
                 msg_vec.push_back(u_gid);
               }
             }
           }
+	  if (nbr_vec.empty()) {
+            return ;
+	  }
           std::sort(nbr_vec.begin(), nbr_vec.end());
+	  if (nbr_vec.size() > max_degrees[tid]) {
+            max_degrees[tid] = nbr_vec.size();
+	  }
           messages.SendMsgThroughOEdges<fragment_t, VecOutType>(frag, v,
                                                                 msg_vec, tid);
         });
       } else {
-        ForEach(inner_vertices, [this, &frag, &ctx, &messages](int tid,
+        ForEach(inner_vertices, [this, &frag, &ctx, &messages, &max_degrees](int tid,
                                                                vertex_t v) {
           if (filterByDegree(frag, ctx, v)) {
             return;
           }
-          vid_t u_gid, v_gid;
+          vid_t v_gid_hash = IdHasher<vid_t>::hash(frag.GetInnerVertexGid(v));
           auto& nbr_vec = ctx.complete_neighbor[v];
           int degree = ctx.global_degree[v];
-          nbr_vec.reserve(degree);
           auto es = frag.GetOutgoingAdjList(v);
-          VecOutType msg_vec;
-          msg_vec.reserve(degree);
+          static thread_local VecOutType msg_vec;
+	  msg_vec.clear();
           for (auto& e : es) {
             auto u = e.get_neighbor();
-            if (ctx.global_degree[u] > ctx.global_degree[v]) {
+            if (ctx.global_degree[u] > degree) {
               nbr_vec.push_back(u);
               msg_vec.push_back(frag.Vertex2Gid(u));
-            } else if (ctx.global_degree[u] == ctx.global_degree[v]) {
-              u_gid = frag.Vertex2Gid(u);
-              v_gid = frag.GetInnerVertexGid(v);
-              if (IdHasher<vid_t>::hash(v_gid) > IdHasher<vid_t>::hash(u_gid)) {
+            } else if (ctx.global_degree[u] == degree) {
+	      vid_t u_gid = frag.Vertex2Gid(u);
+              if (v_gid_hash > IdHasher<vid_t>::hash(u_gid)) {
                 nbr_vec.push_back(u);
                 msg_vec.push_back(u_gid);
               }
             }
           }
+	  if (nbr_vec.empty()) {
+            return ;
+	  }
           std::sort(nbr_vec.begin(), nbr_vec.end());
+	  if (nbr_vec.size() > max_degrees[tid]) {
+            max_degrees[tid] = nbr_vec.size();
+	  }
           messages.SendMsgThroughOEdges<fragment_t, VecOutType>(frag, v,
                                                                 msg_vec, tid);
         });
       }
+      size_t max_degree = 0;
+      for (auto x : max_degrees) {
+        max_degree = std::max(x, max_degree);
+      }
+      ctx.degree_x = max_degree * 4 / 10;
 #ifdef PROFILING
       ctx.exec_time += GetCurrentTime();
       ctx.postprocess_time -= GetCurrentTime();
@@ -253,32 +267,89 @@ class LCCSort : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
       ctx.preprocess_time += GetCurrentTime();
       ctx.exec_time -= GetCurrentTime();
 #endif
+      std::vector<DenseVertexSet<typename FRAG_T::vertices_t>> vertexsets(
+          thread_num());
+      for (auto& vs : vertexsets) {
+        vs.Init(frag.Vertices());
+      }
       if (ctx.degree_threshold == std::numeric_limits<int>::max()) {
-        ForEach(inner_vertices, [this, &ctx](int tid, vertex_t v) {
+        ForEach(inner_vertices, [this, &ctx, &vertexsets](int tid, vertex_t v) {
           auto& v0_nbr_vec = ctx.complete_neighbor[v];
-          count_t v_count = 0;
-          for (auto u : v0_nbr_vec) {
-            auto& v1_nbr_vec = ctx.complete_neighbor[u];
-            count_t u_count = intersect(v0_nbr_vec, v1_nbr_vec, ctx.tricnt);
-            atomic_add(ctx.tricnt[u], u_count);
-            v_count += u_count;
-          }
-          atomic_add(ctx.tricnt[v], v_count);
+	  if (v0_nbr_vec.size() <= 1) {
+	    return ;
+	  } else if (v0_nbr_vec.size() <= ctx.degree_x) {
+            count_t v_count = 0;
+            for (auto u : v0_nbr_vec) {
+              auto& v1_nbr_vec = ctx.complete_neighbor[u];
+              count_t u_count = intersect(v0_nbr_vec, v1_nbr_vec, ctx.tricnt);
+              atomic_add(ctx.tricnt[u], u_count);
+              v_count += u_count;
+            }
+            atomic_add(ctx.tricnt[v], v_count);
+	  } else {
+	    auto& v0_nbr_set = vertexsets[tid];
+            for (auto u : v0_nbr_vec) {
+              v0_nbr_set.Insert(u);
+            }
+            count_t v_count = 0;
+            for (auto u : v0_nbr_vec) {
+              count_t u_count = 0;
+              auto& v1_nbr_vec = ctx.complete_neighbor[u];
+              for (auto w : v1_nbr_vec) {
+                if (v0_nbr_set.Exist(w)) {
+                  ++u_count;
+                  atomic_add(ctx.tricnt[w], static_cast<count_t>(1));
+                }
+              }
+              v_count += u_count;
+              atomic_add(ctx.tricnt[u], u_count);
+            }
+            atomic_add(ctx.tricnt[v], v_count);
+            for (auto u : v0_nbr_vec) {
+              v0_nbr_set.Erase(u);
+            }
+	  }
         });
       } else {
-        ForEach(inner_vertices, [this, &frag, &ctx](int tid, vertex_t v) {
+        ForEach(inner_vertices, [this, &frag, &ctx, &vertexsets](int tid, vertex_t v) {
           if (filterByDegree(frag, ctx, v)) {
             return;
           }
           auto& v0_nbr_vec = ctx.complete_neighbor[v];
-          count_t v_count = 0;
-          for (auto u : v0_nbr_vec) {
-            auto& v1_nbr_vec = ctx.complete_neighbor[u];
-            count_t u_count = intersect(v0_nbr_vec, v1_nbr_vec, ctx.tricnt);
-            atomic_add(ctx.tricnt[u], u_count);
-            v_count += u_count;
-          }
-          atomic_add(ctx.tricnt[v], v_count);
+	  if (v0_nbr_vec.size() <= 1) {
+	    return ;
+	  } else if (v0_nbr_vec.size() <= ctx.degree_x) {
+            count_t v_count = 0;
+            for (auto u : v0_nbr_vec) {
+              auto& v1_nbr_vec = ctx.complete_neighbor[u];
+              count_t u_count = intersect(v0_nbr_vec, v1_nbr_vec, ctx.tricnt);
+              atomic_add(ctx.tricnt[u], u_count);
+              v_count += u_count;
+            }
+            atomic_add(ctx.tricnt[v], v_count);
+	  } else {
+	    auto& v0_nbr_set = vertexsets[tid];
+            for (auto u : v0_nbr_vec) {
+              v0_nbr_set.Insert(u);
+            }
+            count_t v_count = 0;
+            for (auto u : v0_nbr_vec) {
+              count_t u_count = 0;
+              auto& v1_nbr_vec = ctx.complete_neighbor[u];
+              for (auto w : v1_nbr_vec) {
+                if (v0_nbr_set.Exist(w)) {
+                  ++u_count;
+                  atomic_add(ctx.tricnt[w], static_cast<count_t>(1));
+                }
+              }
+              v_count += u_count;
+              atomic_add(ctx.tricnt[u], u_count);
+            }
+            atomic_add(ctx.tricnt[v], v_count);
+            for (auto u : v0_nbr_vec) {
+              v0_nbr_set.Erase(u);
+            }
+	  }
         });
       }
 #ifdef PROFILING
@@ -338,4 +409,4 @@ class LCCSort : public ParallelAppBase<FRAG_T, LCCContext<FRAG_T, COUNT_T>>,
 };
 }  // namespace grape
 
-#endif  // EXAMPLES_ANALYTICAL_APPS_LCC_LCC_SORT_H_
+#endif  // EXAMPLES_ANALYTICAL_APPS_LCC_LCC_OPT_H_

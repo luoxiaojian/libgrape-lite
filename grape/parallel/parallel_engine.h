@@ -42,6 +42,8 @@ class ParallelEngine {
 
   inline ThreadPool& GetThreadPool() { return thread_pool_; }
 
+  inline int GetThreadNum() const { return thread_num_; }
+
   /**
    * @brief Iterate on vertexes of a VertexRange concurrently.
    *

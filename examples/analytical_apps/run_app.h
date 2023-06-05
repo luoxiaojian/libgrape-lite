@@ -39,29 +39,31 @@ limitations under the License.
 #endif
 
 #include "bfs/bfs.h"
-#include "bfs/bfs_auto.h"
+// #include "bfs/bfs_auto.h"
 #include "cdlp/cdlp.h"
 #include "cdlp/cdlp_opt.h"
-#include "cdlp/cdlp_auto.h"
+#include "cdlp/cdlp_opt_ud.h"
+// #include "cdlp/cdlp_auto.h"
 #include "flags.h"
 #include "lcc/lcc.h"
-#include "lcc/lcc_sort.h"
+#include "lcc/lcc_opt.h"
+#include "lcc/lcc_sort_beta.h"
 #include "lcc/lcc_directed.h"
-#include "lcc/lcc_directed_sort.h"
-#include "lcc/lcc_auto.h"
+#include "lcc/lcc_directed_opt.h"
+// #include "lcc/lcc_auto.h"
 #include "pagerank/pagerank.h"
 #include "pagerank/pagerank_push.h"
 #include "pagerank/pagerank_directed.h"
-#include "pagerank/pagerank_auto.h"
-#include "pagerank/pagerank_local.h"
-#include "pagerank/pagerank_local_parallel.h"
-#include "pagerank/pagerank_parallel.h"
+// #include "pagerank/pagerank_auto.h"
+// #include "pagerank/pagerank_local.h"
+// #include "pagerank/pagerank_local_parallel.h"
+// #include "pagerank/pagerank_parallel.h"
 #include "sssp/sssp.h"
-#include "sssp/sssp_auto.h"
+// #include "sssp/sssp_auto.h"
 #include "timer.h"
 #include "wcc/wcc.h"
 #include "wcc/wcc_opt.h"
-#include "wcc/wcc_auto.h"
+// #include "wcc/wcc_auto.h"
 
 #ifndef __AFFINITY__
 #define __AFFINITY__ false
@@ -70,22 +72,22 @@ limitations under the License.
 namespace grape {
 
 template <typename FRAG_T>
-using LCC64 = LCC<FRAG_T, uint64_t>;
+using LCC64 = LCCOpt<FRAG_T, uint64_t>;
 
 template <typename FRAG_T>
-using LCCSort64 = LCCSort<FRAG_T, uint64_t>;
+using LCCSortBeta64 = LCCSortBeta<FRAG_T, uint64_t>;
 
 template <typename FRAG_T>
-using LCCDirected64 = LCCDirected<FRAG_T, uint64_t>;
+using LCCDirected64 = LCCDirectedOpt<FRAG_T, uint64_t>;
 
 template <typename FRAG_T>
-using LCC32 = LCC<FRAG_T, uint32_t>;
+using LCC32 = LCCOpt<FRAG_T, uint32_t>;
 
 template <typename FRAG_T>
-using LCCSort32 = LCCSort<FRAG_T, uint32_t>;
+using LCCSortBeta32 = LCCSortBeta<FRAG_T, uint32_t>;
 
 template <typename FRAG_T>
-using LCCDirected32 = LCCDirected<FRAG_T, uint32_t>;
+using LCCDirected32 = LCCDirectedOpt<FRAG_T, uint32_t>;
 
 void Init() {
   if (FLAGS_out_prefix.empty()) {
@@ -189,14 +191,36 @@ void RunUndirectedPageRank(const CommSpec& comm_spec, const std::string& out_pre
     uint64_t local_ivnum = fragment->GetInnerVerticesNum();
     uint64_t local_ovnum = fragment->GetOuterVerticesNum();
     uint64_t total_ivnum, total_ovnum;
+    LOG(INFO) << "[frag-" << fragment->fid() << "]: ivnum = " << local_ivnum << ", ovnum = " << local_ovnum;
     MPI_Allreduce(&local_ivnum, &total_ivnum, 1, MPI_UINT64_T, MPI_SUM, comm_spec.comm());
     MPI_Allreduce(&local_ovnum, &total_ovnum, 1, MPI_UINT64_T, MPI_SUM, comm_spec.comm());
+    if (fragment->fid() == 0) {
+      LOG(INFO) << "total ivnum = " << total_ivnum << ", total ovnum = " << total_ovnum;
+    }
 
-    if (static_cast<double>(total_ovnum) > static_cast<double>(total_ivnum) * 3.2) {
+    double avg_degree = static_cast<double>(FLAGS_edge_num) / static_cast<double>(FLAGS_vertex_num);
+    double rate = static_cast<double>(total_ovnum) / static_cast<double>(total_ivnum);
+
+    bool push = false;
+    if (avg_degree > 90) {
+      // too dense
+      push = false;
+    } else if (rate < 3) {
+      // not to many outer vertices
+      push = true;
+    } else if (avg_degree / rate > 20) {
+      push = true;
+    } else {
+      push = false;
+    }
+
+    if (!push) {
       using AppType = PageRank<FRAG_T>;
+      LOG(INFO) << "Run with pagerank pull";
       auto app = std::make_shared<AppType>();
       DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec, out_prefix, delta, mr);
     } else {
+      LOG(INFO) << "Run with pagerank push";
       using AppType = PageRankPush<FRAG_T>;
       auto app = std::make_shared<AppType>();
       DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec, out_prefix, delta, mr);
@@ -213,10 +237,86 @@ void RunUndirectedPageRank(const CommSpec& comm_spec, const std::string& out_pre
     MPI_Allreduce(&local_ovnum, &total_ovnum, 1, MPI_UINT64_T, MPI_SUM, comm_spec.comm());
 
     if (static_cast<double>(total_ovnum) > static_cast<double>(total_ivnum) * 3.2) {
+      LOG(INFO) << "Run with pagerank pull";
       using AppType = PageRank<FRAG_T>;
       auto app = std::make_shared<AppType>();
       DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec, out_prefix, delta, mr);
     } else {
+      LOG(INFO) << "Run with pagerank push";
+      using AppType = PageRankPush<FRAG_T>;
+      auto app = std::make_shared<AppType>();
+      DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec, out_prefix, delta, mr);
+    }
+  }
+}
+
+template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T, LoadStrategy load_strategy>
+void RunUndirectedPageRankAlter(const CommSpec& comm_spec, const std::string& out_prefix, int fnum, const ParallelEngineSpec& spec, double delta, int mr) {
+  timer_next("load graph");
+  LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
+  graph_spec.set_directed(FLAGS_directed);
+  graph_spec.set_rebalance(FLAGS_rebalance, FLAGS_rebalance_vertex_factor);
+  graph_spec.set_serialization_prefix(FLAGS_serialization_prefix);
+  if (FLAGS_segmented_partition) {
+    using VertexMapType = GlobalVertexMap<OID_T, VID_T, SegmentedPartitioner<OID_T>>;
+    using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy, VertexMapType>;
+    std::shared_ptr<FRAG_T> fragment = LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+    uint64_t local_ivnum = fragment->GetInnerVerticesNum();
+    uint64_t local_ovnum = fragment->GetOuterVerticesNum();
+    uint64_t total_ivnum, total_ovnum;
+    LOG(INFO) << "[frag-" << fragment->fid() << "]: ivnum = " << local_ivnum << ", ovnum = " << local_ovnum;
+    MPI_Allreduce(&local_ivnum, &total_ivnum, 1, MPI_UINT64_T, MPI_SUM, comm_spec.comm());
+    MPI_Allreduce(&local_ovnum, &total_ovnum, 1, MPI_UINT64_T, MPI_SUM, comm_spec.comm());
+    if (fragment->fid() == 0) {
+      LOG(INFO) << "total ivnum = " << total_ivnum << ", total ovnum = " << total_ovnum;
+    }
+
+    double avg_degree = static_cast<double>(FLAGS_edge_num) / static_cast<double>(FLAGS_vertex_num);
+    double rate = static_cast<double>(total_ovnum) / static_cast<double>(total_ivnum);
+
+    bool push = false;
+    if (avg_degree > 90) {
+      // too dense
+      push = false;
+    } else if (rate < 3) {
+      // not to many outer vertices
+      push = true;
+    } else if (avg_degree / rate > 20) {
+      push = true;
+    } else {
+      push = false;
+    }
+    push = !push;
+
+    if (!push) {
+      using AppType = PageRank<FRAG_T>;
+      LOG(INFO) << "Run alter with pagerank pull";
+      auto app = std::make_shared<AppType>();
+      DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec, out_prefix, delta, mr);
+    } else {
+      LOG(INFO) << "Run alter with pagerank push";
+      using AppType = PageRankPush<FRAG_T>;
+      auto app = std::make_shared<AppType>();
+      DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec, out_prefix, delta, mr);
+    }
+  } else {
+    graph_spec.set_rebalance(false, 0);
+    using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy>;
+    std::shared_ptr<FRAG_T> fragment = LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+
+    uint64_t local_ivnum = fragment->GetInnerVerticesNum();
+    uint64_t local_ovnum = fragment->GetOuterVerticesNum();
+    uint64_t total_ivnum, total_ovnum;
+    MPI_Allreduce(&local_ivnum, &total_ivnum, 1, MPI_UINT64_T, MPI_SUM, comm_spec.comm());
+    MPI_Allreduce(&local_ovnum, &total_ovnum, 1, MPI_UINT64_T, MPI_SUM, comm_spec.comm());
+
+    if (static_cast<double>(total_ovnum) <= static_cast<double>(total_ivnum) * 3.2) {
+      LOG(INFO) << "Run alter with pagerank pull";
+      using AppType = PageRank<FRAG_T>;
+      auto app = std::make_shared<AppType>();
+      DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec, out_prefix, delta, mr);
+    } else {
+      LOG(INFO) << "Run alter with pagerank push";
       using AppType = PageRankPush<FRAG_T>;
       auto app = std::make_shared<AppType>();
       DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec, out_prefix, delta, mr);
@@ -273,10 +373,14 @@ void Run() {
   std::string name = FLAGS_application;
   if (name.find("sssp") != std::string::npos) {
     if (name == "sssp_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, double, LoadStrategy::kOnlyOut,
-                     SSSPAuto, OID_T>(comm_spec, out_prefix, fnum, spec,
-                                      FLAGS_sssp_source);
+      // CreateAndQuery<OID_T, VID_T, VDATA_T, double, LoadStrategy::kOnlyOut,
+      //                SSSPAuto, OID_T>(comm_spec, out_prefix, fnum, spec,
+      //                                 FLAGS_sssp_source);
     } else if (name == "sssp") {
+      FLAGS_segmented_partition = true;
+      FLAGS_rebalance = false;
+      // FLAGS_rebalance = true;
+      // FLAGS_rebalance_vertex_factor = 2;
       CreateAndQuery<OID_T, VID_T, VDATA_T, double, LoadStrategy::kOnlyOut,
                      SSSP, OID_T>(comm_spec, out_prefix, fnum, spec,
                                   FLAGS_sssp_source);
@@ -285,57 +389,72 @@ void Run() {
     }
   } else {
     if (name == "bfs_auto") {
-      if (FLAGS_directed) {
-        CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
-                       BFSAuto, OID_T>(comm_spec, out_prefix, fnum, spec,
-                                       FLAGS_bfs_source);
-      } else {
-        CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                       BFSAuto, OID_T>(comm_spec, out_prefix, fnum, spec,
-                                       FLAGS_bfs_source);
-      }
+      // if (FLAGS_directed) {
+      //   CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
+      //                  BFSAuto, OID_T>(comm_spec, out_prefix, fnum, spec,
+      //                                  FLAGS_bfs_source);
+      // } else {
+      //   CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+      //                  BFSAuto, OID_T>(comm_spec, out_prefix, fnum, spec,
+      //                                  FLAGS_bfs_source);
+      // }
     } else if (name == "bfs") {
       if (FLAGS_directed) {
+        // FLAGS_segmented_partition = true;
+        // FLAGS_segmented_partition = false;
         CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
                        BFS, OID_T>(comm_spec, out_prefix, fnum, spec,
                                    FLAGS_bfs_source);
       } else {
+        // FLAGS_segmented_partition = true;
+        // FLAGS_rebalance = false;
+	// FLAGS_rebalance = true;
+        // FLAGS_rebalance_vertex_factor = 2;
         CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                        BFS, OID_T>(comm_spec, out_prefix, fnum, spec,
                                    FLAGS_bfs_source);
       }
     } else if (name == "pagerank_local") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     PageRankLocal, double, int>(comm_spec, out_prefix, fnum,
-                                                 spec, FLAGS_pr_d, FLAGS_pr_mr);
+      // CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+      //                PageRankLocal, double, int>(comm_spec, out_prefix, fnum,
+      //                                            spec, FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "pagerank_local_parallel") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
-                     PageRankLocalParallel, double, int>(
-          comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
+      // CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
+      //                PageRankLocalParallel, double, int>(
+      //     comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "pagerank_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
-                     PageRankAuto, double, int>(comm_spec, out_prefix, fnum,
-                                                spec, FLAGS_pr_d, FLAGS_pr_mr);
+      // CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
+      //                PageRankAuto, double, int>(comm_spec, out_prefix, fnum,
+      //                                           spec, FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "pagerank") {
       if (FLAGS_directed) {
+        FLAGS_segmented_partition = false;
         CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
             PageRankDirected, double, int>(comm_spec, out_prefix, fnum, spec,
                                    FLAGS_pr_d, FLAGS_pr_mr);
       } else {
+        FLAGS_segmented_partition = true;
+	// FLAGS_rebalance = false;
+	FLAGS_rebalance = true;
+	FLAGS_rebalance_vertex_factor= 0;
         RunUndirectedPageRank<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut>(comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
       }
+    } else if (name == "pagerank_alter") {
+      CHECK(!FLAGS_directed);
+      // FLAGS_segmented_partition = true;
+      RunUndirectedPageRankAlter<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut>(comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "pagerank_parallel") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
-                     PageRankParallel, double, int>(
-          comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
+      // CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
+      //                PageRankParallel, double, int>(
+      //     comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "cdlp_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
-                     CDLPAuto, int>(comm_spec, out_prefix, fnum, spec,
-                                    FLAGS_cdlp_mr);
+      // CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
+      //                CDLPAuto, int>(comm_spec, out_prefix, fnum, spec,
+      //                               FLAGS_cdlp_mr);
     } else if (name == "cdlp_legacy") {
       if (FLAGS_directed) {
         FLAGS_directed = false;
-	FLAGS_segmented_partition = false;
+	// FLAGS_segmented_partition = false;
       }
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      CDLP, int>(comm_spec, out_prefix, fnum, spec,
@@ -344,28 +463,39 @@ void Run() {
       if (FLAGS_directed) {
         FLAGS_directed = false;
 	FLAGS_segmented_partition = false;
+        CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                       CDLPOpt, int>(comm_spec, out_prefix, fnum, spec,
+                                  FLAGS_cdlp_mr);
+      } else {
+        FLAGS_segmented_partition = true;
+	// FLAGS_rebalance = false;
+	FLAGS_rebalance = true;
+	FLAGS_rebalance_vertex_factor = 0;
+        CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                       CDLPOptUD, int>(comm_spec, out_prefix, fnum, spec,
+                                  FLAGS_cdlp_mr);
       }
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     CDLPOpt, int>(comm_spec, out_prefix, fnum, spec,
-                                FLAGS_cdlp_mr);
     } else if (name == "wcc_auto") {
       FLAGS_directed = false;
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     WCCAuto>(comm_spec, out_prefix, fnum, spec);
+      // CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+      //                WCCAuto>(comm_spec, out_prefix, fnum, spec);
     } else if (name == "wcc_legacy") {
       FLAGS_directed = false;
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      WCC>(comm_spec, out_prefix, fnum, spec);
     } else if (name == "wcc") {
       FLAGS_directed = false;
+      FLAGS_segmented_partition = true;
+      FLAGS_rebalance = false;
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      WCCOpt>(comm_spec, out_prefix, fnum, spec);
     } else if (name == "lcc_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     LCCAuto>(comm_spec, out_prefix, fnum, spec);
+      // CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+      //                LCCAuto>(comm_spec, out_prefix, fnum, spec);
     } else if (name == "lcc") {
       // buggy for directed
       if (FLAGS_directed) {
+	FLAGS_segmented_partition = false;
         if (FLAGS_edge_num > static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
           CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
               LCCDirected64>(comm_spec, out_prefix, fnum, spec,
@@ -376,6 +506,10 @@ void Run() {
                    FLAGS_degree_threshold);
 	}
       } else {
+	FLAGS_segmented_partition = true;
+	// FLAGS_rebalance = false;
+	FLAGS_rebalance = true;
+	FLAGS_rebalance_vertex_factor = 0;
         if (FLAGS_edge_num > static_cast<int64_t>(std::numeric_limits<uint32_t>::max()) * 2) {
           if (FLAGS_edge_num > FLAGS_vertex_num * 60) {
             CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
@@ -383,7 +517,7 @@ void Run() {
                      FLAGS_degree_threshold);
 	  } else {
             CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                LCCSort64>(comm_spec, out_prefix, fnum, spec,
+                LCC64>(comm_spec, out_prefix, fnum, spec,
                      FLAGS_degree_threshold);
 	  }
 	} else {
@@ -393,10 +527,33 @@ void Run() {
                      FLAGS_degree_threshold);
 	  } else {
             CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                LCCSort32>(comm_spec, out_prefix, fnum, spec,
+                LCC32>(comm_spec, out_prefix, fnum, spec,
                      FLAGS_degree_threshold);
 	  }
 	}
+      }
+    } else if (name == "lcc_beta") {
+      CHECK(!FLAGS_directed);
+      if (FLAGS_edge_num > static_cast<int64_t>(std::numeric_limits<uint32_t>::max()) * 2) {
+        if (FLAGS_edge_num > FLAGS_vertex_num * 60) {
+          CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+              LCCSortBeta64>(comm_spec, out_prefix, fnum, spec,
+                   FLAGS_degree_threshold);
+        } else {
+          CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+              LCCSortBeta64>(comm_spec, out_prefix, fnum, spec,
+                   FLAGS_degree_threshold);
+        }
+      } else {
+        if (FLAGS_edge_num > FLAGS_vertex_num * 60) {
+          CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+              LCCSortBeta32>(comm_spec, out_prefix, fnum, spec,
+                   FLAGS_degree_threshold);
+        } else {
+          CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+              LCCSortBeta32>(comm_spec, out_prefix, fnum, spec,
+                   FLAGS_degree_threshold);
+        }
       }
     }
     else {

@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_OPT_H_
-#define EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_OPT_H_
+#ifndef EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_OPT_UD_H_
+#define EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_OPT_UD_H_
 
 #include <grape/grape.h>
 
@@ -34,9 +34,9 @@ namespace grape {
  * @tparam FRAG_T
  */
 template <typename FRAG_T>
-class CDLPOpt : public ParallelAppBase<FRAG_T, CDLPOptContext<FRAG_T>>,
+class CDLPOptUD : public ParallelAppBase<FRAG_T, CDLPOptContext<FRAG_T>>,
              public ParallelEngine {
-  INSTALL_PARALLEL_WORKER(CDLPOpt<FRAG_T>, CDLPOptContext<FRAG_T>, FRAG_T)
+  INSTALL_PARALLEL_WORKER(CDLPOptUD<FRAG_T>, CDLPOptContext<FRAG_T>, FRAG_T)
 
  private:
   using label_t = typename context_t::label_t;
@@ -159,21 +159,35 @@ class CDLPOpt : public ParallelAppBase<FRAG_T, CDLPOptContext<FRAG_T>>,
 
 #ifdef GID_AS_LABEL
     ForEach(inner_vertices, [&frag, &ctx](int tid, vertex_t v) {
-      ctx.labels[v] = frag.GetInnerVertexGid(v);
+      ctx.new_ilabels[v] = frag.GetInnerVertexGid(v);
     });
     ForEach(outer_vertices, [&frag, &ctx](int tid, vertex_t v) {
-      ctx.labels[v] = frag.GetOuterVertexGid(v);
+      ctx.new_ilabels[v] = frag.GetOuterVertexGid(v);
     });
 #else
     ForEach(inner_vertices, [&frag, &ctx](int tid, vertex_t v) {
-      ctx.labels[v] = frag.GetInnerVertexId(v);
+      ctx.new_ilabels[v] = frag.GetInnerVertexId(v);
     });
     ForEach(outer_vertices, [&frag, &ctx](int tid, vertex_t v) {
-      ctx.labels[v] = frag.GetOuterVertexId(v);
+      ctx.new_ilabels[v] = frag.GetOuterVertexId(v);
     });
 #endif
 
-    PropagateLabel(frag, ctx, messages);
+    auto& channels = messages.Channels();
+
+    ForEach(inner_vertices, [&frag, &ctx, &channels](int tid, vertex_t v) {
+      auto es = frag.GetOutgoingAdjList(v);
+      if (!es.Empty()) {
+        label_t new_label = std::numeric_limits<label_t>::max();
+	for (auto& e : es) {
+	  new_label = std::min<label_t>(new_label, ctx.new_ilabels[e.get_neighbor()]);
+	}
+	ctx.labels[v] = new_label;
+	channels[tid].SendMsgThroughOEdges<fragment_t, label_t>(frag, v, new_label);
+      } else {
+        ctx.labels[v] = ctx.new_ilabels[v];
+      }
+    });
   }
 
   void IncEval(const fragment_t& frag, context_t& ctx,
@@ -183,57 +197,71 @@ class CDLPOpt : public ParallelAppBase<FRAG_T, CDLPOptContext<FRAG_T>>,
 #ifdef PROFILING
     ctx.preprocess_time -= GetCurrentTime();
 #endif
+    if (ctx.step == 2) {
+        messages.ParallelProcess<fragment_t, label_t>(
+            thread_num(), frag, [&ctx](int tid, vertex_t u, const label_t& msg) {
+              ctx.labels[u] = msg;
+            });
 
-    // receive messages and set labels
-    double rate = static_cast<double>(ctx.changed.ParallelCount(GetThreadPool())) / static_cast<double>(frag.GetInnerVerticesNum());
+        if (ctx.step > ctx.max_round) {
+          return;
+        } else {
+          messages.ForceContinue();
+        }
 
-    if (rate > ctx.threshold) {
-      messages.ParallelProcess<fragment_t, label_t>(
-          thread_num(), frag, [&ctx](int tid, vertex_t u, const label_t& msg) {
-            ctx.labels[u] = msg;
-          });
-      ctx.changed.ParallelClear(GetThreadPool());
-
-      if (ctx.step > ctx.max_round) {
-        return;
-      } else {
-        messages.ForceContinue();
-      }
-
-#ifdef PROFILING
-      ctx.preprocess_time += GetCurrentTime();
-#endif
-
-      PropagateLabel(frag, ctx, messages);
+        PropagateLabel(frag, ctx, messages);
     } else {
-      if (ctx.step > ctx.max_round) {
+      // receive messages and set labels
+      double rate = static_cast<double>(ctx.changed.ParallelCount(GetThreadPool())) / static_cast<double>(frag.GetInnerVerticesNum());
+
+      if (rate > ctx.threshold) {
         messages.ParallelProcess<fragment_t, label_t>(
-            thread_num(), frag,
-            [&ctx, &frag](int tid, vertex_t u, const label_t& msg) {
+            thread_num(), frag, [&ctx](int tid, vertex_t u, const label_t& msg) {
               ctx.labels[u] = msg;
             });
-        return;
-      } else {
-        messages.ParallelProcess<fragment_t, label_t>(
-            thread_num(), frag,
-            [&ctx, &frag](int tid, vertex_t u, const label_t& msg) {
-              ctx.labels[u] = msg;
-              auto ie = frag.GetIncomingAdjList(u);
-              for (auto& e : ie) {
-                ctx.potential_change.Insert(e.neighbor);
-              }
-            });
-        messages.ForceContinue();
-      }
+        ctx.changed.ParallelClear(GetThreadPool());
+
+        if (ctx.step > ctx.max_round) {
+          return;
+        } else {
+          messages.ForceContinue();
+        }
 
 #ifdef PROFILING
-      ctx.preprocess_time += GetCurrentTime();
+        ctx.preprocess_time += GetCurrentTime();
 #endif
 
-      PropagateLabelSparse(frag, ctx, messages);
+        PropagateLabel(frag, ctx, messages);
+      } else {
+        if (ctx.step > ctx.max_round) {
+          messages.ParallelProcess<fragment_t, label_t>(
+              thread_num(), frag,
+              [&ctx, &frag](int tid, vertex_t u, const label_t& msg) {
+                ctx.labels[u] = msg;
+              });
+          return;
+        } else {
+          messages.ParallelProcess<fragment_t, label_t>(
+              thread_num(), frag,
+              [&ctx, &frag](int tid, vertex_t u, const label_t& msg) {
+                ctx.labels[u] = msg;
+                auto ie = frag.GetIncomingAdjList(u);
+                for (auto& e : ie) {
+                  ctx.potential_change.Insert(e.neighbor);
+                }
+              });
+          messages.ForceContinue();
+        }
+
+#ifdef PROFILING
+        ctx.preprocess_time += GetCurrentTime();
+#endif
+
+        PropagateLabelSparse(frag, ctx, messages);
+      }
     }
   }
 };
 }  // namespace grape
 
-#endif  // EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_OPT_H_
+#endif  // EXAMPLES_ANALYTICAL_APPS_CDLP_CDLP_OPT_UD_H_

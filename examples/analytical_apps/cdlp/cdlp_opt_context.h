@@ -59,7 +59,7 @@ class CDLPOptContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> 
     this->threshold = threshold;
     changed.Init(inner_vertices);
     potential_change.Init(inner_vertices);
-    new_ilabels.Init(inner_vertices);
+    new_ilabels.Init(frag.Vertices());
 
 #ifdef PROFILING
     preprocess_time = 0;
@@ -86,7 +86,7 @@ class CDLPOptContext : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> 
   }
 
   typename FRAG_T::template vertex_array_t<label_t>& labels;
-  typename FRAG_T::template inner_vertex_array_t<label_t> new_ilabels;
+  typename FRAG_T::template vertex_array_t<label_t> new_ilabels;
   DenseVertexSet<typename FRAG_T::inner_vertices_t> potential_change, changed;
 
 #ifdef PROFILING

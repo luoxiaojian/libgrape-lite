@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef EXAMPLES_ANALYTICAL_APPS_LCC_LCC_CONTEXT_H_
-#define EXAMPLES_ANALYTICAL_APPS_LCC_LCC_CONTEXT_H_
+#ifndef EXAMPLES_ANALYTICAL_APPS_LCC_LCC_BETA_CONTEXT_H_
+#define EXAMPLES_ANALYTICAL_APPS_LCC_LCC_BETA_CONTEXT_H_
 
 #include <grape/grape.h>
 
@@ -29,14 +29,14 @@ namespace grape {
  * @tparam FRAG_T
  */
 template <typename FRAG_T, typename COUNT_T>
-class LCCContext : public VertexDataContext<FRAG_T, double> {
+class LCCBetaContext : public VertexDataContext<FRAG_T, double> {
  public:
   using oid_t = typename FRAG_T::oid_t;
   using vid_t = typename FRAG_T::vid_t;
   using vertex_t = typename FRAG_T::vertex_t;
   using count_t = COUNT_T;
 
-  explicit LCCContext(const FRAG_T& fragment)
+  explicit LCCBetaContext(const FRAG_T& fragment)
       : VertexDataContext<FRAG_T, double>(fragment) {}
 
   void Init(ParallelMessageManager& messages,
@@ -45,7 +45,8 @@ class LCCContext : public VertexDataContext<FRAG_T, double> {
     auto vertices = frag.Vertices();
 
     global_degree.Init(vertices);
-    complete_neighbor.Init(vertices);
+    complete_inner_neighbor.Init(vertices);
+    complete_outer_neighbor.Init(vertices);
     tricnt.Init(vertices, 0);
     this->degree_threshold = degree_threshold;
   }
@@ -94,13 +95,14 @@ class LCCContext : public VertexDataContext<FRAG_T, double> {
 
   typename FRAG_T::template vertex_array_t<int> global_degree;
   typename FRAG_T::template vertex_array_t<std::vector<vertex_t>>
-      complete_neighbor;
+      complete_inner_neighbor;
+  typename FRAG_T::template vertex_array_t<std::vector<vertex_t>>
+      complete_outer_neighbor;
   typename FRAG_T::template vertex_array_t<count_t> tricnt;
   int degree_threshold = 0;
   int stage = 0;
 
   size_t degree_x = 0;
-
 #ifdef PROFILING
   double preprocess_time = 0;
   double exec_time = 0;
@@ -109,4 +111,4 @@ class LCCContext : public VertexDataContext<FRAG_T, double> {
 };
 }  // namespace grape
 
-#endif  // EXAMPLES_ANALYTICAL_APPS_LCC_LCC_CONTEXT_H_
+#endif  // EXAMPLES_ANALYTICAL_APPS_LCC_LCC_BETA_CONTEXT_H_

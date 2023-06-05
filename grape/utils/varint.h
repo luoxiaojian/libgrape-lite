@@ -71,6 +71,10 @@ class VarintEncoder {
     return buf_.data();
   }
 
+  bool empty() const {
+    return buf_.empty();
+  }
+
  private:
   std::vector<uint8_t> buf_;
 };
@@ -285,6 +289,10 @@ class DeltaVarintEncoder {
 
   void reserve(size_t size) {
     encoder_.reserve(size * sizeof(T));
+  }
+
+  bool empty() const {
+    return encoder_.empty();
   }
 
   void clear() {

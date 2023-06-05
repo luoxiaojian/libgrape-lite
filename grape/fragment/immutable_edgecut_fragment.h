@@ -408,10 +408,12 @@ class ImmutableEdgecutFragment
 
   void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) override {
     base_t::PrepareToRunApp(comm_spec, conf);
-    if (conf.need_split_edges_by_fragment) {
+    if (conf.need_split_edges_by_fragment && !splited_edges_by_fragment_) {
       splitEdgesByFragment();
-    } else if (conf.need_split_edges) {
+      splited_edges_by_fragment_ = true;
+    } else if (conf.need_split_edges && !splited_edges_) {
       splitEdges();
+      splited_edges_ = true;
     }
   }
 
@@ -568,6 +570,7 @@ class ImmutableEdgecutFragment
     oespliters_.resize(1);
     iespliters_[0].Init(inner_vertices);
     oespliters_[0].Init(inner_vertices);
+#if 0
     int inner_neighbor_count = 0;
     for (auto& v : inner_vertices) {
       inner_neighbor_count = 0;
@@ -588,6 +591,43 @@ class ImmutableEdgecutFragment
       }
       oespliters_[0][v] = get_oe_begin(v) + inner_neighbor_count;
     }
+#else
+    int concurrency = std::thread::hardware_concurrency();
+    std::vector<std::thread> threads;
+    for (int i = 0; i < concurrency; ++i) {
+      threads.emplace_back(std::thread([&](int tid) {
+        VID_T batch = (ivnum_ + concurrency - 1) / concurrency;
+	VID_T from = std::min(batch * tid, ivnum_);
+	VID_T to = std::min(from + batch, ivnum_);
+
+	vertex_t v(from);
+	int inner_neighbor_count = 0;
+	while (v.GetValue() != to) {
+          inner_neighbor_count = 0;
+          auto ie = GetIncomingAdjList(v);
+          for (auto& e : ie) {
+            if (IsInnerVertex(e.neighbor)) {
+              ++inner_neighbor_count;
+            }
+          }
+          iespliters_[0][v] = get_ie_begin(v) + inner_neighbor_count;
+
+          inner_neighbor_count = 0;
+          auto oe = GetOutgoingAdjList(v);
+          for (auto& e : oe) {
+            if (IsInnerVertex(e.neighbor)) {
+              ++inner_neighbor_count;
+            }
+          }
+          oespliters_[0][v] = get_oe_begin(v) + inner_neighbor_count;
+          ++v;
+	}
+      }, i));
+    }
+    for (auto& thrd : threads) {
+      thrd.join();
+    }
+#endif
   }
 
   void splitEdgesByFragment() {
@@ -600,6 +640,7 @@ class ImmutableEdgecutFragment
       iespliters_[i].Init(inner_vertices);
       oespliters_[i].Init(inner_vertices);
     }
+#if 0
     std::vector<int> frag_count(fnum_, 0);
     for (auto& v : inner_vertices) {
       auto ie = GetIncomingAdjList(v);
@@ -624,6 +665,47 @@ class ImmutableEdgecutFragment
         frag_count[j] = 0;
       }
     }
+#else
+    int concurrency = std::thread::hardware_concurrency();
+    std::vector<std::thread> threads;
+    for (int i = 0; i < concurrency; ++i) {
+      threads.emplace_back(std::thread([&](int tid) {
+        VID_T batch = (ivnum_ + concurrency - 1) / concurrency;
+	VID_T from = std::min(batch * tid, ivnum_);
+	VID_T to = std::min(from + batch, ivnum_);
+
+	vertex_t v(from);
+        std::vector<int> frag_count(fnum_, 0);
+	while (v.GetValue() != to) {
+          auto ie = GetIncomingAdjList(v);
+          for (auto& e : ie) {
+            ++frag_count[GetFragId(e.neighbor)];
+          }
+          iespliters_[0][v] = get_ie_begin(v) + frag_count[fid_];
+          frag_count[fid_] = 0;
+          for (fid_t j = 0; j < fnum_; ++j) {
+            iespliters_[j + 1][v] = iespliters_[j][v] + frag_count[j];
+            frag_count[j] = 0;
+          }
+
+          auto oe = GetOutgoingAdjList(v);
+          for (auto& e : oe) {
+            ++frag_count[GetFragId(e.neighbor)];
+          }
+          oespliters_[0][v] = get_oe_begin(v) + frag_count[fid_];
+          frag_count[fid_] = 0;
+          for (fid_t j = 0; j < fnum_; ++j) {
+            oespliters_[j + 1][v] = oespliters_[j][v] + frag_count[j];
+            frag_count[j] = 0;
+          }
+	  ++v;
+	}
+      }, i));
+    }
+    for (auto& thrd : threads) {
+      thrd.join();
+    }
+#endif
   }
 
   using base_t::ivnum_;
@@ -640,6 +722,8 @@ class ImmutableEdgecutFragment
   using base_t::outer_vertices_of_frag_;
 
   std::vector<VertexArray<inner_vertices_t, nbr_t*>> iespliters_, oespliters_;
+  bool splited_edges_by_fragment_ = false;
+  bool splited_edges_ = false;
 };
 
 }  // namespace grape

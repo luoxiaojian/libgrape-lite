@@ -69,6 +69,49 @@ inline LABEL_T update_label_fast(const ADJ_LIST_T& edges,
 }
 
 template <typename LABEL_T, typename VERTEX_ARRAY_T, typename ADJ_LIST_T>
+inline LABEL_T update_label_fast_jump(const ADJ_LIST_T& edges,
+                                 const VERTEX_ARRAY_T& labels) {
+  static thread_local std::vector<LABEL_T> local_labels;
+  local_labels.clear();
+  for (auto& e : edges) {
+    local_labels.emplace_back(labels[e.get_neighbor()]);
+  }
+  std::sort(local_labels.begin(), local_labels.end());
+
+  LABEL_T curr_label = local_labels[0];
+  int curr = 1;
+  int label_num = local_labels.size();
+
+  while ((curr != label_num) && (local_labels[curr] == curr_label)) {
+    ++curr;
+  }
+
+  LABEL_T best_label = curr_label;
+  int best_count = curr;
+
+  while ((curr + best_count) < label_num) {
+    curr_label = local_labels[curr];
+    int next = curr + best_count;
+    if (local_labels[next] == curr_label) {
+      do {
+        ++next;
+      } while (next != label_num && (local_labels[next] == curr_label));
+      best_count = (next - curr);
+      best_label = curr_label;
+      curr = next;
+    } else {
+      curr = next;
+      curr_label = local_labels[next];
+      while (local_labels[curr - 1] == curr_label) {
+        --curr;
+      }
+    }
+  }
+
+  return best_label;
+}
+
+template <typename LABEL_T, typename VERTEX_ARRAY_T, typename ADJ_LIST_T>
 inline LABEL_T update_label_fast_sparse(const ADJ_LIST_T& edges,
                                  const VERTEX_ARRAY_T& labels) {
   static thread_local LabelMapType<LABEL_T> labels_map;

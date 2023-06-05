@@ -43,7 +43,7 @@ class BFSContext : public VertexDataContext<FRAG_T, int64_t> {
     source_id = src_id;
     partial_result.SetValue(std::numeric_limits<depth_type>::max());
     avg_degree = static_cast<double>(frag.GetEdgeNum()) /
-                 static_cast<double>(frag.GetInnerVerticesNum());
+                 static_cast<double>(frag.GetTotalVerticesNum());
 
 #ifdef PROFILING
     preprocess_time = 0;
