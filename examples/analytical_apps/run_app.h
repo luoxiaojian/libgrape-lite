@@ -43,6 +43,7 @@ limitations under the License.
 #include "cdlp/cdlp.h"
 #include "cdlp/cdlp_opt.h"
 #include "cdlp/cdlp_opt_ud.h"
+#include "cdlp/cdlp_opt_ud_dense.h"
 // #include "cdlp/cdlp_auto.h"
 #include "flags.h"
 #include "lcc/lcc.h"
@@ -471,9 +472,16 @@ void Run() {
 	// FLAGS_rebalance = false;
 	FLAGS_rebalance = true;
 	FLAGS_rebalance_vertex_factor = 0;
-        CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                       CDLPOptUD, int>(comm_spec, out_prefix, fnum, spec,
-                                  FLAGS_cdlp_mr);
+	double avg_deg = static_cast<double>(FLAGS_edge_num) / static_cast<double>(FLAGS_vertex_num);
+	if (avg_deg > 80) {
+          CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                         CDLPOptUDDense, int>(comm_spec, out_prefix, fnum, spec,
+                                    FLAGS_cdlp_mr);
+	} else {
+          CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                         CDLPOptUD, int>(comm_spec, out_prefix, fnum, spec,
+                                    FLAGS_cdlp_mr);
+	}
       }
     } else if (name == "wcc_auto") {
       FLAGS_directed = false;
