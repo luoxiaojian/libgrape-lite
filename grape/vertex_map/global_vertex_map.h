@@ -303,6 +303,16 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     std::swap(indexers_, new_indexers);
   }
 
+  void Reorder(const std::vector<OID_T>& oid_list) {
+    GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T> builder =
+        GetLocalBuilder();
+    indexers_.clear();
+    for (auto& id : oid_list) {
+      builder.AddVertex(id);
+    }
+    builder.Finish(*this);
+  }
+
  private:
   template <typename _OID_T, typename _VID_T, typename _PARTITIONER_T>
   friend class GlobalVertexMapBuilder;

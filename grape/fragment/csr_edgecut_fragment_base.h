@@ -219,6 +219,27 @@ class CSREdgecutFragmentBase
                     iodst_.get_end(v.GetValue()));
   }
 
+  void Reorder(const std::vector<VID_T>& new_lid) {
+    auto lid_converter = [&new_lid](VID_T old_lid) { return new_lid[old_lid]; };
+    auto fid_converter = [](fid_t fid) { return fid; };
+
+    if (idst_built_) {
+      idst_.reorder(lid_converter, fid_converter);
+    }
+    if (odst_built_) {
+      odst_.reorder(lid_converter, fid_converter);
+    }
+    if (iodst_built_) {
+      iodst_.reorder(lid_converter, fid_converter);
+    }
+
+    auto nbr_converter = [&new_lid](const nbr_t old_nbr) {
+      return nbr_t(new_lid[old_nbr.neighbor], old_nbr.data);
+    };
+    ie_.reorder(lid_converter, nbr_converter);
+    oe_.reorder(lid_converter, nbr_converter);
+  }
+
   using base_t::GetFragId;
   using base_t::GetIncomingAdjList;
   using base_t::GetInnerVerticesNum;

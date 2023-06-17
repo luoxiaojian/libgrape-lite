@@ -242,6 +242,40 @@ class ImmutableCSR {
     }
   }
 
+  template <typename KEY_CONVERTER, typename VALUE_CONVERTER>
+  void reorder(const KEY_CONVERTER& key_converter,
+               const VALUE_CONVERTER& value_converter) {
+    vid_t ivnum = vertex_num();
+
+    std::vector<int> new_degree(ivnum);
+    for (vid_t i = 0; i < ivnum; ++i) {
+      new_degree[key_converter(i)] = degree(i);
+    }
+
+    Array<nbr_t, Allocator<nbr_t>> new_edges(edge_num());
+    Array<nbr_t*, Allocator<nbr_t*>> new_offsets(ivnum + 1);
+
+    nbr_t* ptr = new_edges.data();
+    for (vid_t i = 0; i < ivnum; ++i) {
+      new_offsets[i] = ptr;
+      ptr += new_degree[i];
+    }
+    new_offsets[ivnum] = ptr;
+
+    for (vid_t i = 0; i < ivnum; ++i) {
+      nbr_t* old_ptr = get_begin(i);
+      nbr_t* old_end = get_end(i);
+
+      nbr_t* new_ptr = new_offsets[key_converter(i)];
+      while (old_ptr != old_end) {
+        *new_ptr++ = value_converter(*old_ptr++);
+      }
+    }
+
+    edges_.swap(new_edges);
+    offsets_.swap(new_offsets);
+  }
+
  private:
   Array<nbr_t, Allocator<nbr_t>> edges_;
   Array<nbr_t*, Allocator<nbr_t*>> offsets_;

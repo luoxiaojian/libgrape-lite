@@ -409,7 +409,90 @@ class ImmutableEdgecutFragment
     io_adaptor->Close();
   }
 
+  struct ovid_info {
+    vid_t old_lid;
+    vid_t new_lid;
+    vid_t old_gid;
+    vid_t new_gid;
+  };
+
+  void Reorder(const std::vector<vid_t>& new_lid) {
+    std::vector<OID_T> new_oid;
+    new_oid.resize(this->GetInnerVerticesNum());
+    auto inner_vertices = this->InnerVertices();
+    for (auto v : inner_vertices) {
+      new_oid[new_lid[v.GetValue()]] = this->GetId(v);
+    }
+    std::vector<OID_T> outer_vertex_oid;
+    auto outer_vertices = this->OuterVertices();
+    for (auto v : outer_vertices) {
+      outer_vertex_oid.push_back(this->GetId(v));
+    }
+    this->vm_ptr_->Reorder(new_oid);
+
+    splited_edges_ = false;
+    splited_edges_by_fragment_ = false;
+
+    std::vector<ovid_info> outer_vertex_id;
+    vid_t old_lid = ivnum_;
+    for (auto& oid : outer_vertex_oid) {
+      vid_t old_gid = ovgid_[old_lid - ivnum_];
+      fid_t fid = id_parser_.get_fragment_id(old_gid);
+      vid_t new_gid = this->vm_ptr_->GetGid(fid, oid);
+      outer_vertex_id.push_back({old_lid, 0, old_gid, new_gid});
+      ++old_lid;
+    }
+
+    std::sort(outer_vertex_id.begin(), outer_vertex_id.end(),
+              [&](const ovid_info& a, const ovid_info& b) {
+                return a.new_gid < b.new_gid;
+              });
+
+    vid_t ov_new_lid = ivnum_;
+    for (auto& info : outer_vertex_id) {
+      info.new_lid = ov_new_lid;
+      ++ov_new_lid;
+    }
+
+    std::vector<vid_t> complete_new_lid = new_lid;
+    complete_new_lid.resize(this->GetVerticesNum());
+    for (auto& info : outer_vertex_id) {
+      complete_new_lid[info.old_lid] = info.new_lid;
+    }
+
+    for (auto& info : outer_vertex_id) {
+      ovgid_[info.new_lid - ivnum_] = info.new_gid;
+    }
+
+    ovg2l_.clear();
+    for (vid_t i = 0; i != ovnum_; ++i) {
+      ovg2l_.emplace(ovgid_[i], ivnum_ + i);
+    }
+
+    base_t::Reorder(complete_new_lid);
+  }
+
+  void ReorderByDegreeDesc() {
+    std::vector<std::pair<vid_t, int>> vertex_degree;
+    for (auto v : this->InnerVertices()) {
+      vertex_degree.emplace_back(v.GetValue(), this->GetLocalOutDegree(v));
+    }
+    std::sort(
+        vertex_degree.begin(), vertex_degree.end(),
+        [](const std::pair<vid_t, int>& a, const std::pair<vid_t, int>& b) {
+          return a.second > b.second;
+        });
+    std::vector<vid_t> new_lid(ivnum_);
+    for (vid_t k = 0; k != ivnum_; ++k) {
+      new_lid[vertex_degree[k].first] = k;
+    }
+
+    Reorder(new_lid);
+  }
+
   void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) override {
+    ReorderByDegreeDesc();
+
     base_t::PrepareToRunApp(comm_spec, conf);
     if (conf.need_split_edges_by_fragment && !splited_edges_by_fragment_) {
       splitEdgesByFragment();
