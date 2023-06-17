@@ -233,8 +233,8 @@ class CSREdgecutFragmentBase
       iodst_.reorder(lid_converter, fid_converter);
     }
 
-    auto nbr_converter = [&new_lid](const nbr_t old_nbr) {
-      return nbr_t(new_lid[old_nbr.neighbor], old_nbr.data);
+    auto nbr_converter = [&new_lid](const nbr_t& old_nbr) {
+      return nbr_t(vertex_t(new_lid[old_nbr.neighbor.GetValue()]), old_nbr.data);
     };
     ie_.reorder(lid_converter, nbr_converter);
     oe_.reorder(lid_converter, nbr_converter);

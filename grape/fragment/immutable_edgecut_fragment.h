@@ -438,7 +438,8 @@ class ImmutableEdgecutFragment
     for (auto& oid : outer_vertex_oid) {
       vid_t old_gid = ovgid_[old_lid - ivnum_];
       fid_t fid = id_parser_.get_fragment_id(old_gid);
-      vid_t new_gid = this->vm_ptr_->GetGid(fid, oid);
+      vid_t new_gid;
+      CHECK(this->vm_ptr_->GetGid(fid, oid, new_gid));
       outer_vertex_id.push_back({old_lid, 0, old_gid, new_gid});
       ++old_lid;
     }
@@ -480,7 +481,7 @@ class ImmutableEdgecutFragment
     std::sort(
         vertex_degree.begin(), vertex_degree.end(),
         [](const std::pair<vid_t, int>& a, const std::pair<vid_t, int>& b) {
-          return a.second > b.second;
+          return a.second < b.second;
         });
     std::vector<vid_t> new_lid(ivnum_);
     for (vid_t k = 0; k != ivnum_; ++k) {
@@ -491,7 +492,9 @@ class ImmutableEdgecutFragment
   }
 
   void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) override {
-    ReorderByDegreeDesc();
+    // LOG(INFO) << "[frag-" << this->fid() << "] before reorder: " << this->GetId(vertex_t(0)) << ": " << this->GetLocalOutDegree(vertex_t(0)) << ", " << this->GetId(vertex_t(1)) << ": " << this->GetLocalOutDegree(vertex_t(1)) << ", " << this->GetId(vertex_t(2)) << ": " << this->GetLocalOutDegree(vertex_t(2));
+    // ReorderByDegreeDesc();
+    // LOG(INFO) << "[frag-" << this->fid() << "] after reorder: " << this->GetId(vertex_t(0)) << ": " << this->GetLocalOutDegree(vertex_t(0)) << ", " << this->GetId(vertex_t(1)) << ": " << this->GetLocalOutDegree(vertex_t(1)) << ", " << this->GetId(vertex_t(2)) << ": " << this->GetLocalOutDegree(vertex_t(2));
 
     base_t::PrepareToRunApp(comm_spec, conf);
     if (conf.need_split_edges_by_fragment && !splited_edges_by_fragment_) {

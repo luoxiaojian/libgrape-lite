@@ -307,10 +307,11 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T> builder =
         GetLocalBuilder();
     indexers_.clear();
+    indexers_.resize(comm_spec_.fnum());
     for (auto& id : oid_list) {
-      builder.AddVertex(id);
+      builder.add_vertex(id);
     }
-    builder.Finish(*this);
+    builder.finish(*this);
   }
 
  private:
