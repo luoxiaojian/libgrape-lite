@@ -413,14 +413,14 @@ class ImmutableEdgecutFragment
   void Reorder(const std::vector<vertex_t>& vertex_ranking) {
     std::vector<vid_t> new_lid(ivnum_ + ovnum_);
     std::vector<OID_T> new_oid(ivnum_);
-    parallel_for(0, ivnum_, [&](vid_t v) {
+    parallel_for(static_cast<vid_t>(0), ivnum_, [&](vid_t v) {
       vid_t old_v = vertex_ranking[v].GetValue();
       new_lid[old_v] = v;
       new_oid[v] = this->GetId(vertex_ranking[v]);
     });
 
     std::vector<OID_T> outer_vertex_oid(ovnum_);
-    parallel_for(0, ovnum_, [&](vid_t v) {
+    parallel_for(static_cast<vid_t>(0), ovnum_, [&](vid_t v) {
       outer_vertex_oid[v] = this->GetId(vertex_t(v + ivnum_));
     });
 
@@ -430,7 +430,7 @@ class ImmutableEdgecutFragment
     splited_edges_by_fragment_ = false;
 
     std::vector<std::pair<vid_t, vid_t>> outer_vertex_id(ovnum_);
-    parallel_for(0, ovnum_, [&](vid_t v) {
+    parallel_for(static_cast<vid_t>(0), ovnum_, [&](vid_t v) {
       vid_t old_gid = ovgid_[v];
       fid_t fid = id_parser_.get_fragment_id(old_gid);
       vid_t new_gid;
@@ -444,7 +444,7 @@ class ImmutableEdgecutFragment
         [&](const std::pair<vid_t, vid_t>& a,
             const std::pair<vid_t, vid_t>& b) { return a.second < b.second; });
 
-    parallel_for(0, ovnum_, [&](vid_t v) {
+    parallel_for(static_cast<vid_t>(0), ovnum_, [&](vid_t v) {
       new_lid[outer_vertex_id[v].first] = v + ivnum_;
       ovgid_[v] = outer_vertex_id[v].second;
     });

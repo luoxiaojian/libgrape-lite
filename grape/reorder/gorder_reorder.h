@@ -30,22 +30,24 @@ namespace grape {
 template <typename FRAG_T>
 class GOrderReorder : public ReorderBase<FRAG_T> {
  public:
+  GOrderReorder(uint32_t w) {}
+
   void Reorder(FRAG_T& fragment) override {
     LOG(ERROR) << "GOrderReorder is not implemented yet";
   }
 };
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
-          LoadStrategy load_strategy>
+          LoadStrategy load_strategy, typename PART_T>
 class GOrderReorder<
     ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy,
-                             GlobalVertexMap<OID_T, VID_T>>>
+                             GlobalVertexMap<OID_T, VID_T, PART_T>>>
     : public ReorderBase<ImmutableEdgecutFragment<
           OID_T, VID_T, VDATA_T, EDATA_T, load_strategy,
-          GlobalVertexMap<OID_T, VID_T>>> {
+          GlobalVertexMap<OID_T, VID_T, PART_T>>> {
   using fragment_t =
       ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy,
-                               GlobalVertexMap<OID_T, VID_T>>;
+                               GlobalVertexMap<OID_T, VID_T, PART_T>>;
   using vid_t = typename fragment_t::vid_t;
   using vertex_t = typename fragment_t::vertex_t;
 
@@ -63,10 +65,10 @@ class GOrderReorder<
  private:
   void move_window_d(fragment_t& fragment, gorder::UnitHeap& heap,
                      vid_t new_node, vid_t old_node) {
-    auto old_parent = fragment.get_ie_begin(vertex_t(old_node));
-    auto old_parent_end = fragment.get_ie_end(vertex_t(old_node));
-    auto new_parent = fragment.get_ie_begin(vertex_t(new_node));
-    auto new_parent_end = fragment.get_ie_end(vertex_t(new_node));
+    auto old_parent = fragment.GetIncomingAdjList(vertex_t(old_node)).begin();
+    auto old_parent_end = fragment.GetIncomingAdjList(vertex_t(old_node)).end();
+    auto new_parent = fragment.GetIncomingAdjList(vertex_t(new_node)).begin();
+    auto new_parent_end = fragment.GetIncomingAdjList(vertex_t(new_node)).end();
 
     vid_t ivnum = fragment.GetInnerVerticesNum();
 
@@ -202,17 +204,17 @@ class GOrderReorder<
 
   void move_window_ud(fragment_t& fragment, gorder::UnitHeap& heap,
                       vid_t new_node, vid_t old_node) {
-    auto old_parent = fragment.get_oe_begin(vertex_t(old_node));
-    auto old_parent_end = fragment.get_oe_end(vertex_t(old_node));
-    auto new_parent = fragment.get_oe_begin(vertex_t(new_node));
-    auto new_parent_end = fragment.get_oe_end(vertex_t(new_node));
+    auto old_parent = fragment.GetOutgoingAdjList(vertex_t(old_node)).begin();
+    auto old_parent_end = fragment.GetOutgoingAdjList(vertex_t(old_node)).end();
+    auto new_parent = fragment.GetOutgoingAdjList(vertex_t(new_node)).begin();
+    auto new_parent_end = fragment.GetOutgoingAdjList(vertex_t(new_node)).end();
 
     vid_t ivnum = fragment.GetInnerVerticesNum();
 
     if (old_node == new_node) {
       old_parent = old_parent_end;
     } else {
-      if (static_cast<uint64_t>(this->GetLocalOutDegree(vertex_t(old_node))) <=
+      if (static_cast<uint64_t>(fragment.GetLocalOutDegree(vertex_t(old_node))) <=
           heap.huge) {
         for (auto& e : fragment.GetOutgoingAdjList(vertex_t(old_node))) {
           auto child = e.get_neighbor().GetValue();
