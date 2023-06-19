@@ -589,6 +589,10 @@ class AppendOnlyEdgecutFragment
     fragment_indices_->Rebuild();
   }
 
+  void Reorder(const std::vector<vertex_t>& vertex_ranking) {
+    LOG(ERROR) << "Reorder is not implemented for AppendOnlyEdgecutFragment.";
+  }
+
   template <typename IOADAPTOR_T>
   void Serialize(const std::string prefix) {
     char fbuf[1024];

@@ -32,6 +32,7 @@ limitations under the License.
 #include <grape/fragment/immutable_edgecut_fragment.h>
 #include <grape/fragment/loader.h>
 #include <grape/grape.h>
+#include <grape/reorder/reorder_factory.h>
 #include <grape/util.h>
 #include <grape/vertex_map/global_vertex_map.h>
 
@@ -100,7 +101,6 @@ void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
              const std::string& out_prefix, Args... args) {
   timer_next("load application");
   auto worker = APP_T::CreateWorker(app, fragment);
-  worker->prepare_conf().reordering_type = FLAGS_reordering_type;
   worker->Init(comm_spec, spec);
   timer_next("run algorithm");
   worker->Query(std::forward<Args>(args)...);
@@ -113,7 +113,8 @@ void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
     ostream.open(output_path);
     worker->Output(ostream);
     ostream.close();
-    VLOG(1) << "Worker-" << comm_spec.worker_id() << " finished: " << output_path;
+    VLOG(1) << "Worker-" << comm_spec.worker_id()
+            << " finished: " << output_path;
   } else {
     VLOG(1) << "Worker-" << comm_spec.worker_id() << " finished without output";
   }
@@ -142,6 +143,9 @@ void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
                                             load_strategy, VertexMapType>;
     std::shared_ptr<FRAG_T> fragment =
         LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+    std::shared_ptr<ReorderBase<FRAG_T>> reorder =
+        create_reorder<FRAG_T>(FLAGS_reordering_type);
+    reorder->Reorder(*fragment);
     using AppType = APP_T<FRAG_T>;
     auto app = std::make_shared<AppType>();
     DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
@@ -152,6 +156,9 @@ void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
         ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy>;
     std::shared_ptr<FRAG_T> fragment =
         LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+    std::shared_ptr<ReorderBase<FRAG_T>> reorder =
+        create_reorder<FRAG_T>(FLAGS_reordering_type);
+    reorder->Reorder(*fragment);
     using AppType = APP_T<FRAG_T>;
     auto app = std::make_shared<AppType>();
     DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,

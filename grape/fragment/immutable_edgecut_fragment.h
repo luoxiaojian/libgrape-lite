@@ -410,454 +410,54 @@ class ImmutableEdgecutFragment
     io_adaptor->Close();
   }
 
-  struct ovid_info {
-    vid_t old_lid;
-    vid_t new_lid;
-    vid_t old_gid;
-    vid_t new_gid;
-  };
+  void Reorder(const std::vector<vertex_t>& vertex_ranking) {
+    std::vector<vid_t> new_lid(ivnum_ + ovnum_);
+    std::vector<OID_T> new_oid(ivnum_);
+    parallel_for(0, ivnum_, [&](vid_t v) {
+      vid_t old_v = vertex_ranking[v].GetValue();
+      new_lid[old_v] = v;
+      new_oid[v] = this->GetId(vertex_ranking[v]);
+    });
 
-  void Reorder(const std::vector<vid_t>& new_lid) {
-    double t0 = -GetCurrentTime();
-    std::vector<OID_T> new_oid;
-    new_oid.resize(this->GetInnerVerticesNum());
-    auto inner_vertices = this->InnerVertices();
-    for (auto v : inner_vertices) {
-      new_oid[new_lid[v.GetValue()]] = this->GetId(v);
-    }
-    std::vector<OID_T> outer_vertex_oid;
-    auto outer_vertices = this->OuterVertices();
-    for (auto v : outer_vertices) {
-      outer_vertex_oid.push_back(this->GetId(v));
-    }
-    t0 += GetCurrentTime();
-    double t1 = -GetCurrentTime();
+    std::vector<OID_T> outer_vertex_oid(ovnum_);
+    parallel_for(0, ovnum_, [&](vid_t v) {
+      outer_vertex_oid[v] = this->GetId(vertex_t(v + ivnum_));
+    });
+
     this->vm_ptr_->Reorder(new_oid);
-    t1 += GetCurrentTime();
 
     splited_edges_ = false;
     splited_edges_by_fragment_ = false;
 
-    double t2 = -GetCurrentTime();
-    std::vector<ovid_info> outer_vertex_id;
-    vid_t old_lid = ivnum_;
-    for (auto& oid : outer_vertex_oid) {
-      vid_t old_gid = ovgid_[old_lid - ivnum_];
+    std::vector<std::pair<vid_t, vid_t>> outer_vertex_id(ovnum_);
+    parallel_for(0, ovnum_, [&](vid_t v) {
+      vid_t old_gid = ovgid_[v];
       fid_t fid = id_parser_.get_fragment_id(old_gid);
       vid_t new_gid;
-      CHECK(this->vm_ptr_->GetGid(fid, oid, new_gid));
-      outer_vertex_id.push_back({old_lid, 0, old_gid, new_gid});
-      ++old_lid;
-    }
-    t2 += GetCurrentTime();
+      CHECK(this->vm_ptr_->GetGid(fid, outer_vertex_oid[v], new_gid));
+      outer_vertex_id[v].first = v + ivnum_;
+      outer_vertex_id[v].second = new_gid;
+    });
 
-    double t3 = -GetCurrentTime();
-    std::sort(outer_vertex_id.begin(), outer_vertex_id.end(),
-              [&](const ovid_info& a, const ovid_info& b) {
-                return a.new_gid < b.new_gid;
-              });
-    t3 += GetCurrentTime();
+    std::sort(
+        outer_vertex_id.begin(), outer_vertex_id.end(),
+        [&](const std::pair<vid_t, vid_t>& a,
+            const std::pair<vid_t, vid_t>& b) { return a.second < b.second; });
 
-    double t4 = -GetCurrentTime();
-    vid_t ov_new_lid = ivnum_;
-    for (auto& info : outer_vertex_id) {
-      info.new_lid = ov_new_lid;
-      ++ov_new_lid;
-    }
-
-    std::vector<vid_t> complete_new_lid = new_lid;
-    complete_new_lid.resize(this->GetVerticesNum());
-    for (auto& info : outer_vertex_id) {
-      complete_new_lid[info.old_lid] = info.new_lid;
-    }
-
-    for (auto& info : outer_vertex_id) {
-      ovgid_[info.new_lid - ivnum_] = info.new_gid;
-    }
+    parallel_for(0, ovnum_, [&](vid_t v) {
+      new_lid[outer_vertex_id[v].first] = v + ivnum_;
+      ovgid_[v] = outer_vertex_id[v].second;
+    });
 
     ovg2l_.clear();
     for (vid_t i = 0; i != ovnum_; ++i) {
       ovg2l_.emplace(ovgid_[i], ivnum_ + i);
     }
-    t4 += GetCurrentTime();
 
-    double t5 = -GetCurrentTime();
-    base_t::Reorder(complete_new_lid);
-    t5 += GetCurrentTime();
-
-    LOG(INFO) << "[frag-" << this->fid() << "]: t0 = " << t0 << ", t1 = " << t1 << ", t2 = " << t2 << ", t3 = " << t3 << ", t4 = " << t4 << ", t5 = " << t5;
-  }
-
-  void ReorderByDegreeAsc() {
-    std::vector<std::pair<vid_t, int>> vertex_degree;
-    for (auto v : this->InnerVertices()) {
-      vertex_degree.emplace_back(v.GetValue(), this->GetLocalOutDegree(v) + this->GetLocalInDegree(v));
-    }
-    std::sort(
-        vertex_degree.begin(), vertex_degree.end(),
-        [](const std::pair<vid_t, int>& a, const std::pair<vid_t, int>& b) {
-          return a.second < b.second;
-        });
-    std::vector<vid_t> new_lid(ivnum_);
-    for (vid_t k = 0; k != ivnum_; ++k) {
-      new_lid[vertex_degree[k].first] = k;
-    }
-
-    Reorder(new_lid);
-  }
-
-  void ReorderByDegreeDesc() {
-    double t0 = -GetCurrentTime();
-    std::vector<std::pair<vid_t, int>> vertex_degree;
-    for (auto v : this->InnerVertices()) {
-      vertex_degree.emplace_back(v.GetValue(), this->GetLocalOutDegree(v) + this->GetLocalInDegree(v));
-    }
-    std::sort(
-        vertex_degree.begin(), vertex_degree.end(),
-        [](const std::pair<vid_t, int>& a, const std::pair<vid_t, int>& b) {
-          return a.second > b.second;
-        });
-    std::vector<vid_t> new_lid(ivnum_);
-    for (vid_t k = 0; k != ivnum_; ++k) {
-      new_lid[vertex_degree[k].first] = k;
-    }
-
-    t0 += GetCurrentTime();
-    LOG(INFO) << "[frag-" << this->fid() << "] before reorder: " << t0;
-
-    double t1 = -GetCurrentTime();
-    Reorder(new_lid);
-    t1 += GetCurrentTime();
-
-    LOG(INFO) << "[frag-" << this->fid() << "] fragment reorder: " << t1;
-  }
-
-  void move_window_d(gorder::UnitHeap& heap, vid_t new_node, vid_t old_node) {
-    auto old_parent = get_ie_begin(vertex_t(old_node));
-    auto old_parent_end = get_ie_end(vertex_t(old_node));
-    auto new_parent = get_ie_begin(vertex_t(new_node));
-    auto new_parent_end = get_ie_end(vertex_t(new_node));
-
-    if (old_node == new_node) {
-      old_parent = old_parent_end;
-    } else {
-      if (static_cast<uint64_t>(this->GetLocalOutDegree(vertex_t(old_node))) <= heap.huge) {
-        auto ptr = get_oe_begin(vertex_t(old_node));
-	auto end = get_oe_end(vertex_t(old_node));
-	while (ptr != end) {
-          auto child = ptr->neighbor.GetValue();
-	  if (child < ivnum_) {
-            heap.lazyIncrement(child, -1);
-	  }
-	  ++ptr;
-	}
-      }
-    }
-
-    std::vector<vid_t> tmp_old_parents, tmp_new_parents;
-    while (true) {
-      int factor = -1;
-      if (old_parent == old_parent_end) {
-        if (new_parent == new_parent_end) break;
-	factor = 1;
-      } else if (new_parent != new_parent_end) {
-        if (new_parent->neighbor.GetValue() == old_parent->neighbor.GetValue()) {
-          ++old_parent; ++new_parent; continue;
-	}
-	if (new_parent->neighbor.GetValue() < old_parent->neighbor.GetValue()) {
-          factor = 1;
-	}
-      }
-
-      if (factor == -1) {
-        if (static_cast<uint64_t>(this->GetLocalOutDegree(old_parent->neighbor)) <= heap.huge) {
-          tmp_old_parents.push_back(old_parent->neighbor.GetValue());
-	}
-	++old_parent;
-      } else {
-        if (static_cast<uint64_t>(this->GetLocalOutDegree(new_parent->neighbor)) <= heap.huge) {
-          tmp_new_parents.push_back(new_parent->neighbor.GetValue());
-	}
-	++new_parent;
-      }
-    }
-
-    for (auto& parent : tmp_old_parents) {
-      if (parent < ivnum_) {
-        heap.lazyIncrement(parent, -1);
-      }
-      auto ptr = get_oe_begin(vertex_t(parent));
-      auto end = get_oe_end(vertex_t(parent));
-      while (ptr != end) {
-	auto sibling = ptr->neighbor.GetValue();
-	if (sibling < ivnum_ && sibling != old_node) {
-          heap.lazyIncrement(sibling, -1);
-	}
-        ++ptr;
-      }
-    }
-    if (static_cast<uint64_t>(this->GetLocalOutDegree(vertex_t(new_node))) <= heap.huge) {
-      auto ptr = get_oe_begin(vertex_t(new_node));
-      auto end = get_oe_end(vertex_t(new_node));
-      while (ptr != end) {
-	auto child = ptr->neighbor.GetValue();
-	if (child < ivnum_) {
-          heap.lazyIncrement(child, 1);
-	}
-        ++ptr;
-      }
-    }
-    for (auto& parent : tmp_new_parents) {
-      if (parent < ivnum_) {
-        heap.lazyIncrement(parent, 1);
-      }
-      auto ptr = get_oe_begin(vertex_t(parent));
-      auto end = get_oe_end(vertex_t(parent));
-      while (ptr != end) {
-	auto sibling = ptr->neighbor.GetValue();
-	if (sibling < ivnum_ && sibling != new_node) {
-          heap.lazyIncrement(sibling, 1);
-	}
-        ++ptr;
-      }
-    }
-  }
-
-  void gorder_directed(uint32_t w) {
-    if (load_strategy != LoadStrategy::kBothOutIn) {
-      LOG(INFO) << "BothOutIn is expected";
-      return ;
-    }
-
-    std::vector<vid_t> order;
-    order.reserve(ivnum_);
-    gorder::UnitHeap heap(ivnum_);
-    std::vector<vid_t> isolates;
-
-    for (vid_t i = 0; i < ivnum_; ++i) {
-      int ideg = this->GetLocalInDegree(vertex_t(i));
-      int deg = ideg + this->GetLocalOutDegree(vertex_t(i));
-
-      if (deg == 0) {
-        isolates.push_back(i);
-      } else {
-        heap.InsertElement(i, ideg);
-      }
-    }
-
-    heap.ReConstruct();
-
-    vid_t hub = heap.top;
-    order.push_back(hub);
-    heap.DeleteElement(hub);
-
-    move_window_d(heap, hub, hub);
-
-    while (heap.heapsize > 0) {
-      vid_t new_node = heap.ExtractMax();
-      CHECK_LT(new_node, ivnum_);
-      order.push_back(new_node);
-      vid_t old_node = new_node;
-      if (order.size() > w) {
-        old_node = order[order.size() - w - 1];
-      }
-      move_window_d(heap, new_node, old_node);
-    }
-
-    order.insert(order.end(), isolates.begin(), isolates.end());
-    std::vector<vid_t> new_lid(ivnum_);
-    for (vid_t i = 0; i < ivnum_; ++i) {
-      new_lid[order[i]] = i;
-    }
-
-    Reorder(new_lid);
-  }
-
-  void move_window_ud(gorder::UnitHeap& heap, vid_t new_node, vid_t old_node) {
-    auto old_parent = get_oe_begin(vertex_t(old_node));
-    auto old_parent_end = get_oe_end(vertex_t(old_node));
-    auto new_parent = get_oe_begin(vertex_t(new_node));
-    auto new_parent_end = get_oe_end(vertex_t(new_node));
-
-    if (old_node == new_node) {
-      old_parent = old_parent_end;
-    } else {
-      if (static_cast<uint64_t>(this->GetLocalOutDegree(vertex_t(old_node))) <= heap.huge) {
-        auto ptr = get_oe_begin(vertex_t(old_node));
-	auto end = get_oe_end(vertex_t(old_node));
-	while (ptr != end) {
-          auto child = ptr->neighbor.GetValue();
-	  if (child < ivnum_) {
-            heap.lazyIncrement(child, -1);
-	  }
-	  ++ptr;
-	}
-      }
-    }
-
-    std::vector<vid_t> tmp_old_parents, tmp_new_parents;
-    while (true) {
-      int factor = -1;
-      if (old_parent == old_parent_end) {
-        if (new_parent == new_parent_end) break;
-	factor = 1;
-      } else if (new_parent != new_parent_end) {
-        if (new_parent->neighbor.GetValue() == old_parent->neighbor.GetValue()) {
-          ++old_parent; ++new_parent; continue;
-	}
-	if (new_parent->neighbor.GetValue() < old_parent->neighbor.GetValue()) {
-          factor = 1;
-	}
-      }
-
-      if (factor == -1) {
-        if (static_cast<uint64_t>(this->GetLocalOutDegree(old_parent->neighbor)) <= heap.huge) {
-          tmp_old_parents.push_back(old_parent->neighbor.GetValue());
-	}
-	++old_parent;
-      } else {
-        if (static_cast<uint64_t>(this->GetLocalOutDegree(new_parent->neighbor)) <= heap.huge) {
-          tmp_new_parents.push_back(new_parent->neighbor.GetValue());
-	}
-	++new_parent;
-      }
-    }
-
-    for (auto& parent : tmp_old_parents) {
-      if (parent >= ivnum_) {
-        auto ptr = get_ie_begin(vertex_t(parent));
-        auto end = get_ie_end(vertex_t(parent));
-        while (ptr != end) {
-          auto sibling = ptr->neighbor.GetValue();
-	  if (sibling != old_node) {
-            heap.lazyIncrement(sibling, -1);
-	  }
-          ++ptr;
-        }
-      } else {
-        heap.lazyIncrement(parent, -1);
-        auto ptr = get_oe_begin(vertex_t(parent));
-        auto end = get_oe_end(vertex_t(parent));
-        while (ptr != end) {
-          auto sibling = ptr->neighbor.GetValue();
-	  if (sibling < ivnum_ && sibling != old_node) {
-            heap.lazyIncrement(sibling, -1);
-	  }
-          ++ptr;
-        }
-      }
-    }
-
-    if (static_cast<uint64_t>(this->GetLocalOutDegree(vertex_t(new_node))) <= heap.huge) {
-      auto ptr = get_oe_begin(vertex_t(new_node));
-      auto end = get_oe_end(vertex_t(new_node));
-      while (ptr != end) {
-        auto child = ptr->neighbor.GetValue();
-	if (child < ivnum_) {
-          heap.lazyIncrement(child, 1);
-	}
-        ++ptr;
-      }
-    }
-    for (auto& parent : tmp_new_parents) {
-      if (parent >= ivnum_) {
-        auto ptr = get_ie_begin(vertex_t(parent));
-        auto end = get_ie_end(vertex_t(parent));
-        while (ptr != end) {
-          auto sibling = ptr->neighbor.GetValue();
-	  if (sibling != new_node) {
-            heap.lazyIncrement(sibling, 1);
-	  }
-          ++ptr;
-        }
-      } else {
-        heap.lazyIncrement(parent, 1);
-        auto ptr = get_oe_begin(vertex_t(parent));
-        auto end = get_oe_end(vertex_t(parent));
-        while (ptr != end) {
-          auto sibling = ptr->neighbor.GetValue();
-	  if (sibling < ivnum_ && sibling != new_node) {
-            heap.lazyIncrement(sibling, 1);
-	  }
-          ++ptr;
-        }
-      }
-    }
-  }
-
-  void gorder_undirected(uint32_t w) {
-    if (load_strategy != LoadStrategy::kOnlyOut) {
-      LOG(INFO) << "OnlyOut is expected";
-      return ;
-    }
-
-    std::vector<vid_t> order;
-    order.reserve(ivnum_);
-    gorder::UnitHeap heap(ivnum_);
-    std::vector<vid_t> isolates;
-
-    for (vid_t i = 0; i < ivnum_; ++i) {
-      int deg = this->GetLocalOutDegree(vertex_t(i));
-
-      if (deg == 0) {
-        isolates.push_back(i);
-      } else {
-        heap.InsertElement(i, deg);
-      }
-    }
-
-    heap.ReConstruct();
-
-    vid_t hub = heap.top;
-    order.push_back(hub);
-    heap.DeleteElement(hub);
-
-    move_window_ud(heap, hub, hub);
-
-    while (heap.heapsize > 0) {
-      vid_t new_node = heap.ExtractMax();
-      CHECK_LT(new_node, ivnum_);
-      order.push_back(new_node);
-      if (order.size() % 1000 == 0) {
-        LOG(INFO) << "[frag-" << this->fid() << "]: " << order.size() << " / " << ivnum_;
-      }
-      vid_t old_node = new_node;
-      if (order.size() > w) {
-        old_node = order[order.size() - w - 1];
-      }
-      move_window_ud(heap, new_node, old_node);
-    }
-
-    order.insert(order.end(), isolates.begin(), isolates.end());
-    std::vector<vid_t> new_lid(ivnum_);
-    for (vid_t i = 0; i < ivnum_; ++i) {
-      new_lid[order[i]] = i;
-    }
-
-    Reorder(new_lid);
-  }
-
-  void GOrder(uint32_t w) {
-    if (directed_) {
-      gorder_directed(w);
-    } else {
-      gorder_undirected(w);
-    }
+    base_t::Reorder(new_lid);
   }
 
   void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) override {
-    LOG(INFO) << "[frag-" << this->fid() << "] before reorder: " << this->GetId(vertex_t(0)) << ": " << this->GetLocalOutDegree(vertex_t(0)) << ", " << this->GetId(vertex_t(1)) << ": " << this->GetLocalOutDegree(vertex_t(1)) << ", " << this->GetId(vertex_t(2)) << ": " << this->GetLocalOutDegree(vertex_t(2));
-    if (conf.reordering_type == 1) {
-      ReorderByDegreeAsc();
-    } else if (conf.reordering_type == 2) {
-      ReorderByDegreeDesc();
-    } else if (conf.reordering_type >= 3 && conf.reordering_type <= 11) {
-      uint32_t w = static_cast<uint32_t>(conf.reordering_type - 2);
-      w = (4 << w);
-      GOrder(w);
-    }
-    LOG(INFO) << "[frag-" << this->fid() << "] after reorder: " << this->GetId(vertex_t(0)) << ": " << this->GetLocalOutDegree(vertex_t(0)) << ", " << this->GetId(vertex_t(1)) << ": " << this->GetLocalOutDegree(vertex_t(1)) << ", " << this->GetId(vertex_t(2)) << ": " << this->GetLocalOutDegree(vertex_t(2));
-
     base_t::PrepareToRunApp(comm_spec, conf);
     if (conf.need_split_edges_by_fragment && !splited_edges_by_fragment_) {
       splitEdgesByFragment();

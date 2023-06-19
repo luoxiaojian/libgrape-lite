@@ -32,8 +32,6 @@ struct PrepareConf {
   bool need_split_edges_by_fragment;
   bool need_mirror_info;
   bool need_build_device_vm;
-
-  int reordering_type;
 };
 
 /**

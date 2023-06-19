@@ -143,6 +143,31 @@ bool exists_file(const std::string& name) {
   return (stat(name.c_str(), &buffer) == 0);
 }
 
+template <typename INDEX_T, typename FUNC_T>
+void parallel_for(INDEX_T from, INDEX_T to, const FUNC_T& func,
+                  INDEX_T chunk = 1024) {
+  int num_threads = std::thread::hardware_concurrency();
+  std::atomic<INDEX_T> cur(from);
+  std::vector<std::thread> threads;
+  for (int i = 0; i < num_threads; ++i) {
+    threads.emplace_back([&]() {
+      while (true) {
+        INDEX_T start = std::min(cur.fetch_add(chunk), to);
+        INDEX_T end = std::min(start + chunk, to);
+        if (start == end) {
+          break;
+        }
+        while (start != end) {
+          func(start++);
+        }
+      }
+    });
+  }
+  for (auto& t : threads) {
+    t.join();
+  }
+}
+
 }  // namespace grape
 
 #endif  // GRAPE_UTIL_H_
