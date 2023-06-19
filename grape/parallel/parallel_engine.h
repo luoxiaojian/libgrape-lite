@@ -333,6 +333,7 @@ class ParallelEngine {
   inline void wordwise_iterate(VID_T begin, VID_T end, const Bitset& bitset,
                                VID_T offset, int tid,
                                const ITER_FUNC_T& iter_func) {
+#if 0
     for (VID_T vid = begin; vid < end; vid += 64) {
       Vertex<VID_T> v(vid);
       uint64_t word = bitset.get_word(vid - offset);
@@ -344,6 +345,16 @@ class ParallelEngine {
         word = word >> 1;
       }
     }
+#else
+    const uint64_t* bs_ptr = bitset.get_word_ptr(begin - offset);
+    for (VID_T vid = begin; vid < end; vid += 64) {
+      uint64_t word = *(bs_ptr++);
+      while (word) {
+        iter_func(tid, Vertex<VID_T>(vid + __builtin_ctzll(word)));
+	word &= (word - 1);
+      }
+    }
+#endif
   }
 
   template <typename ITER_FUNC_T, typename VID_T>

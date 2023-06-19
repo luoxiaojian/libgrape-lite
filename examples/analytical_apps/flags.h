@@ -47,6 +47,7 @@ DECLARE_bool(deserialize);
 DECLARE_string(serialization_prefix);
 
 DECLARE_int32(app_concurrency);
+DECLARE_int32(reordering_type);
 
 DECLARE_string(lb);
 #endif  // EXAMPLES_ANALYTICAL_APPS_FLAGS_H_

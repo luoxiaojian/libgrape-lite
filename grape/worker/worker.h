@@ -141,6 +141,8 @@ class Worker {
 
   void Output(std::ostream& os) { context_->Output(os); }
 
+  PrepareConf& prepare_conf() { return prepare_conf_; }
+
  private:
   template <typename T = message_manager_t>
   typename std::enable_if<

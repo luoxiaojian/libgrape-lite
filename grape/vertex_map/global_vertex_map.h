@@ -308,10 +308,15 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
         GetLocalBuilder();
     indexers_.clear();
     indexers_.resize(comm_spec_.fnum());
+    double t0 = -GetCurrentTime();
     for (auto& id : oid_list) {
       builder.add_vertex(id);
     }
+    t0 += GetCurrentTime();
+    double t1 = -GetCurrentTime();
     builder.finish(*this);
+    t1 += GetCurrentTime();
+    LOG(INFO) << "[worker-" << comm_spec_.worker_id() << "] vertex_map reorder: t0 = " << t0 << ", t1 = " << t1;
   }
 
  private:
