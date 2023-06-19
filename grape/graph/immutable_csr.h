@@ -242,37 +242,13 @@ class ImmutableCSR {
     }
   }
 
-  template <typename FUNC_T>
-  void foreach_id(vid_t begin, vid_t end, const FUNC_T& func, vid_t chunk = 1024) {
-    std::vector<std::thread> threads;
-    int thread_num = std::thread::hardware_concurrency();
-    std::atomic<vid_t> cur(begin);
-    for (int i = 0; i < thread_num; ++i) {
-      threads.emplace_back([&]() {
-        while (true) {
-          vid_t from = std::min(cur.fetch_add(chunk), end);
-	  vid_t to = std::min(from + chunk, end);
-	  if (from == to) {
-	    break;
-	  }
-	  while (from != to) {
-	    func(from++);
-	  }
-	}
-      });
-    }
-    for (auto& thrd : threads) {
-      thrd.join();
-    }
-  }
-
   template <typename KEY_CONVERTER, typename VALUE_CONVERTER>
   void reorder(const KEY_CONVERTER& key_converter,
                const VALUE_CONVERTER& value_converter) {
     vid_t ivnum = vertex_num();
 
     std::vector<int> new_degree(ivnum);
-    foreach_id(0, ivnum, [&](vid_t i) {
+    parallel_for(static_cast<vid_t>(0), ivnum, [&](vid_t i) {
       new_degree[key_converter(i)] = degree(i);
     });
 
@@ -286,7 +262,7 @@ class ImmutableCSR {
     }
     new_offsets[ivnum] = ptr;
 
-    foreach_id(0, ivnum, [&](vid_t i) {
+    parallel_for(static_cast<vid_t>(0), ivnum, [&](vid_t i) {
       nbr_t* old_ptr = get_begin(i);
       nbr_t* old_end = get_end(i);
 

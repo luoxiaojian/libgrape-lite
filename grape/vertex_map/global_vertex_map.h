@@ -71,6 +71,7 @@ class GlobalVertexMapBuilder {
     int worker_id = comm_spec.worker_id();
     int worker_num = comm_spec.worker_num();
     fid_t fnum = comm_spec.fnum();
+#if 0
     {
       std::thread recv_thread([&]() {
         int src_worker_id = (worker_id + 1) % worker_num;
@@ -100,6 +101,52 @@ class GlobalVertexMapBuilder {
       send_thread.join();
       recv_thread.join();
     }
+#else
+    {
+      int thread_num = std::thread::hardware_concurrency();
+      int send_thread_num = std::min(std::max(thread_num / 2, 1), worker_num - 1);
+      int recv_thread_num = std::min(std::max(thread_num - send_thread_num, 1), worker_num - 1);
+      std::atomic<int> send_to(1), recv_from(1);
+      std::vector<std::thread> threads;
+      for (int i = 0; i != send_thread_num; ++i) {
+        threads.emplace_back([&]() {
+          while (true) {
+	    int dst = send_to.fetch_add(1);
+	    if (dst >= worker_num) {
+	      break;
+	    }
+	    int dst_worker_id = (worker_id + worker_num - dst) % worker_num;
+            for (fid_t fid = 0; fid < fnum; ++fid) {
+              if (comm_spec.FragToWorker(fid) != worker_id) {
+                continue;
+              }
+              sync_comm::Send(indexer_, dst_worker_id, 0, comm_spec.comm());
+            }
+	  }
+        });
+      }
+      for (int i = 0; i != recv_thread_num; ++i) {
+        threads.emplace_back([&]() {
+          while (true) {
+	    int src = recv_from.fetch_add(1);
+	    if (src >= worker_num) {
+	      break;
+	    }
+	    int src_worker_id = (worker_id + src) % worker_num;
+            for (fid_t fid = 0; fid < fnum; ++fid) {
+              if (comm_spec.FragToWorker(fid) != src_worker_id) {
+                continue;
+              }
+              sync_comm::Recv(vertex_map.indexers_[fid], src_worker_id, 0, comm_spec.comm());
+            }
+	  }
+        });
+      }
+      for (auto& thrd : threads) {
+        thrd.join();
+      }
+    }
+#endif
   }
 
  private:
@@ -308,15 +355,10 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
         GetLocalBuilder();
     indexers_.clear();
     indexers_.resize(comm_spec_.fnum());
-    double t0 = -GetCurrentTime();
     for (auto& id : oid_list) {
       builder.add_vertex(id);
     }
-    t0 += GetCurrentTime();
-    double t1 = -GetCurrentTime();
     builder.finish(*this);
-    t1 += GetCurrentTime();
-    LOG(INFO) << "[worker-" << comm_spec_.worker_id() << "] vertex_map reorder: t0 = " << t0 << ", t1 = " << t1;
   }
 
  private:

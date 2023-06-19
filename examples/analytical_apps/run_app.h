@@ -99,11 +99,14 @@ template <typename FRAG_T, typename APP_T, typename... Args>
 void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
              const CommSpec& comm_spec, const ParallelEngineSpec& spec,
              const std::string& out_prefix, Args... args) {
+  MPI_Barrier(comm_spec.comm());
   timer_next("load application");
   auto worker = APP_T::CreateWorker(app, fragment);
   worker->Init(comm_spec, spec);
+  MPI_Barrier(comm_spec.comm());
   timer_next("run algorithm");
   worker->Query(std::forward<Args>(args)...);
+  MPI_Barrier(comm_spec.comm());
   timer_next("print output");
 
   if (!out_prefix.empty()) {
@@ -119,6 +122,7 @@ void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
     VLOG(1) << "Worker-" << comm_spec.worker_id() << " finished without output";
   }
   worker->Finalize();
+  MPI_Barrier(comm_spec.comm());
   timer_end();
 }
 

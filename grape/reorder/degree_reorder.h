@@ -45,18 +45,19 @@ class DegreeReorder : public ReorderBase<FRAG_T> {
 
  public:
   void Reorder(FRAG_T& frag) override {
-    std::vector<std::pair<vertex_t, int>> vertex_degree;
-    for (auto v : frag.InnerVertices()) {
-      vertex_degree.emplace_back(
-          v, frag.GetLocalOutDegree(v) + frag.GetLocalInDegree(v));
-    }
+    vid_t ivnum = frag.GetInnerVerticesNum();
+    std::vector<std::pair<vertex_t, int>> vertex_degree(ivnum);
+    parallel_for(static_cast<vid_t>(0), ivnum, [&](vid_t v) {
+      vertex_degree[v].first = vertex_t(v);
+      vertex_degree[v].second = frag.GetLocalOutDegree(vertex_t(v)) + frag.GetLocalInDegree(vertex_t(v));
+    });
+
     std::sort(vertex_degree.begin(), vertex_degree.end(), COMPARER_T());
 
-    std::vector<vertex_t> vertex_ranking;
-    vertex_ranking.reserve(frag.GetInnerVerticesNum());
-    for (auto& vd : vertex_degree) {
-      vertex_ranking.push_back(vd.first);
-    }
+    std::vector<vertex_t> vertex_ranking(ivnum);
+    parallel_for(static_cast<vid_t>(0), ivnum, [&](vid_t v) {
+      vertex_ranking[v] = vertex_degree[v].first;
+    });
 
     frag.Reorder(vertex_ranking);
   }
