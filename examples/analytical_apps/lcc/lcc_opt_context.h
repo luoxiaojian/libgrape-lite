@@ -104,7 +104,7 @@ class memory_pool : public ::grape::Allocator<T> {
     return ret;
   }
 #else
-  T* align_to(T* input, size_t bytes = 16) {
+  T* align_to(T* input, size_t bytes = 32) {
     size_t ptr_val = reinterpret_cast<size_t>(input);
     ptr_val = (ptr_val + bytes - 1) / bytes * bytes;
     return reinterpret_cast<T*>(ptr_val);
@@ -143,13 +143,15 @@ class LCCOptContext : public VertexDataContext<FRAG_T, double> {
   explicit LCCOptContext(const FRAG_T& fragment)
       : VertexDataContext<FRAG_T, double>(fragment) {}
 
-  void Init(ParallelMessageManagerOpt& messages) {
+  void Init(ParallelMessageManagerOpt& messages, const std::string& name = "simd") {
     auto& frag = this->fragment();
     auto vertices = frag.Vertices();
 
     global_degree.Init(vertices);
     complete_neighbor.Init(vertices);
     tricnt.Init(vertices, 0);
+
+    intersection_name = name;
   }
 
   void Output(std::ostream& os) override {
@@ -178,6 +180,8 @@ class LCCOptContext : public VertexDataContext<FRAG_T, double> {
   int stage = 0;
 
   size_t degree_x = 0;
+
+  std::string intersection_name;
 };
 
 }  // namespace grape

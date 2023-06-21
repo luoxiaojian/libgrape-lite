@@ -23,6 +23,7 @@ limitations under the License.
 #include "lcc/lcc_beta.h"
 #include "lcc/lcc_directed.h"
 #include "lcc/lcc_opt.h"
+#include "lcc/lcc_opt_l.h"
 #include "pagerank/pagerank_directed.h"
 #include "pagerank/pagerank_opt.h"
 #include "pagerank/pagerank_push_opt.h"
@@ -30,10 +31,15 @@ limitations under the License.
 #include "sssp/sssp_opt.h"
 #include "wcc/wcc_opt.h"
 
+#include "grape/simd/intersection.h"
+
 namespace grape {
 
 template <typename FRAG_T>
 using LCC64 = LCCOpt<FRAG_T, uint64_t>;
+
+template <typename FRAG_T>
+using LCC64L = LCCOptL<FRAG_T, uint64_t>;
 
 template <typename FRAG_T>
 using LCCBeta64 = LCCBeta<FRAG_T, uint64_t>;
@@ -43,6 +49,9 @@ using LCCDirected64 = LCCDirected<FRAG_T, uint64_t>;
 
 template <typename FRAG_T>
 using LCC32 = LCCOpt<FRAG_T, uint32_t>;
+
+template <typename FRAG_T>
+using LCC32L = LCCOptL<FRAG_T, uint32_t>;
 
 template <typename FRAG_T>
 using LCCBeta32 = LCCBeta<FRAG_T, uint32_t>;
@@ -136,6 +145,69 @@ void RunUndirectedPageRank(const CommSpec& comm_spec,
     }
   }
 }
+
+template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
+          LoadStrategy load_strategy>
+void RunMultipleLCC(const CommSpec& comm_spec,
+                    const std::string& out_prefix, int fnum,
+                    const ParallelEngineSpec& spec) {
+  timer_next("load graph");
+  LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
+  graph_spec.set_directed(FLAGS_directed);
+  graph_spec.set_rebalance(FLAGS_rebalance, FLAGS_rebalance_vertex_factor);
+  if (FLAGS_deserialize) {
+    graph_spec.set_deserialize(true, FLAGS_serialization_prefix);
+  } else if (FLAGS_serialize) {
+    graph_spec.set_serialize(true, FLAGS_serialization_prefix);
+  }
+  CHECK(FLAGS_segmented_partition);
+  using VertexMapType =
+      GlobalVertexMap<OID_T, VID_T, SegmentedPartitioner<OID_T>>;
+  using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
+                                          load_strategy, VertexMapType>;
+  std::shared_ptr<FRAG_T> fragment =
+      LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+
+  // std::vector<std::string> intersection_list = SIMDCompressionLib::IntersectionFactory::allNames();
+  std::vector<std::string> intersection_list = {"avx512_conflict", "avx512_asm"};
+  std::set<std::string> ignore_list = {"simdgalloping", "v1", "v3"};
+
+  if (FLAGS_edge_num >
+      static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
+    using AppType = LCC64<FRAG_T>;
+    auto app = std::make_shared<AppType>();
+
+    DoQuery<FRAG_T, AppType>(fragment, app, comm_spec, spec, out_prefix);
+
+    using AppTypeL = LCC64L<FRAG_T>;
+    auto appl = std::make_shared<AppTypeL>();
+
+    for (auto& name : intersection_list) {
+      if (ignore_list.find(name) != ignore_list.end()) {
+        continue;
+      }
+
+      DoQuery<FRAG_T, AppTypeL, std::string>(fragment, appl, comm_spec, spec, out_prefix, name);
+    }
+  } else {
+    using AppType = LCC32<FRAG_T>;
+    auto app = std::make_shared<AppType>();
+
+    DoQuery<FRAG_T, AppType>(fragment, app, comm_spec, spec, out_prefix);
+
+    using AppTypeL = LCC32L<FRAG_T>;
+    auto appl = std::make_shared<AppTypeL>();
+
+    for (auto& name : intersection_list) {
+      if (ignore_list.find(name) != ignore_list.end()) {
+        continue;
+      }
+
+      DoQuery<FRAG_T, AppTypeL, std::string>(fragment, appl, comm_spec, spec, out_prefix, name);
+    }
+  }
+}
+
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
 void RunOpt() {
@@ -232,11 +304,17 @@ void RunOpt() {
       double avg_deg = static_cast<double>(FLAGS_edge_num) /
                        static_cast<double>(FLAGS_vertex_num);
       if (avg_deg > 80) {
+	//       LOG(INFO) << "dense";
+        // CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+        //                CDLPOptUDDense, int>(comm_spec, out_prefix, fnum, spec,
+        //                                     FLAGS_cdlp_mr);
+	LOG(INFO) << "dense -> normal";
         CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                       CDLPOptUDDense, int>(comm_spec, out_prefix, fnum, spec,
-                                            FLAGS_cdlp_mr);
+                       CDLPOptUD, int>(comm_spec, out_prefix, fnum, spec,
+                                       FLAGS_cdlp_mr);
 
       } else {
+	      LOG(INFO) << "normal";
         CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                        CDLPOptUD, int>(comm_spec, out_prefix, fnum, spec,
                                        FLAGS_cdlp_mr);
@@ -265,6 +343,7 @@ void RunOpt() {
       FLAGS_segmented_partition = true;
       FLAGS_rebalance = true;
       FLAGS_rebalance_vertex_factor = 0;
+#if 0
       if (FLAGS_edge_num >
           static_cast<int64_t>(std::numeric_limits<uint32_t>::max()) * 2) {
         CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
@@ -273,6 +352,9 @@ void RunOpt() {
         CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                        LCC32>(comm_spec, out_prefix, fnum, spec);
       }
+#else
+      RunMultipleLCC<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut>(comm_spec, out_prefix, fnum, spec);
+#endif
     }
   } else if (name == "lcc_beta") {
     CHECK(!FLAGS_directed);

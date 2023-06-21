@@ -46,11 +46,11 @@ int main(int argc, char* argv[]) {
       grape::RunOpt<int64_t, uint32_t, grape::EmptyType, grape::EmptyType>();
     }
   } else {
-    if (name.find("sssp") != std::string::npos) {
-      grape::Run<int64_t, uint32_t, grape::EmptyType, double>();
-    } else {
-      grape::Run<int64_t, uint32_t, grape::EmptyType, grape::EmptyType>();
-    }
+    // if (name.find("sssp") != std::string::npos) {
+    //   grape::Run<int64_t, uint32_t, grape::EmptyType, double>();
+    // } else {
+    //   grape::Run<int64_t, uint32_t, grape::EmptyType, grape::EmptyType>();
+    // }
   }
 
   grape::Finalize();

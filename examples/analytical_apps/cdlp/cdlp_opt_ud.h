@@ -54,6 +54,7 @@ class CDLPOptUD : public ParallelAppBase<FRAG_T, CDLPOptContext<FRAG_T>,
       auto es = frag.GetOutgoingAdjList(v);
       if (!es.Empty()) {
         label_t new_label = update_label_fast_jump<label_t>(es, ctx.labels);
+        // label_t new_label = update_label_fast<label_t>(es, ctx.labels);
         if (ctx.labels[v] != new_label) {
           new_ilabels[v] = new_label;
           ctx.changed.Insert(v);

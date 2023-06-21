@@ -27,29 +27,17 @@ namespace grape {
  * @tparam FRAG_T
  */
 template <typename FRAG_T>
-#ifdef GID_AS_LABEL
 class CDLPOptContext
-    : public VertexDataContext<FRAG_T, typename FRAG_T::vid_t> {
-#else
-class CDLPOptContext
-    : public VertexDataContext<FRAG_T, typename FRAG_T::oid_t> {
-#endif
+    : public VertexDataContext<FRAG_T, int> {
 
  public:
   using oid_t = typename FRAG_T::oid_t;
   using vid_t = typename FRAG_T::vid_t;
 
-#ifdef GID_AS_LABEL
-  using label_t = vid_t;
-#else
-  using label_t = oid_t;
-#endif
+  using label_t = int;
+
   explicit CDLPOptContext(const FRAG_T& fragment)
-#ifdef GID_AS_LABEL
-      : VertexDataContext<FRAG_T, typename FRAG_T::vid_t>(fragment, true),
-#else
-      : VertexDataContext<FRAG_T, typename FRAG_T::oid_t>(fragment, true),
-#endif
+      : VertexDataContext<FRAG_T, label_t>(fragment, true),
         labels(this->data()) {
   }
 
