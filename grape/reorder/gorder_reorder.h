@@ -262,7 +262,7 @@ class GOrderReorder<
       if (parent >= ivnum) {
         for (auto& e : fragment.GetIncomingAdjList(vertex_t(parent))) {
           auto sibling = e.get_neighbor().GetValue();
-          if (sibling != old_node) {
+          if (sibling < ivnum && sibling != old_node) {
             heap.lazyIncrement(sibling, -1);
           }
         }
@@ -291,7 +291,7 @@ class GOrderReorder<
       if (parent >= ivnum) {
         for (auto& e : fragment.GetIncomingAdjList(vertex_t(parent))) {
           auto sibling = e.get_neighbor().GetValue();
-          if (sibling != new_node) {
+          if (sibling < ivnum && sibling != new_node) {
             heap.lazyIncrement(sibling, 1);
           }
         }
