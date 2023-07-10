@@ -43,10 +43,8 @@ limitations under the License.
 #include "grape/util.h"
 #include "grape/utils/vertex_array.h"
 #include "grape/vertex_map/global_vertex_map.h"
-#include "grape/worker/comm_spec.h"
 
 namespace grape {
-class CommSpec;
 class OutArchive;
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
@@ -409,8 +407,8 @@ class ImmutableEdgecutFragment
     io_adaptor->Close();
   }
 
-  void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) override {
-    base_t::PrepareToRunApp(comm_spec, conf);
+  void PrepareToRunApp(PrepareConf conf, CommType& comm) override {
+    base_t::PrepareToRunApp(conf, comm);
     if (conf.need_split_edges_by_fragment && !splited_edges_by_fragment_) {
       splitEdgesByFragment();
       splited_edges_by_fragment_ = true;

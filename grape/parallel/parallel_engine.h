@@ -26,7 +26,6 @@ limitations under the License.
 #include "grape/parallel/parallel_engine_spec.h"
 #include "grape/utils/thread_pool.h"
 #include "grape/utils/vertex_set.h"
-#include "grape/worker/comm_spec.h"
 
 namespace grape {
 class ParallelEngine {

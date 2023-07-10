@@ -33,7 +33,6 @@ limitations under the License.
 #include "grape/serialization/in_archive.h"
 #include "grape/serialization/out_archive.h"
 #include "grape/types.h"
-#include "grape/worker/comm_spec.h"
 
 namespace grape {
 

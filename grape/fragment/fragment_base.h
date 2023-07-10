@@ -22,7 +22,6 @@ limitations under the License.
 #include "grape/graph/adj_list.h"
 #include "grape/graph/edge.h"
 #include "grape/graph/vertex.h"
-#include "grape/worker/comm_spec.h"
 
 namespace grape {
 
@@ -93,7 +92,7 @@ class FragmentBase {
    * @param strategy
    * @param need_split_edge
    */
-  virtual void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) = 0;
+  virtual void PrepareToRunApp(PrepareConf conf, CommType& comm) = 0;
 
   /**
    * @brief Returns true if the fragment is directed, false otherwise.

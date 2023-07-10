@@ -20,10 +20,11 @@ limitations under the License.
 #include <thread>
 #include <vector>
 
-#include "grape/communication/sync_comm.h"
+#include "grape/communication/mpi_comm.h"
 #include "grape/parallel/message_manager_base.h"
 #include "grape/utils/vertex_array.h"
-#include "grape/worker/comm_spec.h"
+
+#ifdef USE_MPI
 
 namespace grape {
 
@@ -121,22 +122,17 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       batch_shuffle_message_manager_impl::ArchiveShuffle<FRAG_T>;
 
  public:
-  BatchShuffleMessageManager() : comm_(NULL_COMM) {}
-  ~BatchShuffleMessageManager() {
-    if (ValidComm(comm_)) {
-      MPI_Comm_free(&comm_);
-    }
-  }
+  BatchShuffleMessageManager() {}
+  ~BatchShuffleMessageManager() {}
 
   /**
    * @brief Inherit
    */
-  void Init(MPI_Comm comm) override {
-    MPI_Comm_dup(comm, &comm_);
+  void Init(MPIComm&& comm) override {
+    comm_ = std::move(comm);
 
-    comm_spec_.Init(comm_);
-    fid_ = comm_spec_.fid();
-    fnum_ = comm_spec_.fnum();
+    fid_ = comm_.rank();
+    fnum_ = comm_.size();
 
     remaining_reqs_.resize(fnum_);
 
@@ -173,11 +169,11 @@ class BatchShuffleMessageManager : public MessageManagerBase {
    */
   bool ToTerminate() override {
     int flag = force_terminate_ ? 1 : 0;
-    int ret;
-    MPI_Allreduce(&flag, &ret, 1, MPI_INT, MPI_SUM, comm_);
+    int ret = comm_.sum(flag);
     if (ret > 0) {
       terminate_info_.success = false;
-      sync_comm::AllGather(terminate_info_.info, comm_);
+      sync_comm::Gather(comm_, terminate_info_.info[fid_],
+                        terminate_info_.info);
       return true;
     }
     return to_terminate_;
@@ -204,13 +200,9 @@ class BatchShuffleMessageManager : public MessageManagerBase {
 
     {
       size_t v = 1;
-      MPI_Send(&v, sizeof(size_t), MPI_CHAR, comm_spec_.FragToWorker(fid_), 1,
-               comm_);
+      MPI_Send(&v, sizeof(size_t), MPI_CHAR, fid_, 1, comm_.comm());
       recv_thread_.join();
     }
-
-    MPI_Comm_free(&comm_);
-    comm_ = NULL_COMM;
   }
 
   /**
@@ -292,7 +284,7 @@ class BatchShuffleMessageManager : public MessageManagerBase {
    */
   void ForceTerminate(const std::string& terminate_info) override {
     force_terminate_ = true;
-    terminate_info_.info[comm_spec_.fid()] = terminate_info;
+    terminate_info_.info[fid_] = terminate_info;
   }
 
   /**
@@ -307,9 +299,8 @@ class BatchShuffleMessageManager : public MessageManagerBase {
     std::vector<MPI_Request> recv_thread_reqs(fnum_);
     std::vector<size_t> numbers(fnum_);
     for (fid_t src_fid = 0; src_fid < fnum_; ++src_fid) {
-      MPI_Irecv(&numbers[src_fid], sizeof(size_t), MPI_CHAR,
-                comm_spec_.FragToWorker(src_fid), 1, comm_,
-                &recv_thread_reqs[src_fid]);
+      MPI_Irecv(&numbers[src_fid], sizeof(size_t), MPI_CHAR, src_fid, 1,
+                comm_.comm(), &recv_thread_reqs[src_fid]);
     }
     int index;
     MPI_Waitany(fnum_, &recv_thread_reqs[0], &index, MPI_STATUS_IGNORE);
@@ -341,7 +332,7 @@ class BatchShuffleMessageManager : public MessageManagerBase {
           for (auto v : v_set) {
             arc << data[v];
           }
-          out_archive_sizes[comm_spec_.FragToWorker(got)] = arc.GetSize();
+          out_archive_sizes[got] = arc.GetSize();
         }
       });
     }
@@ -349,16 +340,17 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       thrd.join();
     }
 
-    sync_comm::AllToAll(out_archive_sizes, in_archive_sizes, comm_spec_.comm());
+    MPI_Alltoall(out_archive_sizes.data(), sizeof(size_t), MPI_CHAR,
+                 in_archive_sizes.data(), sizeof(size_t), MPI_CHAR,
+                 comm_.comm());
 
     for (fid_t i = 1; i < fnum_; ++i) {
       fid_t src_fid = (fid_ + fnum_ - i) % fnum_;
       auto& buffer = shuffle_in_buffers_[src_fid];
       buffer.resize(in_archive_sizes[src_fid]);
       int old_req_num = recv_reqs_.size();
-      sync_comm::irecv_buffer<char>(buffer.data(), buffer.size(),
-                                    comm_spec_.FragToWorker(src_fid), 0, comm_,
-                                    recv_reqs_);
+      mpi_comm_ops::irecv_buffer<char>(buffer.data(), buffer.size(), src_fid, 0,
+                                       comm_.comm(), recv_reqs_);
       int new_req_num = recv_reqs_.size();
       recv_from_.resize(new_req_num, src_fid);
       remaining_reqs_[src_fid] = new_req_num - old_req_num;
@@ -380,7 +372,7 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       auto range = frag.OuterVertices(src_fid);
       int old_req_num = recv_reqs_.size();
       int new_req_num =
-          sync_comm::chunk_num<char>(range.size() * sizeof(DATA_T)) +
+          mpi_comm_ops::chunk_num<char>(range.size() * sizeof(DATA_T)) +
           old_req_num;
       recv_reqs_.resize(new_req_num);
       req_offsets[src_fid] = old_req_num;
@@ -400,10 +392,10 @@ class BatchShuffleMessageManager : public MessageManagerBase {
           }
           fid_t src_fid = (fid_ + fnum_ - got) % fnum_;
           auto range = frag.OuterVertices(src_fid);
-          sync_comm::irecv_buffer<char>(
+          mpi_comm_ops::irecv_buffer<char>(
               reinterpret_cast<char*>(&data[*range.begin()]),
-              range.size() * sizeof(DATA_T), comm_spec_.FragToWorker(src_fid),
-              0, comm_, &recv_reqs_[req_offsets[src_fid]]);
+              range.size() * sizeof(DATA_T), src_fid, 0, comm_.comm(),
+              &recv_reqs_[req_offsets[src_fid]]);
         }
       });
     }
@@ -422,9 +414,8 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       auto& buffer = shuffle_in_buffers_[src_fid];
       buffer.resize(frag.OuterVertices(src_fid).size() * sizeof(DATA_T));
       int old_req_num = recv_reqs_.size();
-      sync_comm::irecv_buffer<char>(buffer.data(), buffer.size(),
-                                    comm_spec_.FragToWorker(src_fid), 0, comm_,
-                                    recv_reqs_);
+      mpi_comm_ops::irecv_buffer<char>(buffer.data(), buffer.size(), src_fid, 0,
+                                       comm_.comm(), recv_reqs_);
       int new_req_num = recv_reqs_.size();
       recv_from_.resize(new_req_num, src_fid);
       remaining_reqs_[src_fid] = new_req_num - old_req_num;
@@ -446,9 +437,8 @@ class BatchShuffleMessageManager : public MessageManagerBase {
       fid_t got;
       while (sending_queue_.Get(got)) {
         auto& vec = shuffle_out_buffers_[got];
-        sync_comm::isend_buffer<char>(vec.data(), vec.size(),
-                                      comm_spec_.FragToWorker(got), 0, comm_,
-                                      send_reqs_);
+        mpi_comm_ops::isend_buffer<char>(vec.data(), vec.size(), got, 0,
+                                         comm_.comm(), send_reqs_);
       }
     });
     if (thread_num < fnum) {
@@ -509,9 +499,8 @@ class BatchShuffleMessageManager : public MessageManagerBase {
     for (fid_t i = 1; i < fnum_; ++i) {
       fid_t dst_fid = (i + fid_) % fnum_;
       auto& arc = shuffle_out_archives_[dst_fid];
-      sync_comm::isend_buffer<char>(arc.GetBuffer(), arc.GetSize(),
-                                    comm_spec_.FragToWorker(dst_fid), 0, comm_,
-                                    send_reqs_);
+      mpi_comm_ops::isend_buffer<char>(arc.GetBuffer(), arc.GetSize(), dst_fid,
+                                       0, comm_.comm(), send_reqs_);
       msg_size_ += arc.GetSize();
     }
   }
@@ -541,9 +530,6 @@ class BatchShuffleMessageManager : public MessageManagerBase {
 
   fid_t fid_;
   fid_t fnum_;
-  CommSpec comm_spec_;
-
-  MPI_Comm comm_;
 
   std::vector<std::vector<char>> shuffle_out_buffers_;
   std::vector<InArchive> shuffle_out_archives_;
@@ -568,8 +554,12 @@ class BatchShuffleMessageManager : public MessageManagerBase {
   TerminateInfo terminate_info_;
 
   BlockingQueue<fid_t> sending_queue_;
+
+  MPIComm comm_;
 };
 
 }  // namespace grape
+
+#endif
 
 #endif  // GRAPE_PARALLEL_BATCH_SHUFFLE_MESSAGE_MANAGER_H_

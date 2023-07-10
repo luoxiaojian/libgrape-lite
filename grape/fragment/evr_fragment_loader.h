@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef GRAPE_FRAGMENT_EV_FRAGMENT_LOADER_H_
-#define GRAPE_FRAGMENT_EV_FRAGMENT_LOADER_H_
+#ifndef GRAPE_FRAGMENT_EVR_FRAGMENT_LOADER_H_
+#define GRAPE_FRAGMENT_EVR_FRAGMENT_LOADER_H_
 
 #include <memory>
 #include <string>
@@ -31,7 +31,7 @@ limitations under the License.
 namespace grape {
 
 /**
- * @brief EVFragmentLoader is a loader to load fragments from separated
+ * @brief EVRFragmentLoader is a loader to load fragments from separated
  * efile and vfile.
  *
  * @tparam FRAG_T Fragment type.
@@ -42,7 +42,7 @@ template <typename FRAG_T, typename IOADAPTOR_T = LocalIOAdaptor,
           typename LINE_PARSER_T =
               TSVLineParser<typename FRAG_T::oid_t, typename FRAG_T::vdata_t,
                             typename FRAG_T::edata_t>>
-class EVFragmentLoader {
+class EVRFragmentLoader {
   using fragment_t = FRAG_T;
   using oid_t = typename fragment_t::oid_t;
   using vid_t = typename fragment_t::vid_t;
@@ -50,7 +50,10 @@ class EVFragmentLoader {
   using edata_t = typename fragment_t::edata_t;
 
   using vertex_map_t = typename fragment_t::vertex_map_t;
-  using partitioner_t = typename vertex_map_t::partitioner_t;
+  using partitioner_t = RfilePartitioner<oid_t>;
+  static_assert(
+      std::is_same<typename vertex_map_t::partitioner_t, partitioner_t>::value,
+      "Partitioner type not match!");
   using io_adaptor_t = IOADAPTOR_T;
   using line_parser_t = LINE_PARSER_T;
 
@@ -61,15 +64,17 @@ class EVFragmentLoader {
                 "LineParser type is invalid");
 
  public:
-  EVFragmentLoader() {}
+  EVRFragmentLoader() {}
 
-  ~EVFragmentLoader() = default;
+  ~EVRFragmentLoader() = default;
 
   std::shared_ptr<fragment_t> LoadFragment(CommType& comm,
                                            const std::string& efile,
                                            const std::string& vfile,
+                                           const std::string& rfile,
                                            const LoadGraphSpec& spec) {
     BasicFragmentLoader<fragment_t, io_adaptor_t> basic_fragment_loader(comm);
+
     std::shared_ptr<fragment_t> fragment(nullptr);
     CHECK(!spec.rebalance);
     if (spec.deserialize) {
@@ -120,7 +125,8 @@ class EVFragmentLoader {
       io_adaptor->Close();
     }
 
-    partitioner_t partitioner(comm.size(), id_list);
+    partitioner_t partitioner;
+    partitioner.Init(rfile);
 
     basic_fragment_loader.SetPartitioner(std::move(partitioner));
 
@@ -184,4 +190,4 @@ class EVFragmentLoader {
 
 }  // namespace grape
 
-#endif  // GRAPE_FRAGMENT_EV_FRAGMENT_LOADER_H_
+#endif  // GRAPE_FRAGMENT_EVR_FRAGMENT_LOADER_H_

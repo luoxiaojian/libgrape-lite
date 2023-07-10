@@ -19,6 +19,8 @@ limitations under the License.
 
 #include "pagerank/pagerank_context.h"
 
+#ifdef USE_MPI
+
 namespace grape {
 
 /**
@@ -187,5 +189,7 @@ class PageRankDirected
 };
 
 }  // namespace grape
+
+#endif
 
 #endif  // EXAMPLES_ANALYTICAL_APPS_PAGERANK_PAGERANK_DIRECTED_H_

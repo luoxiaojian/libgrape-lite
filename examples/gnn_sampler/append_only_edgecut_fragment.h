@@ -25,6 +25,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include <grape/communication/comm.h>
 #include <grape/config.h>
 #include <grape/fragment/basic_fragment_loader.h>
 #include <grape/fragment/edgecut_fragment_base.h>
@@ -42,7 +43,6 @@ limitations under the License.
 #include <grape/utils/iterator_pair.h>
 #include <grape/utils/vertex_array.h>
 #include <grape/vertex_map/global_vertex_map.h>
-#include <grape/worker/comm_spec.h>
 
 #include "flat_hash_map/flat_hash_map.hpp"
 #include "fragment_indices.h"
@@ -489,9 +489,9 @@ class AppendOnlyEdgecutFragment
     fragment_indices_->Init(this);
   }
 
-  void ExtendFragment(std::vector<std::string>& edge_messages,
-                      const CommSpec& comm_spec, const LoadGraphSpec& spec) {
-    sync_comm::Bcast(edge_messages, kCoordinatorRank, comm_spec.comm());
+  void ExtendFragment(CommType& comm, std::vector<std::string>& edge_messages,
+                      const LoadGraphSpec& spec) {
+    sync_comm::Bcast(comm, edge_messages, kCoordinatorRank);
 
     if (edge_messages.empty()) {
       return;
@@ -713,7 +713,7 @@ class AppendOnlyEdgecutFragment
     initOuterVerticesOfFragment();
   }
 
-  void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) override {}
+  void PrepareToRunApp(PrepareConf conf, CommType& comm) override {}
 
   fid_t GetFragIdByGid(const vid_t& gid) const {
     return id_parser_.get_fragment_id(gid);

@@ -18,10 +18,17 @@ limitations under the License.
 
 #include <gflags/gflags_declare.h>
 
+#ifndef USE_MPI
+DECLARE_string(hostfile);
+DECLARE_int32(worker_id);
+DECLARE_int32(worker_num);
+#endif
+
 DECLARE_bool(directed);
 DECLARE_string(application);
 DECLARE_string(efile);
 DECLARE_string(vfile);
+DECLARE_string(rfile);
 DECLARE_string(out_prefix);
 DECLARE_string(jobid);
 

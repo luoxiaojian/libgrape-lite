@@ -16,8 +16,6 @@ limitations under the License.
 #ifndef GRAPE_PARALLEL_MESSAGE_MANAGER_BASE_H_
 #define GRAPE_PARALLEL_MESSAGE_MANAGER_BASE_H_
 
-#include <mpi.h>
-
 #include "grape/config.h"
 
 namespace grape {
@@ -50,7 +48,7 @@ class MessageManagerBase {
    *
    * @param comm MPI_Comm object.
    */
-  virtual void Init(MPI_Comm comm) = 0;
+  virtual void Init(CommType&& comm) = 0;
 
   /**
    * @brief This function will be called before Init step of applications.
