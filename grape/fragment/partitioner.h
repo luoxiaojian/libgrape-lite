@@ -266,6 +266,60 @@ class SegmentedPartitioner<std::string> {
   ska::flat_hash_map<oid_t, fid_t> o2f_;
 };
 
+template <typename OID_T>
+class RfilePartitioner {
+ public:
+  RfilePartitioner() = default;
+  ~RfilePartitioner() = default;
+
+  void Init(const std::string& rfname) {
+    o2f_.clear();
+    std::ifstream fin(rfname);
+    OID_T oid;
+    fid_t fid;
+    while (fin >> oid >> fid) {
+      o2f_.emplace(oid, fid);
+    }
+  }
+
+  inline fid_t GetPartitionId(const OID_T& oid) const { return o2f_.at(oid); }
+
+  void SetPartitionId(const OID_T& oid, fid_t fid) { o2f_[oid] = fid; }
+
+  RfilePartitioner& operator=(const RfilePartitioner& other) {
+    if (this == &other) {
+      return *this;
+    }
+    o2f_ = other.o2f_;
+    return *this;
+  }
+
+  RfilePartitioner& operator=(RfilePartitioner&& other) {
+    if (this == &other) {
+      return *this;
+    }
+    o2f_ = std::move(other.o2f_);
+    return *this;
+  }
+
+  template <typename IOADAPTOR_T>
+  void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+    InArchive arc;
+    arc << o2f_;
+    CHECK(writer->WriteArchive(arc));
+  }
+
+  template <typename IOADAPTOR_T>
+  void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+    OutArchive arc;
+    CHECK(reader->ReadArchive(arc));
+    arc >> o2f_;
+  }
+
+ private:
+  ska::flat_hash_map<OID_T, fid_t> o2f_;
+};
+
 }  // namespace grape
 
 #endif  // GRAPE_FRAGMENT_PARTITIONER_H_
