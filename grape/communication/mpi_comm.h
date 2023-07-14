@@ -238,18 +238,19 @@ class MPIComm {
 
   template <typename T>
   void gather(const T& input, std::vector<T>& output) {
-    static const int gather_tag = std::numeric_limits<int>::max() - 14;
-    InArchive arc;
-    arc << input;
+    static const int gather_tag = 10001;
     int worker_num = size();
     int worker_id = rank();
     std::thread send_thread([&]() {
+      InArchive arc;
+      arc << input;
       for (int i = 1; i < worker_num; ++i) {
         int dst_worker_id = (worker_id + i) % worker_num;
         send(dst_worker_id, arc.GetBuffer(), arc.GetSize(), gather_tag);
       }
     });
     std::thread recv_thread([&]() {
+      output.resize(worker_num);
       output[worker_id] = input;
       for (int i = 1; i < worker_num; ++i) {
         int src_worker_id = (worker_id + worker_num - i) % worker_num;
@@ -266,7 +267,7 @@ class MPIComm {
 
   template <typename T>
   void all_to_all(const std::vector<T>& input, std::vector<T>& output) {
-    static const int all_to_all_tag = std::numeric_limits<int>::max() - 13;
+    static const int all_to_all_tag = 10002;
     int worker_num = size();
     int worker_id = rank();
 
@@ -299,7 +300,7 @@ class MPIComm {
 
   template <class T>
   void bcast(T& val, int root) {
-    static const int bcast_tag = std::numeric_limits<int>::max() - 12;
+    static const int bcast_tag = 10003;
     InArchive arc;
     arc << val;
     int worker_num = size();
@@ -321,7 +322,7 @@ class MPIComm {
   MPI_Comm comm() const { return comm_; }
 
  private:
-  void initLocalInfo() {
+  __attribute__((no_sanitize_address)) void initLocalInfo() {
     char hn[MPI_MAX_PROCESSOR_NAME];
     int hn_len;
     MPI_Get_processor_name(hn, &hn_len);

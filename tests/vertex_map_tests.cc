@@ -33,6 +33,7 @@ limitations under the License.
 #include <grape/util.h>
 #include <grape/vertex_map/global_vertex_map.h>
 #include <grape/vertex_map/local_vertex_map.h>
+#include <grape/communication/comm.h>
 
 #include "sssp/sssp.h"
 #include "timer.h"
@@ -53,6 +54,10 @@ DEFINE_bool(segmented_partition, true,
 DEFINE_bool(rebalance, false, "whether to rebalance graph after loading.");
 DEFINE_int32(rebalance_vertex_factor, 0, "vertex factor of rebalancing.");
 DEFINE_bool(global_vertex_map, true, "whether to use global vertex map.");
+#ifndef USE_MPI
+DEFINE_string(hostfile, "", "path to hostfile");
+DEFINE_int32(worker_id, 0, "worker id");
+#endif
 
 void Init() {
   if (FLAGS_out_prefix.empty()) {
@@ -65,6 +70,11 @@ void Init() {
     mkdir(FLAGS_out_prefix.c_str(), 0777);
   }
 
+#ifdef USE_MPI
+  grape::MPIComm::get().init();
+#else
+  grape::TCPComm::get().init(FLAGS_hostfile, FLAGS_worker_id);
+#endif
   if (grape::CommType::get().rank() == grape::kCoordinatorRank) {
     VLOG(1) << "Workers of libgrape-lite initialized.";
   }

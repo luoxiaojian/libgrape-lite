@@ -81,6 +81,15 @@ class DefaultMessageManager : public MessageManagerBase {
     }
 
     for (fid_t i = 1; i < fnum_; ++i) {
+      fid_t dst_fid = (fid_ + fnum_ - i) % fnum_;
+      auto& arc = to_send_[dst_fid];
+      if (arc.Empty()) {
+        continue;
+      }
+      mpi_comm_.send(dst_fid, std::move(arc.GetBufferVector()), 0);
+    }
+
+    for (fid_t i = 1; i < fnum_; ++i) {
       fid_t src_fid = (fid_ + i) % fnum_;
       size_t length = lengths_in_[src_fid][fid_];
       if (length == 0) {
@@ -92,14 +101,6 @@ class DefaultMessageManager : public MessageManagerBase {
       arc = std::move(buf);
     }
 
-    for (fid_t i = 1; i < fnum_; ++i) {
-      fid_t dst_fid = (fid_ + fnum_ - i) % fnum_;
-      auto& arc = to_send_[dst_fid];
-      if (arc.Empty()) {
-        continue;
-      }
-      mpi_comm_.send(dst_fid, std::move(arc.GetBufferVector()), 0);
-    }
     to_recv_[fid_].Clear();
     if (!to_send_[fid_].Empty()) {
       to_recv_[fid_] = std::move(to_send_[fid_]);

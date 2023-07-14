@@ -27,6 +27,7 @@ limitations under the License.
 #include <grape/grape.h>
 #include <grape/util.h>
 #include <grape/vertex_map/global_vertex_map.h>
+#include <grape/communication/comm.h>
 
 #include "bfs/bfs.h"
 #include "bfs/bfs_auto.h"
@@ -62,6 +63,10 @@ DEFINE_double(pr_d, 0.85, "damping_factor of pagerank");
 DEFINE_int32(pr_mr, 10, "max rounds of pagerank");
 DEFINE_bool(directed, false, "input graph is directed or not.");
 DEFINE_string(application, "", "application name");
+#ifndef USE_MPI
+DEFINE_string(hostfile, "", "path to hostfile");
+DEFINE_int32(worker_id, 0, "worker id");
+#endif
 
 void Init() {
   if (FLAGS_out_prefix.empty()) {
@@ -74,6 +79,11 @@ void Init() {
     mkdir(FLAGS_out_prefix.c_str(), 0777);
   }
 
+#ifdef USE_MPI
+  grape::MPIComm::get().init();
+#else
+  grape::TCPComm::get().init(FLAGS_hostfile, FLAGS_worker_id);
+#endif
   if (grape::CommType::get().rank() == grape::kCoordinatorRank) {
     VLOG(1) << "Workers of libgrape-lite initialized.";
   }

@@ -391,7 +391,6 @@ class ParallelMessageManager : public MessageManagerBase {
     sending_queue_.SetProducerNum(1);
     send_thread_ = std::thread(
         [this](int msg_round) {
-          std::vector<MPI_Request> reqs;
           std::pair<fid_t, InArchive> item;
           while (sending_queue_.Get(item)) {
             if (item.second.GetSize() == 0) {
