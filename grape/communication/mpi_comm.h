@@ -86,7 +86,7 @@ class MPIComm {
 
   void send(int dst, const char* buf, size_t count, int tag) {
     size_t chunk_num = count / kChunkSize;
-    for (int i = 0; i < chunk_num; ++i) {
+    for (size_t i = 0; i < chunk_num; ++i) {
       MPI_Send(buf + i * kChunkSize, static_cast<int>(kChunkSize), MPI_CHAR,
                dst, tag, comm_);
     }
@@ -101,7 +101,7 @@ class MPIComm {
 
   void send(int dst, std::vector<char>&& vec, int tag) {
     size_t chunk_num = vec.size() / kChunkSize;
-    for (int i = 0; i < chunk_num; ++i) {
+    for (size_t i = 0; i < chunk_num; ++i) {
       MPI_Request req;
       MPI_Isend(vec.data() + i * kChunkSize, static_cast<int>(kChunkSize),
                 MPI_CHAR, dst, tag, comm_, &req);
@@ -142,7 +142,7 @@ class MPIComm {
       vec.resize(count + old_size);
       MPI_Recv(vec.data() + old_size, count, MPI_CHAR, src, tag, comm_,
                MPI_STATUS_IGNORE);
-      if (count < kChunkSize) {
+      if (count < static_cast<int>(kChunkSize)) {
         break;
       }
       MPI_Probe(src, tag, comm_, &status);
@@ -160,7 +160,7 @@ class MPIComm {
       vec.resize(count + old_size);
       MPI_Recv(vec.data() + old_size, count, MPI_CHAR, src, tag, comm_,
                MPI_STATUS_IGNORE);
-      if (count < kChunkSize) {
+      if (count < static_cast<int>(kChunkSize)) {
         break;
       }
       MPI_Probe(src, tag, comm_, &status);
@@ -179,7 +179,7 @@ class MPIComm {
       vec.resize(count + old_size);
       MPI_Recv(vec.data() + old_size, count, MPI_CHAR, src, tag, comm_,
                MPI_STATUS_IGNORE);
-      if (count < kChunkSize) {
+      if (count < static_cast<int>(kChunkSize)) {
         break;
       }
       MPI_Probe(src, tag, comm_, &status);
@@ -196,7 +196,7 @@ class MPIComm {
       vec.resize(count + old_size);
       MPI_Recv(vec.data() + old_size, count, MPI_CHAR, src, tag, comm_,
                MPI_STATUS_IGNORE);
-      if (count < kChunkSize) {
+      if (count < static_cast<int>(kChunkSize)) {
         break;
       }
       MPI_Probe(src, tag, comm_, &status);
@@ -213,7 +213,7 @@ class MPIComm {
     size_t chunk_num = count / kChunkSize;
     size_t remain = count % kChunkSize;
     if (input == output) {
-      for (int i = 0; i < chunk_num; ++i) {
+      for (size_t i = 0; i < chunk_num; ++i) {
         MPI_Allreduce(MPI_IN_PLACE, output + i * kChunkSize,
                       static_cast<int>(kChunkSize), MPI_INT64_T, MPI_SUM,
                       comm_);
@@ -223,7 +223,7 @@ class MPIComm {
                       static_cast<int>(remain), MPI_INT64_T, MPI_SUM, comm_);
       }
     } else {
-      for (int i = 0; i < chunk_num; ++i) {
+      for (size_t i = 0; i < chunk_num; ++i) {
         MPI_Allreduce(input + i * kChunkSize, output + i * kChunkSize,
                       static_cast<int>(kChunkSize), MPI_INT64_T, MPI_SUM,
                       comm_);

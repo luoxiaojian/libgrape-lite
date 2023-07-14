@@ -68,13 +68,13 @@ class GlobalVertexMapBuilder {
   void finish(GlobalVertexMap<OID_T, VID_T, PARTITIONER_T>& vertex_map) {
     int worker_id = CommType::get().rank();
     int worker_num = CommType::get().size();
-    fid_t fnum = CommType::get().size();
+    fid_t fnum = static_cast<fid_t>(worker_num);
     {
       std::thread recv_thread([&]() {
         int src_worker_id = (worker_id + 1) % worker_num;
         while (src_worker_id != worker_id) {
           for (fid_t fid = 0; fid < fnum; ++fid) {
-            if (fid != src_worker_id) {
+            if (fid != static_cast<fid_t>(src_worker_id)) {
               continue;
             }
             sync_comm::Recv(vertex_map.indexers_[fid], src_worker_id, 0);
@@ -86,7 +86,7 @@ class GlobalVertexMapBuilder {
         int dst_worker_id = (worker_id + worker_num - 1) % worker_num;
         while (dst_worker_id != worker_id) {
           for (fid_t fid = 0; fid < fnum; ++fid) {
-            if (fid != worker_id) {
+            if (fid != static_cast<fid_t>(worker_id)) {
               continue;
             }
             sync_comm::Send(indexer_, dst_worker_id, 0);
@@ -207,7 +207,7 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   }
 
   GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T> GetLocalBuilder() {
-    fid_t fid = CommType::get().rank();
+    fid_t fid = static_cast<fid_t>(CommType::get().rank());
     return GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T>(
         fid, indexers_[fid], partitioner_, id_parser_);
   }
@@ -218,7 +218,7 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(path));
     io_adaptor->Open("wb");
     base_t::serialize(io_adaptor);
-    for (fid_t i = 0; i < CommType::get().size(); ++i) {
+    for (fid_t i = 0; i < this->GetFragmentNum(); ++i) {
       indexers_[i].Serialize(io_adaptor);
     }
     io_adaptor->Close();
@@ -261,7 +261,7 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     base_t::deserialize(io_adaptor);
 
     indexers_.resize(CommType::get().size());
-    for (fid_t i = 0; i < CommType::get().size(); ++i) {
+    for (fid_t i = 0; i < this->GetFragmentNum(); ++i) {
       indexers_[i].Deserialize(io_adaptor);
     }
     io_adaptor->Close();
@@ -269,7 +269,7 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
   void UpdateToBalance(std::vector<VID_T>& vnum_list,
                        std::vector<std::vector<VID_T>>& gid_maps) {
-    fid_t fnum = CommType::get().size();
+    fid_t fnum = this->GetFragmentNum();
     std::vector<std::vector<internal_oid_t>> oid_lists(fnum);
     for (fid_t i = 0; i < fnum; ++i) {
       oid_lists[i].resize(vnum_list[i]);

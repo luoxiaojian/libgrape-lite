@@ -96,16 +96,18 @@ class BasicFragmentLoader {
 
  public:
   BasicFragmentLoader() {
+    fid_ = static_cast<fid_t>(CommType::get().rank());
+    fnum_ = static_cast<fid_t>(CommType::get().size());
     vm_ptr_ = std::make_shared<vertex_map_t>();
-    vertices_to_frag_.resize(CommType::get().size());
-    edges_to_frag_.resize(CommType::get().size());
-    for (fid_t fid = 0; fid < CommType::get().size(); ++fid) {
+    vertices_to_frag_.resize(fnum_);
+    edges_to_frag_.resize(fnum_);
+    for (fid_t fid = 0; fid < fnum_; ++fid) {
       int worker_id = fid;
       vertices_to_frag_[fid].Init(vertex_tag, 4096000);
       vertices_to_frag_[fid].SetDestination(worker_id, fid);
       edges_to_frag_[fid].Init(edge_tag, 4096000);
       edges_to_frag_[fid].SetDestination(worker_id, fid);
-      if (worker_id == CommType::get().rank()) {
+      if (worker_id == static_cast<int>(fid_)) {
         vertices_to_frag_[fid].DisableComm();
         edges_to_frag_[fid].DisableComm();
       }
@@ -183,7 +185,7 @@ class BasicFragmentLoader {
     snprintf(vm_fbuf, sizeof(vm_fbuf), "%s/%s", prefix.c_str(),
              kSerializationVertexMapFilename);
     snprintf(frag_fbuf, sizeof(frag_fbuf), kSerializationFilenameFormat,
-             prefix.c_str(), CommType::get().rank());
+             prefix.c_str(), fid_);
     std::string vm_path = vm_fbuf;
     std::string frag_path = frag_fbuf;
     return exists_file(vm_path) && exists_file(frag_path);
@@ -200,10 +202,10 @@ class BasicFragmentLoader {
         std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(typed_prefix));
     if (io_adaptor->IsExist()) {
       vm_ptr_->template Deserialize<IOADAPTOR_T>(typed_prefix,
-                                                 CommType::get().rank());
+                                                 fid_);
       fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr_));
       fragment->template Deserialize<IOADAPTOR_T>(typed_prefix,
-                                                  CommType::get().rank());
+                                                  fid_);
       return true;
     } else {
       return false;
@@ -224,11 +226,11 @@ class BasicFragmentLoader {
     CommType::get().barrier();
 
     got_vertices_.emplace_back(
-        std::move(vertices_to_frag_[CommType::get().rank()].buffers()));
-    vertices_to_frag_[CommType::get().rank()].Clear();
+        std::move(vertices_to_frag_[fid_].buffers()));
+    vertices_to_frag_[fid_].Clear();
     got_edges_.emplace_back(
-        std::move(edges_to_frag_[CommType::get().rank()].buffers()));
-    edges_to_frag_[CommType::get().rank()].Clear();
+        std::move(edges_to_frag_[fid_].buffers()));
+    edges_to_frag_[fid_].Clear();
 
     vm_ptr_->Init();
     auto builder = vm_ptr_->GetLocalBuilder();
@@ -272,7 +274,7 @@ class BasicFragmentLoader {
     }
 
     fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr_));
-    fragment->Init(CommType::get().rank(), directed, processed_vertices_,
+    fragment->Init(fid_, directed, processed_vertices_,
                    processed_edges_);
 
     if (!std::is_same<vdata_t, EmptyType>::value) {
@@ -282,7 +284,7 @@ class BasicFragmentLoader {
 
   void vertexRecvRoutine() {
     ShuffleIn<internal_oid_t, vdata_t> data_in;
-    data_in.Init(CommType::get().size(), vertex_tag);
+    data_in.Init(fnum_, vertex_tag);
     fid_t dst_fid;
     int src_worker_id;
     while (!data_in.Finished()) {
@@ -297,7 +299,7 @@ class BasicFragmentLoader {
 
   void edgeRecvRoutine() {
     ShuffleIn<internal_oid_t, internal_oid_t, edata_t> data_in;
-    data_in.Init(CommType::get().size(), edge_tag);
+    data_in.Init(fnum_, edge_tag);
     fid_t dst_fid;
     int src_worker_id;
     while (!data_in.Finished()) {
@@ -305,14 +307,14 @@ class BasicFragmentLoader {
       if (src_worker_id == -1) {
         break;
       }
-      CHECK_EQ(dst_fid, CommType::get().rank());
+      CHECK_EQ(dst_fid, fid_);
       got_edges_.emplace_back(std::move(data_in.buffers()));
       data_in.Clear();
     }
   }
 
   void initOuterVertexData(std::shared_ptr<fragment_t> fragment) {
-    int worker_num = CommType::get().size();
+    int worker_num = fnum_;
 
     std::vector<std::vector<vid_t>> request_gid_lists(worker_num);
     auto& outer_vertices = fragment->OuterVertices();
@@ -349,6 +351,8 @@ class BasicFragmentLoader {
   }
 
  private:
+  fid_t fid_, fnum_;
+
   std::shared_ptr<vertex_map_t> vm_ptr_;
 
   std::vector<ShuffleOut<internal_oid_t, vdata_t>> vertices_to_frag_;

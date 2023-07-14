@@ -42,10 +42,10 @@ class LocalVertexMapBuilder {
 
  private:
   LocalVertexMapBuilder(
-      fid_t fid, std::vector<IdIndexer<internal_oid_t, VID_T>>& oid_to_index,
+      fid_t fid, fid_t fnum, std::vector<IdIndexer<internal_oid_t, VID_T>>& oid_to_index,
       std::vector<IdIndexer<VID_T, VID_T>>& gid_to_index,
       const PARTITIONER_T& partitioner, const IdParser<VID_T>& id_parser)
-      : fid_(fid),
+      : fid_(fid), fnum_(fnum),
         oid_to_index_(oid_to_index),
         gid_to_index_(gid_to_index),
         partitioner_(partitioner),
@@ -102,7 +102,7 @@ class LocalVertexMapBuilder {
     response_thread.join();
     CommType::get().barrier();
 
-    vertex_map.vertices_num_.resize(CommType::get().size());
+    vertex_map.vertices_num_.resize(fnum_);
     CommType::get().gather<VID_T>(oid_to_index_[fid_].size(),
                                   vertex_map.vertices_num_);
   }
@@ -112,6 +112,7 @@ class LocalVertexMapBuilder {
   friend class LocalVertexMap;
 
   fid_t fid_;
+  fid_t fnum_;
   std::vector<IdIndexer<internal_oid_t, VID_T>>& oid_to_index_;
   std::vector<IdIndexer<VID_T, VID_T>>& gid_to_index_;
   const PARTITIONER_T& partitioner_;
@@ -158,7 +159,7 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
   bool GetOid(fid_t fid, const VID_T& lid, OID_T& oid) const {
     internal_oid_t internal_oid;
-    if (fid == CommType::get().rank()) {
+    if (fid == static_cast<fid_t>(CommType::get().rank())) {
       if (oid_to_index_[fid].get_key(lid, internal_oid)) {
         oid = InternalOID<OID_T>::FromInternal(internal_oid);
         return true;
@@ -183,7 +184,7 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
   bool _GetGid(fid_t fid, const internal_oid_t& oid, VID_T& gid) const {
     VID_T index;
-    if (fid == CommType::get().rank()) {
+    if (fid == static_cast<fid_t>(CommType::get().rank())) {
       if (oid_to_index_[fid].get_index(oid, index)) {
         gid = id_parser_.generate_global_id(fid, index);
         return true;
@@ -207,9 +208,9 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   }
 
   LocalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T> GetLocalBuilder() {
-    fid_t fid = CommType::get().rank();
+    fid_t fid = static_cast<fid_t>(CommType::get().rank());
     return LocalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T>(
-        fid, oid_to_index_, gid_to_index_, partitioner_, id_parser_);
+        fid, this->GetFragmentNum(), oid_to_index_, gid_to_index_, partitioner_, id_parser_);
   }
 
   template <typename IOADAPTOR_T>
@@ -243,11 +244,11 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     io_adaptor->Open();
 
     base_t::deserialize(io_adaptor);
-    oid_to_index_.resize(CommType::get().size());
+    oid_to_index_.resize(this->GetFragmentNum());
     for (auto& indexer : oid_to_index_) {
       indexer.Deserialize(io_adaptor);
     }
-    gid_to_index_.resize(CommType::get().size());
+    gid_to_index_.resize(this->GetFragmentNum());
     for (auto& indexer : gid_to_index_) {
       indexer.Deserialize(io_adaptor);
     }
