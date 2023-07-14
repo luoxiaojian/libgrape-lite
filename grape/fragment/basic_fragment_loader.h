@@ -95,7 +95,7 @@ class BasicFragmentLoader {
   static constexpr LoadStrategy load_strategy = fragment_t::load_strategy;
 
  public:
-  explicit BasicFragmentLoader() {
+  BasicFragmentLoader() {
     vm_ptr_ = std::make_shared<vertex_map_t>();
     vertices_to_frag_.resize(CommType::get().size());
     edges_to_frag_.resize(CommType::get().size());

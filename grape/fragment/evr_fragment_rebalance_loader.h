@@ -65,7 +65,7 @@ class EVRFragmentRebalanceLoader {
                 "LineParser type is invalid");
 
  public:
-  explicit EVRFragmentRebalanceLoader() {}
+  EVRFragmentRebalanceLoader() {}
 
   ~EVRFragmentRebalanceLoader() = default;
 

@@ -125,7 +125,7 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   using internal_oid_t = typename InternalOID<OID_T>::type;
 
  public:
-  explicit GlobalVertexMap() : base_t() {}
+  GlobalVertexMap() : base_t() {}
   ~GlobalVertexMap() = default;
   void Init() { indexers_.resize(CommType::get().size()); }
 

@@ -125,7 +125,7 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   using internal_oid_t = typename InternalOID<OID_T>::type;
 
  public:
-  explicit LocalVertexMap() : base_t() {}
+  LocalVertexMap() : base_t() {}
   ~LocalVertexMap() = default;
   void Init() {
     oid_to_index_.resize(CommType::get().size());

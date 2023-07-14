@@ -30,7 +30,7 @@ class EVFragmentMutator {
   using edata_t = typename FRAG_T::edata_t;
 
  public:
-  explicit EVFragmentMutator() : t0_(0), t1_(0) {}
+  EVFragmentMutator() : t0_(0), t1_(0) {}
   ~EVFragmentMutator() {
     if (CommType::get().rank() == 0) {
       VLOG(1) << "mutating graph: " << t0_ << " s + " << t1_ << " s";

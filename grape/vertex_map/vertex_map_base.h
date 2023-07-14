@@ -62,9 +62,7 @@ class VertexMapBase {
   using partitioner_t = PARTITIONER_T;
   using oid_t = OID_T;
   using vid_t = VID_T;
-  explicit VertexMapBase() : partitioner_() {
-    id_parser_.init(CommType::get().size());
-  }
+  VertexMapBase() : partitioner_() { id_parser_.init(CommType::get().size()); }
   virtual ~VertexMapBase() = default;
 
   void SetPartitioner(const PARTITIONER_T& partitioner) {
