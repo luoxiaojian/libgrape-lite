@@ -31,6 +31,10 @@ limitations under the License.
 
 #include "glog/logging.h"
 
+#include "grape/serialization/in_archive.h"
+#include "grape/serialization/out_archive.h"
+#include "grape/utils/concurrent_queue.h"
+
 namespace grape {
 
 class MessagePoll {
@@ -46,7 +50,7 @@ class MessagePoll {
   void put(int src, int tag, std::vector<char>&& buf) {
     std::lock_guard<std::mutex> lock(mutex_);
     pool_[src][tag].emplace_back(std::move(buf));
-    cond_.notify_one();
+    cond_.notify_all();
   }
 
   void take(int& src, int& tag, std::vector<char>& buf) {
@@ -126,7 +130,7 @@ class MessagePoll {
   void barrier(int src) {
     std::lock_guard<std::mutex> lock(barrier_mutex_);
     barrier_count_[src]++;
-    barrier_cond_.notify_one();
+    barrier_cond_.notify_all();
   }
 
   void wait_barrier_slave(int expected) {
@@ -221,55 +225,6 @@ class Reader : public std::enable_shared_from_this<Reader> {
   size_t offset_;
 };
 
-class BlockingQueue {
- public:
-  BlockingQueue() {}
-  ~BlockingQueue() {}
-
-  void push_barrier() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    queue_.emplace_back(1, 0, 0, std::vector<char>());
-    cond_.notify_one();
-  }
-
-  void push_exit() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    queue_.emplace_back(2, 0, 0, std::vector<char>());
-    cond_.notify_one();
-  }
-
-  void push_empty(int dst, int tag) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    queue_.emplace_back(0, dst, tag, std::vector<char>());
-    cond_.notify_one();
-  }
-
-  void push_data(int dst, int tag, std::vector<char>&& buf) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    queue_.emplace_back(0, dst, tag, std::move(buf));
-    cond_.notify_one();
-  }
-
-  void push_bcast(int tag, std::vector<char>&& buf) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    queue_.emplace_back(3, 0, tag, std::move(buf));
-    cond_.notify_one();
-  }
-
-  void pop(int& type, int& dst, int& tag, std::vector<char>& buf) {
-    std::unique_lock<std::mutex> lock(mutex_);
-    cond_.wait(lock, [this]() { return !queue_.empty(); });
-    std::tie(type, dst, tag, buf) = std::move(queue_.front());
-    queue_.pop_front();
-  }
-
- private:
-  std::mutex mutex_;
-  std::condition_variable cond_;
-  // type, dst, tag, content
-  std::deque<std::tuple<int, int, int, std::vector<char>>> queue_;
-};
-
 static inline void trim(std::string& str) {
   str.erase(0, str.find_first_not_of(" \t\r\n"));
   str.erase(str.find_last_not_of(" \t\r\n") + 1);
@@ -282,7 +237,7 @@ class TCPComm {
 
  public:
   ~TCPComm() {
-    queue_.push_exit();
+    queue_.DecProducerNum();
     read_thread_.join();
     write_thread_.join();
   }
@@ -339,6 +294,8 @@ class TCPComm {
       }
     }
 
+    queue_.SetProducerNum(1);
+
     std::string self_port = ports[rank_];
     std::mutex read_mutex, write_mutex;
     std::condition_variable read_ready, write_ready;
@@ -359,7 +316,7 @@ class TCPComm {
       }
       {
         std::lock_guard<std::mutex> lock(read_mutex);
-        read_ready.notify_one();
+        read_ready.notify_all();
       }
       ioc_.run();
     });
@@ -382,34 +339,23 @@ class TCPComm {
       }
       {
         std::lock_guard<std::mutex> lock(write_mutex);
-        write_ready.notify_one();
+        write_ready.notify_all();
       }
 
-      while (true) {
-        Header header;
-        int type, dst, tag;
-        std::vector<char> buf;
-        queue_.pop(type, dst, tag, buf);
+      Header header;
+      std::tuple<int, int, int, std::vector<char>> item;
+      while (queue_.Get(item)) {
+        int type = std::get<0>(item);
+        int dst = std::get<1>(item);
+        int tag = std::get<2>(item);
+        std::vector<char>& buf = std::get<3>(item);
         if (type == 1) {
+          // barrier
           header.type = 1;
-          for (int i = 0; i < size_; ++i) {
-            if (i == rank_) {
-              continue;
-            }
-            boost::asio::write(*writers[i],
-                               boost::asio::buffer(&header, sizeof(header)));
-          }
-        } else if (type == 2) {
-          header.type = 2;
-          for (int i = 0; i < size_; ++i) {
-            if (i == rank_) {
-              continue;
-            }
-            boost::asio::write(*writers[i],
-                               boost::asio::buffer(&header, sizeof(header)));
-          }
-          break;
+          boost::asio::write(*writers[dst],
+                             boost::asio::buffer(&header, sizeof(header)));
         } else if (type == 3) {
+          // bcast
           header.type = 0;
           header.tag = tag;
           header.length = buf.size();
@@ -422,7 +368,8 @@ class TCPComm {
                                  boost::asio::buffer(buf));
             }
           }
-        } else {
+        } else if (type == 0) {
+          // normal
           header.type = 0;
           header.tag = tag;
           header.length = buf.size();
@@ -431,7 +378,19 @@ class TCPComm {
           if (header.length > 0) {
             boost::asio::write(*writers[dst], boost::asio::buffer(buf));
           }
+        } else {
+          // unexpected
+          LOG(INFO) << "Unexpected message type - " << type;
         }
+      }
+      // exit
+      header.type = 2;
+      for (int i = 0; i < size_; ++i) {
+        if (i == rank_) {
+          continue;
+        }
+        boost::asio::write(*writers[i],
+                           boost::asio::buffer(&header, sizeof(header)));
       }
     });
 
@@ -459,10 +418,10 @@ class TCPComm {
       if (rank_ == 0) {
         pool_.wait_barrier_master(barrier_count_);
         for (int i = 1; i < size_; ++i) {
-          queue_.push_barrier();
+          push_barrier((i + rank_) % size_);
         }
       } else {
-        queue_.push_barrier();
+        push_barrier(0);
         pool_.wait_barrier_slave(barrier_count_);
       }
     }
@@ -472,7 +431,7 @@ class TCPComm {
     if (dst == rank_) {
       pool_.put(rank_, tag, std::move(buf));
     } else {
-      queue_.push_data(dst, tag, std::move(buf));
+      push_data(dst, tag, std::move(buf));
     }
   }
 
@@ -490,7 +449,7 @@ class TCPComm {
     if (dst == rank_) {
       pool_.put(rank_, tag, std::vector<char>());
     } else {
-      queue_.push_empty(dst, tag);
+      push_empty(dst, tag);
     }
   }
 
@@ -527,7 +486,7 @@ class TCPComm {
       }
       for (int i = 1; i < size_; ++i) {
         std::vector<char> recv_buf;
-        recv_from_tagged(i, sum_tag, recv_buf);
+        recv_from_tagged(i, recv_buf, sum_tag);
         int64_t* recv_ptr = reinterpret_cast<int64_t*>(recv_buf.data());
         for (int j = 0; j < count; ++j) {
           output[j] += recv_ptr[j];
@@ -540,7 +499,7 @@ class TCPComm {
     } else {
       send(0, reinterpret_cast<char*>(input), count * sizeof(int64_t), sum_tag);
       std::vector<char> recv_buf;
-      recv_from_tagged(0, sum_ack_tag, recv_buf);
+      recv_from_tagged(0, recv_buf, sum_ack_tag);
       memcpy(output, recv_buf.data(), count * sizeof(int64_t));
     }
   }
@@ -549,15 +508,15 @@ class TCPComm {
   void gather(const T& input, std::vector<T>& output) {
     static const int gather_tag = std::numeric_limits<int>::max() - 14;
     {
-      InArchive arc;
-      arc << input;
-      queue_.push_bcast(gather_tag, std::move(arc.GetBufferVector()));
+      InArchive iarc;
+      iarc << input;
+      push_bcast(gather_tag, std::move(iarc.GetBufferVector()));
     }
     output[rank_] = input;
     for (int i = 1; i < size_; ++i) {
       int src_worker_id = (rank_ + size_ - 1) % size_;
       std::vector<char> recv_buf;
-      recv_from_tagged(src_worker_id, gather_tag, recv_buf);
+      recv_from_tagged(src_worker_id, recv_buf, gather_tag);
       OutArchive arc;
       arc.SetSlice(recv_buf.data(), recv_buf.size());
       arc >> output[src_worker_id];
@@ -583,7 +542,7 @@ class TCPComm {
     for (int i = 1; i < worker_num; ++i) {
       int src_worker_id = (worker_id + worker_num - i) % worker_num;
       std::vector<char> buf;
-      recv_from_tagged(src_worker_id, all_to_all_tag, buf);
+      recv_from_tagged(src_worker_id, buf, all_to_all_tag);
       OutArchive arc;
       arc.SetSlice(buf.data(), buf.size());
       arc >> output[src_worker_id];
@@ -593,15 +552,14 @@ class TCPComm {
   template <typename T>
   void bcast(T& val, int root) {
     static const int bcast_tag = std::numeric_limits<int>::max() - 12;
-    InArchive arc;
-    arc << val;
-    int worker_num = size();
     int worker_id = rank();
     if (worker_id == root) {
-      queue_.push_bcast(bcast_tag, std::move(arc.GetBufferVector()));
+      InArchive arc;
+      arc << val;
+      push_bcast(bcast_tag, std::move(arc.GetBufferVector()));
     } else {
       std::vector<char> buf;
-      recv_from_tagged(root, bcast_tag, buf);
+      recv_from_tagged(root, buf, bcast_tag);
       OutArchive arc;
       arc.SetSlice(buf.data(), buf.size());
       arc >> val;
@@ -609,9 +567,30 @@ class TCPComm {
   }
 
  private:
+  void push_exit() {
+    queue_.Put(std::make_tuple(2, 0, 0, std::vector<char>()));
+  }
+
+  void push_empty(int dst, int tag) {
+    queue_.Put(std::make_tuple(0, dst, tag, std::vector<char>()));
+  }
+
+  void push_data(int dst, int tag, std::vector<char>&& data) {
+    queue_.Put(std::make_tuple(0, dst, tag, std::move(data)));
+  }
+
+  void push_bcast(int tag, std::vector<char>&& data) {
+    queue_.Put(std::make_tuple(3, 0, tag, std::move(data)));
+  }
+
+  void push_barrier(int dst) {
+    queue_.Put(std::make_tuple(1, dst, 0, std::vector<char>()));
+  }
+
   boost::asio::io_context ioc_;
   MessagePoll pool_;
-  BlockingQueue queue_;
+  // BlockingQueue queue_;
+  BlockingQueue<std::tuple<int, int, int, std::vector<char>>> queue_;
 
   std::thread read_thread_;
   std::thread write_thread_;

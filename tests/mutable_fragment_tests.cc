@@ -176,20 +176,24 @@ void Run() {
                      grape::LoadStrategy::kOnlyOut, grape::BFSAuto, OID_T>(
           out_prefix, fnum, spec,
           ParamConverter<OID_T>::FromInt64(FLAGS_bfs_source));
+#ifdef USE_MPI
     } else if (name == "pagerank_local") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
                      grape::LoadStrategy::kOnlyOut, grape::PageRankLocal,
                      double, int>(out_prefix, fnum, spec, FLAGS_pr_d,
                                   FLAGS_pr_mr);
+#endif
     } else if (name == "pagerank_local_parallel") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
                      grape::LoadStrategy::kBothOutIn,
                      grape::PageRankLocalParallel, double, int>(
           out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
+#ifdef USE_MPI
     } else if (name == "pagerank") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
                      grape::LoadStrategy::kOnlyOut, grape::PageRank, double,
                      int>(out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
+#endif
     } else if (name == "pagerank_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
                      grape::LoadStrategy::kBothOutIn, grape::PageRankAuto,
