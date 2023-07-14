@@ -42,10 +42,12 @@ class LocalVertexMapBuilder {
 
  private:
   LocalVertexMapBuilder(
-      fid_t fid, fid_t fnum, std::vector<IdIndexer<internal_oid_t, VID_T>>& oid_to_index,
+      fid_t fid, fid_t fnum,
+      std::vector<IdIndexer<internal_oid_t, VID_T>>& oid_to_index,
       std::vector<IdIndexer<VID_T, VID_T>>& gid_to_index,
       const PARTITIONER_T& partitioner, const IdParser<VID_T>& id_parser)
-      : fid_(fid), fnum_(fnum),
+      : fid_(fid),
+        fnum_(fnum),
         oid_to_index_(oid_to_index),
         gid_to_index_(gid_to_index),
         partitioner_(partitioner),
@@ -210,7 +212,8 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   LocalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T> GetLocalBuilder() {
     fid_t fid = static_cast<fid_t>(CommType::get().rank());
     return LocalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T>(
-        fid, this->GetFragmentNum(), oid_to_index_, gid_to_index_, partitioner_, id_parser_);
+        fid, this->GetFragmentNum(), oid_to_index_, gid_to_index_, partitioner_,
+        id_parser_);
   }
 
   template <typename IOADAPTOR_T>

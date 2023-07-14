@@ -73,7 +73,9 @@ class VertexMapBase {
     partitioner_ = std::move(partitioner);
   }
 
-  fid_t GetFragmentNum() const { return static_cast<fid_t>(CommType::get().size()); }
+  fid_t GetFragmentNum() const {
+    return static_cast<fid_t>(CommType::get().size());
+  }
 
   VID_T Lid2Gid(fid_t fid, const VID_T& lid) const {
     return id_parser_.generate_global_id(fid, lid);
