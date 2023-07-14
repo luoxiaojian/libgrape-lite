@@ -19,7 +19,7 @@ option(BUILD_LIBGRAPELITE_DOCS "Build libgrape-lite documentation" ON)
 option(BUILD_LIBGRAPELITE_TESTS "Build libgrape-lite test cases" ON)
 option(WCC_USE_GID "Use global id as wcc component id" OFF)
 option(USE_SIMD "Whether to use SIMD instructions" OFF)
-option(USE_MPI "Whether to use MPI, if not, use boost::asio" OFF)
+option(USE_MPI "Whether to use MPI, if not, use boost::asio" ON)
 
 if (USE_HUGEPAGES)
     if (CMAKE_SYSTEM_NAME MATCHES "Linux")
