@@ -19,6 +19,8 @@ limitations under the License.
 #include <grape/config.h>
 #include <grape/fragment/basic_fragment_mutator.h>
 #include "grape/app/context_base.h"
+#include "grape/communication/mpi_comm.h"
+#include "grape/communication/tcp_comm.h"
 
 namespace grape {
 
@@ -155,11 +157,8 @@ class MutationContext : public ContextBase {
     remove_edge(src_oid, dst_oid);
   }
 
-  void apply_mutation(std::shared_ptr<fragment_t> fragment,
-                      const CommSpec& comm_spec) {
+  void apply_mutation(std::shared_ptr<fragment_t> fragment) {
     {
-      CommSpec dup_comm_spec(comm_spec);
-      dup_comm_spec.Dup();
       int local_to_mutate = 1;
       if (id_to_add_.empty() && esrc_to_add_.empty() &&
           parsed_vertices_to_update_.empty() && id_to_update_.empty() &&
@@ -167,14 +166,12 @@ class MutationContext : public ContextBase {
           id_to_remove_.empty() && esrc_to_remove_.empty()) {
         local_to_mutate = 0;
       }
-      int global_to_mutate;
-      MPI_Allreduce(&local_to_mutate, &global_to_mutate, 1, MPI_INT, MPI_SUM,
-                    comm_spec.comm());
+      int global_to_mutate = CommType::get().sum(local_to_mutate);
       if (global_to_mutate == 0) {
         return;
       }
     }
-    BasicFragmentMutator<fragment_t> mutator(comm_spec, fragment);
+    BasicFragmentMutator<fragment_t> mutator(fragment);
     mutator.AddVerticesToRemove(std::move(parsed_vid_to_remove_));
     mutator.AddVerticesToUpdate(std::move(parsed_vertices_to_update_));
     mutator.Start();

@@ -16,8 +16,6 @@ limitations under the License.
 #ifndef GRAPE_PARALLEL_PARALLEL_ENGINE_SPEC_H_
 #define GRAPE_PARALLEL_PARALLEL_ENGINE_SPEC_H_
 
-#include "grape/worker/comm_spec.h"
-
 namespace grape {
 
 struct ParallelEngineSpec {
@@ -34,17 +32,18 @@ inline ParallelEngineSpec DefaultParallelEngineSpec() {
   return spec;
 }
 
-inline ParallelEngineSpec MultiProcessSpec(const CommSpec& comm_spec,
-                                           bool affinity = false) {
+inline ParallelEngineSpec MultiProcessSpec(bool affinity = false) {
   ParallelEngineSpec spec;
   uint32_t total_thread_num = std::thread::hardware_concurrency();
+  int local_num = CommType::get().local_size();
+  int local_id = CommType::get().local_rank();
   uint32_t each_process_thread_num =
-      (total_thread_num + comm_spec.local_num() - 1) / comm_spec.local_num();
+      (total_thread_num + local_num - 1) / local_num;
   spec.thread_num = each_process_thread_num;
   spec.affinity = affinity;
   spec.cpu_list.clear();
   if (affinity) {
-    uint32_t offset = each_process_thread_num * comm_spec.local_id();
+    uint32_t offset = each_process_thread_num * local_id;
     for (uint32_t i = 0, j = 0; i < each_process_thread_num; ++i, ++j) {
       if (offset + j == total_thread_num)
         j = 0;

@@ -32,7 +32,6 @@ limitations under the License.
 #include "grape/parallel/parallel_message_manager.h"
 #include "grape/parallel/parallel_message_manager_opt.h"
 #include "grape/util.h"
-#include "grape/worker/comm_spec.h"
 
 namespace grape {
 
@@ -61,25 +60,24 @@ class Worker {
     prepare_conf_.need_split_edges = APP_T::need_split_edges;
     prepare_conf_.need_split_edges_by_fragment =
         APP_T::need_split_edges_by_fragment;
+#ifdef USE_MPI
     prepare_conf_.need_mirror_info =
         std::is_same<message_manager_t, BatchShuffleMessageManager>::value;
+#endif
   }
 
   ~Worker() = default;
 
-  void Init(const CommSpec& comm_spec,
-            const ParallelEngineSpec& pe_spec = DefaultParallelEngineSpec()) {
+  void Init(const ParallelEngineSpec& pe_spec = DefaultParallelEngineSpec()) {
     auto& graph = const_cast<fragment_t&>(context_->fragment());
     // prepare for the query
-    graph.PrepareToRunApp(comm_spec, prepare_conf_);
+    graph.PrepareToRunApp(prepare_conf_);
 
-    comm_spec_ = comm_spec;
-    MPI_Barrier(comm_spec_.comm());
+    CommType::get().barrier();
 
-    messages_.Init(comm_spec_.comm());
+    messages_.Init();
 
     InitParallelEngine(app_, pe_spec);
-    InitCommunicator(app_, comm_spec_.comm());
   }
 
   void Finalize() {}
@@ -88,7 +86,7 @@ class Worker {
   void Query(Args&&... args) {
     double t = GetCurrentTime();
 
-    MPI_Barrier(comm_spec_.comm());
+    CommType::get().barrier();
 
     context_->Init(messages_, std::forward<Args>(args)...);
     processMutation();
@@ -104,7 +102,7 @@ class Worker {
 
     messages_.FinishARound();
 
-    if (comm_spec_.worker_id() == kCoordinatorRank) {
+    if (CommType::get().rank() == kCoordinatorRank) {
       VLOG(1) << "[Coordinator]: Finished PEval, time: " << GetCurrentTime() - t
               << " sec";
     }
@@ -121,14 +119,14 @@ class Worker {
 
       messages_.FinishARound();
 
-      if (comm_spec_.worker_id() == kCoordinatorRank) {
+      if (CommType::get().rank() == kCoordinatorRank) {
         VLOG(1) << "[Coordinator]: Finished IncEval - " << step
                 << ", time: " << GetCurrentTime() - t << " sec";
       }
       ++step;
     }
 
-    MPI_Barrier(comm_spec_.comm());
+    CommType::get().barrier();
 
     messages_.Finalize();
   }
@@ -178,8 +176,8 @@ class Worker {
   typename std::enable_if<
       std::is_base_of<MutationContext<fragment_t>, T>::value>::type
   processMutation() {
-    context_->apply_mutation(fragment_, comm_spec_);
-    fragment_->PrepareToRunApp(comm_spec_, prepare_conf_);
+    context_->apply_mutation(fragment_);
+    fragment_->PrepareToRunApp(prepare_conf_);
   }
 
   template <typename T = context_t>
@@ -192,7 +190,6 @@ class Worker {
   std::shared_ptr<fragment_t> fragment_;
   message_manager_t messages_;
 
-  CommSpec comm_spec_;
   PrepareConf prepare_conf_;
 };
 
@@ -206,8 +203,10 @@ template <typename APP_T>
 using AutoWorker =
     Worker<APP_T, AutoParallelMessageManager<typename APP_T::fragment_t>>;
 
+#ifdef USE_MPI
 template <typename APP_T>
 using BatchShuffleWorker = Worker<APP_T, BatchShuffleMessageManager>;
+#endif
 
 }  // namespace grape
 

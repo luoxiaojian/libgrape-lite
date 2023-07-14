@@ -56,22 +56,15 @@ void Init() {
     mkdir(FLAGS_out_prefix.c_str(), 0777);
   }
 
-  grape::InitMPIComm();
-  grape::CommSpec comm_spec;
-  comm_spec.Init(MPI_COMM_WORLD);
-  if (comm_spec.worker_id() == grape::kCoordinatorRank) {
+  if (grape::CommType::get().rank() == grape::kCoordinatorRank) {
     VLOG(1) << "Workers of libgrape-lite initialized.";
   }
 }
 
-void Finalize() {
-  grape::FinalizeMPIComm();
-  VLOG(1) << "Workers finalized.";
-}
+void Finalize() { VLOG(1) << "Workers finalized."; }
 
 template <typename FRAG_T>
-std::shared_ptr<FRAG_T> BuildGraph(const grape::CommSpec& comm_spec,
-                                   const std::string& efile,
+std::shared_ptr<FRAG_T> BuildGraph(const std::string& efile,
                                    const std::string& vfile) {
   timer_next("load graph");
   grape::LoadGraphSpec graph_spec = grape::DefaultLoadGraphSpec();
@@ -80,17 +73,16 @@ std::shared_ptr<FRAG_T> BuildGraph(const grape::CommSpec& comm_spec,
   graph_spec.set_deserialize(false, "");
   graph_spec.set_serialize(false, "");
   std::shared_ptr<FRAG_T> fragment;
-  fragment = grape::LoadGraph<FRAG_T>(efile, vfile, comm_spec, graph_spec);
+  fragment = grape::LoadGraph<FRAG_T>(efile, vfile, graph_spec);
   return fragment;
 }
 
 template <typename FRAG_T>
-std::shared_ptr<FRAG_T> MutateGraph(const grape::CommSpec& comm_spec,
-                                    const std::string& efile_prefix,
+std::shared_ptr<FRAG_T> MutateGraph(const std::string& efile_prefix,
                                     int efile_num,
                                     std::shared_ptr<FRAG_T> fragment) {
   timer_next("mutate graph");
-  grape::EVFragmentMutator<FRAG_T, grape::LocalIOAdaptor> mutator(comm_spec);
+  grape::EVFragmentMutator<FRAG_T, grape::LocalIOAdaptor> mutator;
   for (int i = 0; i < efile_num; ++i) {
     std::string path = efile_prefix + ".part_" + std::to_string(i);
     fragment = mutator.MutateFragment(path, "", fragment, FLAGS_directed);
@@ -99,13 +91,12 @@ std::shared_ptr<FRAG_T> MutateGraph(const grape::CommSpec& comm_spec,
 }
 
 template <typename FRAG_T, typename APP_T, typename... Args>
-void RunQuery(std::shared_ptr<FRAG_T> fragment,
-              const grape::CommSpec& comm_spec, const std::string& out_prefix,
+void RunQuery(std::shared_ptr<FRAG_T> fragment, const std::string& out_prefix,
               const grape::ParallelEngineSpec& spec, Args... args) {
   timer_next("load application");
   auto app = std::make_shared<APP_T>();
   auto worker = APP_T::CreateWorker(app, fragment);
-  worker->Init(comm_spec, spec);
+  worker->Init(spec);
   timer_next("run algorithm");
   worker->Query(std::forward<Args>(args)...);
   timer_next("print output");
@@ -117,40 +108,36 @@ void RunQuery(std::shared_ptr<FRAG_T> fragment,
   ostream.close();
   worker->Finalize();
   timer_end();
-  VLOG(1) << "Worker-" << comm_spec.worker_id() << " finished: " << output_path;
+  VLOG(1) << "Worker-" << grape::CommType::get().rank()
+          << " finished: " << output_path;
 }
 
 template <typename FRAG_T, typename APP_T, typename... Args>
-void BuildGraphAndQuery(const grape::CommSpec& comm_spec,
-                        const std::string& efile, const std::string& vfile,
+void BuildGraphAndQuery(const std::string& efile, const std::string& vfile,
                         const std::string& efile_prefix, int efile_num,
                         const std::string& out_prefix,
                         const grape::ParallelEngineSpec& spec, Args... args) {
-  std::shared_ptr<FRAG_T> fragment =
-      BuildGraph<FRAG_T>(comm_spec, efile, vfile);
-  fragment = MutateGraph(comm_spec, efile_prefix, efile_num, fragment);
-  RunQuery<FRAG_T, APP_T, Args...>(fragment, comm_spec, out_prefix, spec,
+  std::shared_ptr<FRAG_T> fragment = BuildGraph<FRAG_T>(efile, vfile);
+  fragment = MutateGraph(efile_prefix, efile_num, fragment);
+  RunQuery<FRAG_T, APP_T, Args...>(fragment, out_prefix, spec,
                                    std::forward<Args>(args)...);
 }
 
 template <typename FRAG_T, typename APP_T, typename... Args>
-void BuildImmutableGraphAndQuery(const grape::CommSpec& comm_spec,
-                                 const std::string& efile,
+void BuildImmutableGraphAndQuery(const std::string& efile,
                                  const std::string& vfile,
                                  const std::string& out_prefix,
                                  const grape::ParallelEngineSpec& spec,
                                  Args... args) {
-  std::shared_ptr<FRAG_T> fragment =
-      BuildGraph<FRAG_T>(comm_spec, efile, vfile);
-  RunQuery<FRAG_T, APP_T, Args...>(fragment, comm_spec, out_prefix, spec,
+  std::shared_ptr<FRAG_T> fragment = BuildGraph<FRAG_T>(efile, vfile);
+  RunQuery<FRAG_T, APP_T, Args...>(fragment, out_prefix, spec,
                                    std::forward<Args>(args)...);
 }
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
 void RunBenchmark() {
-  grape::CommSpec comm_spec;
-  comm_spec.Init(MPI_COMM_WORLD);
-  bool is_coordinator = comm_spec.worker_id() == grape::kCoordinatorRank;
+  bool is_coordinator =
+      grape::CommType::get().rank() == grape::kCoordinatorRank;
   timer_start(is_coordinator);
 
   std::string efile = FLAGS_efile;
@@ -159,29 +146,28 @@ void RunBenchmark() {
   int delta_efile_part_num = FLAGS_delta_efile_part_num;
   std::string out_prefix = FLAGS_out_prefix;
 
-  auto spec = grape::MultiProcessSpec(comm_spec, __AFFINITY__);
+  auto spec = grape::MultiProcessSpec(__AFFINITY__);
 
   if (delta_efile_part_num != 0) {
     using GraphType =
         grape::MutableEdgecutFragment<OID_T, VID_T, VDATA_T, double>;
     using AppType = grape::SSSP<GraphType>;
     BuildGraphAndQuery<GraphType, AppType, OID_T>(
-        comm_spec, efile, vfile, delta_efile_prefix, delta_efile_part_num,
-        out_prefix, spec, FLAGS_sssp_source);
+        efile, vfile, delta_efile_prefix, delta_efile_part_num, out_prefix,
+        spec, FLAGS_sssp_source);
   } else {
     using GraphType =
         grape::ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, double>;
     using AppType = grape::SSSP<GraphType>;
     BuildImmutableGraphAndQuery<GraphType, AppType, OID_T>(
-        comm_spec, efile, vfile, out_prefix, spec, FLAGS_sssp_source);
+        efile, vfile, out_prefix, spec, FLAGS_sssp_source);
   }
 }
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
 void RunPageRankBenchmark() {
-  grape::CommSpec comm_spec;
-  comm_spec.Init(MPI_COMM_WORLD);
-  bool is_coordinator = comm_spec.worker_id() == grape::kCoordinatorRank;
+  bool is_coordinator =
+      grape::CommType::get().rank() == grape::kCoordinatorRank;
   timer_start(is_coordinator);
 
   std::string efile = FLAGS_efile;
@@ -190,7 +176,7 @@ void RunPageRankBenchmark() {
   int delta_efile_part_num = FLAGS_delta_efile_part_num;
   std::string out_prefix = FLAGS_out_prefix;
 
-  auto spec = grape::MultiProcessSpec(comm_spec, __AFFINITY__);
+  auto spec = grape::MultiProcessSpec(__AFFINITY__);
 
   if (delta_efile_part_num != 0) {
     using GraphType =
@@ -198,15 +184,15 @@ void RunPageRankBenchmark() {
                                       grape::LoadStrategy::kBothOutIn>;
     using AppType = grape::PageRankLocalParallel<GraphType>;
     BuildGraphAndQuery<GraphType, AppType, double, int>(
-        comm_spec, efile, vfile, delta_efile_prefix, delta_efile_part_num,
-        out_prefix, spec, FLAGS_pr_d, FLAGS_pr_mr);
+        efile, vfile, delta_efile_prefix, delta_efile_part_num, out_prefix,
+        spec, FLAGS_pr_d, FLAGS_pr_mr);
   } else {
     using GraphType =
         grape::ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, double,
                                         grape::LoadStrategy::kBothOutIn>;
     using AppType = grape::PageRankLocalParallel<GraphType>;
     BuildImmutableGraphAndQuery<GraphType, AppType, double, int>(
-        comm_spec, efile, vfile, out_prefix, spec, FLAGS_pr_d, FLAGS_pr_mr);
+        efile, vfile, out_prefix, spec, FLAGS_pr_d, FLAGS_pr_mr);
   }
 }
 

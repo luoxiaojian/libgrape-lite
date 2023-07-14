@@ -29,6 +29,8 @@ limitations under the License.
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
+#include <grape/communication/mpi_comm.h>
+#include <grape/communication/tcp_comm.h>
 #include <grape/fragment/immutable_edgecut_fragment.h>
 #include <grape/fragment/loader.h>
 #include <grape/grape.h>
@@ -78,26 +80,25 @@ void Init() {
     mkdir(FLAGS_out_prefix.c_str(), 0777);
   }
 
-  InitMPIComm();
-  CommSpec comm_spec;
-  comm_spec.Init(MPI_COMM_WORLD);
-  if (comm_spec.worker_id() == kCoordinatorRank) {
+#ifdef USE_MPI
+  MPIComm::get().init();
+#else
+  TCPComm::get().init(FLAGS_hostfile, FLAGS_worker_id);
+#endif
+  if (CommType::get().rank() == kCoordinatorRank) {
     VLOG(1) << "Workers of libgrape-lite initialized.";
   }
 }
 
-void Finalize() {
-  FinalizeMPIComm();
-  VLOG(1) << "Workers finalized.";
-}
+void Finalize() { VLOG(1) << "Workers finalized."; }
 
 template <typename FRAG_T, typename APP_T, typename... Args>
 void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
-             const CommSpec& comm_spec, const ParallelEngineSpec& spec,
-             const std::string& out_prefix, Args... args) {
+             const ParallelEngineSpec& spec, const std::string& out_prefix,
+             Args... args) {
   timer_next("load application");
   auto worker = APP_T::CreateWorker(app, fragment);
-  worker->Init(comm_spec, spec);
+  worker->Init(spec);
   timer_next("run algorithm");
   worker->Query(std::forward<Args>(args)...);
   timer_next("print output");
@@ -109,11 +110,12 @@ void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
     worker->Output(ostream);
     ostream.close();
     worker->Finalize();
-    VLOG(1) << "Worker-" << comm_spec.worker_id()
+    VLOG(1) << "Worker-" << CommType::get().rank()
             << " finished: " << output_path;
   } else {
     worker->Finalize();
-    VLOG(1) << "Worker-" << comm_spec.worker_id() << " finished without output";
+    VLOG(1) << "Worker-" << CommType::get().rank()
+            << " finished without output";
   }
   timer_end();
 }
@@ -121,8 +123,8 @@ void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
           LoadStrategy load_strategy, template <class> class APP_T,
           typename... Args>
-void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
-                    int fnum, const ParallelEngineSpec& spec, Args... args) {
+void CreateAndQuery(const std::string& out_prefix, int fnum,
+                    const ParallelEngineSpec& spec, Args... args) {
   timer_next("load graph");
   LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
   graph_spec.set_directed(FLAGS_directed);
@@ -138,37 +140,32 @@ void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
     using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
                                             load_strategy, VertexMapType>;
     std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, graph_spec);
     using AppType = APP_T<FRAG_T>;
     auto app = std::make_shared<AppType>();
-    DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                      out_prefix, args...);
+    DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix, args...);
   } else {
     graph_spec.set_rebalance(false, 0);
     using FRAG_T =
         ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy>;
     std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, graph_spec);
     using AppType = APP_T<FRAG_T>;
     auto app = std::make_shared<AppType>();
-    DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                      out_prefix, args...);
+    DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix, args...);
   }
 }
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
 void Run() {
-  CommSpec comm_spec;
-  comm_spec.Init(MPI_COMM_WORLD);
-
-  bool is_coordinator = comm_spec.worker_id() == kCoordinatorRank;
+  bool is_coordinator = CommType::get().rank() == kCoordinatorRank;
   timer_start(is_coordinator);
 #ifdef GRANULA
   std::string job_id = FLAGS_jobid;
   granula::startMonitorProcess(getpid());
   granula::operation grapeJob("grape", "Id.Unique", "Job", "Id.Unique");
   granula::operation loadGraph("grape", "Id.Unique", "LoadGraph", "Id.Unique");
-  if (comm_spec.worker_id() == kCoordinatorRank) {
+  if (CommType::get().rank() == kCoordinatorRank) {
     std::cout << grapeJob.getOperationInfo("StartTime", grapeJob.getEpoch())
               << std::endl;
     std::cout << loadGraph.getOperationInfo("StartTime", loadGraph.getEpoch())
@@ -180,14 +177,14 @@ void Run() {
 #endif
 
 #ifdef GRANULA
-  if (comm_spec.worker_id() == kCoordinatorRank) {
+  if (CommType::get().rank() == kCoordinatorRank) {
     std::cout << loadGraph.getOperationInfo("EndTime", loadGraph.getEpoch())
               << std::endl;
   }
 #endif
   // FIXME: no barrier apps. more manager? or use a dynamic-cast.
   std::string out_prefix = FLAGS_out_prefix;
-  auto spec = MultiProcessSpec(comm_spec, __AFFINITY__);
+  auto spec = MultiProcessSpec(__AFFINITY__);
   if (FLAGS_app_concurrency != -1) {
     spec.thread_num = FLAGS_app_concurrency;
     if (__AFFINITY__) {
@@ -201,74 +198,76 @@ void Run() {
       }
     }
   }
-  int fnum = comm_spec.fnum();
+  int fnum = CommType::get().size();
   std::string name = FLAGS_application;
   if (name.find("sssp") != std::string::npos) {
     if (name == "sssp_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, double, LoadStrategy::kOnlyOut,
-                     SSSPAuto, OID_T>(comm_spec, out_prefix, fnum, spec,
+                     SSSPAuto, OID_T>(out_prefix, fnum, spec,
                                       FLAGS_sssp_source);
     } else if (name == "sssp") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, double, LoadStrategy::kOnlyOut,
-                     SSSP, OID_T>(comm_spec, out_prefix, fnum, spec,
-                                  FLAGS_sssp_source);
+                     SSSP, OID_T>(out_prefix, fnum, spec, FLAGS_sssp_source);
     } else {
       LOG(FATAL) << "No avaiable application named [" << name << "].";
     }
   } else {
     if (name == "bfs_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     BFSAuto, OID_T>(comm_spec, out_prefix, fnum, spec,
-                                     FLAGS_bfs_source);
+                     BFSAuto, OID_T>(out_prefix, fnum, spec, FLAGS_bfs_source);
     } else if (name == "bfs") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     BFS, OID_T>(comm_spec, out_prefix, fnum, spec,
-                                 FLAGS_bfs_source);
+                     BFS, OID_T>(out_prefix, fnum, spec, FLAGS_bfs_source);
+#ifdef USE_MPI
     } else if (name == "pagerank_local") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     PageRankLocal, double, int>(comm_spec, out_prefix, fnum,
-                                                 spec, FLAGS_pr_d, FLAGS_pr_mr);
+                     PageRankLocal, double, int>(out_prefix, fnum, spec,
+                                                 FLAGS_pr_d, FLAGS_pr_mr);
+#endif
     } else if (name == "pagerank_local_parallel") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
                      PageRankLocalParallel, double, int>(
-          comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
+          out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "pagerank_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
-                     PageRankAuto, double, int>(comm_spec, out_prefix, fnum,
-                                                spec, FLAGS_pr_d, FLAGS_pr_mr);
+                     PageRankAuto, double, int>(out_prefix, fnum, spec,
+                                                FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "pagerank") {
+#ifdef USE_MPI
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     PageRank, double, int>(comm_spec, out_prefix, fnum, spec,
-                                            FLAGS_pr_d, FLAGS_pr_mr);
+                     PageRank, double, int>(out_prefix, fnum, spec, FLAGS_pr_d,
+                                            FLAGS_pr_mr);
+#else
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                     PageRankPush, double, int>(out_prefix, fnum, spec,
+                                                FLAGS_pr_d, FLAGS_pr_mr);
+#endif
     } else if (name == "pagerank_push") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     PageRankPush, double, int>(comm_spec, out_prefix, fnum,
-                                                spec, FLAGS_pr_d, FLAGS_pr_mr);
+                     PageRankPush, double, int>(out_prefix, fnum, spec,
+                                                FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "pagerank_parallel") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
-                     PageRankParallel, double, int>(
-          comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
+                     PageRankParallel, double, int>(out_prefix, fnum, spec,
+                                                    FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "cdlp_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
-                     CDLPAuto, int>(comm_spec, out_prefix, fnum, spec,
-                                    FLAGS_cdlp_mr);
+                     CDLPAuto, int>(out_prefix, fnum, spec, FLAGS_cdlp_mr);
     } else if (name == "cdlp") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     CDLP, int>(comm_spec, out_prefix, fnum, spec,
-                                FLAGS_cdlp_mr);
+                     CDLP, int>(out_prefix, fnum, spec, FLAGS_cdlp_mr);
     } else if (name == "wcc_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     WCCAuto>(comm_spec, out_prefix, fnum, spec);
+                     WCCAuto>(out_prefix, fnum, spec);
     } else if (name == "wcc") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     WCC>(comm_spec, out_prefix, fnum, spec);
+                     WCC>(out_prefix, fnum, spec);
     } else if (name == "lcc_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     LCCAuto>(comm_spec, out_prefix, fnum, spec);
+                     LCCAuto>(out_prefix, fnum, spec);
     } else if (name == "lcc") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     LCC>(comm_spec, out_prefix, fnum, spec,
-                          FLAGS_degree_threshold);
+                     LCC>(out_prefix, fnum, spec, FLAGS_degree_threshold);
     } else {
       LOG(FATAL) << "No avaiable application named [" << name << "].";
     }
@@ -279,7 +278,7 @@ void Run() {
 #endif
 
 #ifdef GRANULA
-  if (comm_spec.worker_id() == kCoordinatorRank) {
+  if (CommType::get().rank() == kCoordinatorRank) {
     std::cout << offloadGraph.getOperationInfo("StartTime",
                                                offloadGraph.getEpoch())
               << std::endl;

@@ -19,6 +19,11 @@ limitations under the License.
 
 #include <gflags/gflags.h>
 
+#ifndef USE_MPI
+DEFINE_string(hostfile, "", "path to hostfile");
+DEFINE_int32(worker_id, 0, "worker id");
+#endif
+
 /* flags related to the job. */
 DEFINE_string(application, "", "application name");
 DEFINE_string(efile, "", "edge file");

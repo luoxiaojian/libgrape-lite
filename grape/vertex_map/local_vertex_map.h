@@ -30,7 +30,6 @@ limitations under the License.
 #include "grape/serialization/in_archive.h"
 #include "grape/serialization/out_archive.h"
 #include "grape/vertex_map/vertex_map_base.h"
-#include "grape/worker/comm_spec.h"
 
 namespace grape {
 
@@ -67,18 +66,16 @@ class LocalVertexMapBuilder {
   }
 
   void finish(LocalVertexMap<OID_T, VID_T, PARTITIONER_T>& vertex_map) {
-    const CommSpec& comm_spec = vertex_map.GetCommSpec();
-    int worker_id = comm_spec.worker_id();
-    int worker_num = comm_spec.worker_num();
+    int worker_id = CommType::get().rank();
+    int worker_num = CommType::get().size();
     std::thread request_thread([&]() {
       for (int i = 1; i < worker_num; ++i) {
         int dst_worker_id = (worker_id + i) % worker_num;
-        auto& indexer = oid_to_index_[comm_spec.WorkerToFrag(dst_worker_id)];
-        sync_comm::Send(indexer.keys(), dst_worker_id, 0, comm_spec.comm());
+        auto& indexer = oid_to_index_[dst_worker_id];
+        sync_comm::Send(indexer.keys(), dst_worker_id, 0);
         std::vector<VID_T> gid_list(indexer.size());
-        sync_comm::Recv(gid_list, dst_worker_id, 1, comm_spec.comm());
-        auto& gid_indexer =
-            gid_to_index_[comm_spec.WorkerToFrag(dst_worker_id)];
+        sync_comm::Recv(gid_list, dst_worker_id, 1);
+        auto& gid_indexer = gid_to_index_[dst_worker_id];
         for (auto gid : gid_list) {
           gid_indexer._add(gid);
         }
@@ -88,7 +85,7 @@ class LocalVertexMapBuilder {
       for (int i = 1; i < worker_num; ++i) {
         int src_worker_id = (worker_id + worker_num - i) % worker_num;
         typename IdIndexer<internal_oid_t, VID_T>::key_buffer_t keys;
-        sync_comm::Recv(keys, src_worker_id, 0, comm_spec.comm());
+        sync_comm::Recv(keys, src_worker_id, 0);
         std::vector<VID_T> gid_list(keys.size());
         VID_T gid;
         auto& native_indexer = oid_to_index_[fid_];
@@ -97,17 +94,17 @@ class LocalVertexMapBuilder {
           gid = id_parser_.generate_global_id(fid_, gid);
           gid_list[k] = gid;
         }
-        sync_comm::Send(gid_list, src_worker_id, 1, comm_spec.comm());
+        sync_comm::Send(gid_list, src_worker_id, 1);
       }
     });
 
     request_thread.join();
     response_thread.join();
-    MPI_Barrier(comm_spec.comm());
+    CommType::get().barrier();
 
-    vertex_map.vertices_num_.resize(comm_spec.fnum());
-    vertex_map.vertices_num_[fid_] = oid_to_index_[fid_].size();
-    sync_comm::AllGather(vertex_map.vertices_num_, comm_spec.comm());
+    vertex_map.vertices_num_.resize(CommType::get().size());
+    CommType::get().gather<VID_T>(oid_to_index_[fid_].size(),
+                                  vertex_map.vertices_num_);
   }
 
  private:
@@ -128,11 +125,11 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   using internal_oid_t = typename InternalOID<OID_T>::type;
 
  public:
-  explicit LocalVertexMap(const CommSpec& comm_spec) : base_t(comm_spec) {}
+  explicit LocalVertexMap() : base_t() {}
   ~LocalVertexMap() = default;
   void Init() {
-    oid_to_index_.resize(comm_spec_.fnum());
-    gid_to_index_.resize(comm_spec_.fnum());
+    oid_to_index_.resize(CommType::get().size());
+    gid_to_index_.resize(CommType::get().size());
   }
 
   size_t GetTotalVertexSize() const {
@@ -161,7 +158,7 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
   bool GetOid(fid_t fid, const VID_T& lid, OID_T& oid) const {
     internal_oid_t internal_oid;
-    if (fid == comm_spec_.fid()) {
+    if (fid == CommType::get().rank()) {
       if (oid_to_index_[fid].get_key(lid, internal_oid)) {
         oid = InternalOID<OID_T>::FromInternal(internal_oid);
         return true;
@@ -186,7 +183,7 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
   bool _GetGid(fid_t fid, const internal_oid_t& oid, VID_T& gid) const {
     VID_T index;
-    if (fid == comm_spec_.fid()) {
+    if (fid == CommType::get().rank()) {
       if (oid_to_index_[fid].get_index(oid, index)) {
         gid = id_parser_.generate_global_id(fid, index);
         return true;
@@ -210,7 +207,7 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   }
 
   LocalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T> GetLocalBuilder() {
-    fid_t fid = comm_spec_.fid();
+    fid_t fid = CommType::get().rank();
     return LocalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T>(
         fid, oid_to_index_, gid_to_index_, partitioner_, id_parser_);
   }
@@ -219,7 +216,7 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   void Serialize(const std::string& prefix) {
     char fbuf[1024];
     snprintf(fbuf, sizeof(fbuf), "%s/%s_%d", prefix.c_str(),
-             kSerializationVertexMapFilename, comm_spec_.fid());
+             kSerializationVertexMapFilename, CommType::get().rank());
 
     auto io_adaptor =
         std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(fbuf)));
@@ -246,11 +243,11 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     io_adaptor->Open();
 
     base_t::deserialize(io_adaptor);
-    oid_to_index_.resize(comm_spec_.fnum());
+    oid_to_index_.resize(CommType::get().size());
     for (auto& indexer : oid_to_index_) {
       indexer.Deserialize(io_adaptor);
     }
-    gid_to_index_.resize(comm_spec_.fnum());
+    gid_to_index_.resize(CommType::get().size());
     for (auto& indexer : gid_to_index_) {
       indexer.Deserialize(io_adaptor);
     }
@@ -268,7 +265,6 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
   std::vector<IdIndexer<internal_oid_t, VID_T>> oid_to_index_;
   std::vector<IdIndexer<VID_T, VID_T>> gid_to_index_;
-  using base_t::comm_spec_;
   using base_t::id_parser_;
   using base_t::partitioner_;
 

@@ -425,8 +425,8 @@ class MutableEdgecutFragment
     io_adaptor->Close();
   }
 
-  void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) override {
-    base_t::PrepareToRunApp(comm_spec, conf);
+  void PrepareToRunApp(PrepareConf conf) override {
+    base_t::PrepareToRunApp(conf);
     if (conf.need_split_edges_by_fragment) {
       LOG(FATAL) << "MutableEdgecutFragment cannot split edges by fragment";
     } else if (conf.need_split_edges) {

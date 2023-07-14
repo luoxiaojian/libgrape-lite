@@ -23,12 +23,12 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "grape/communication/comm.h"
 #include "grape/fragment/basic_fragment_loader.h"
 #include "grape/fragment/partitioner.h"
 #include "grape/io/line_parser_base.h"
 #include "grape/io/local_io_adaptor.h"
 #include "grape/io/tsv_line_parser.h"
-#include "grape/worker/comm_spec.h"
 
 namespace grape {
 
@@ -62,8 +62,7 @@ class EVFragmentRebalanceLoader {
                 "LineParser type is invalid");
 
  public:
-  explicit EVFragmentRebalanceLoader(const CommSpec& comm_spec)
-      : comm_spec_(comm_spec) {}
+  EVFragmentRebalanceLoader() {}
 
   ~EVFragmentRebalanceLoader() = default;
 
@@ -78,10 +77,10 @@ class EVFragmentRebalanceLoader {
       if (!deserialized) {
         flag = 1;
       }
-      MPI_Allreduce(&flag, &sum, 1, MPI_INT, MPI_SUM, comm_spec_.comm());
+      sum = CommType::get().sum(flag);
       if (sum != 0) {
         fragment.reset();
-        if (comm_spec_.worker_id() == 0) {
+        if (CommType::get().rank() == 0) {
           VLOG(2) << "Deserialization failed, start loading graph from "
                      "efile and vfile.";
         }
@@ -104,7 +103,7 @@ class EVFragmentRebalanceLoader {
       while (io_adaptor->ReadLine(line)) {
         ++line_no;
         if (line_no % 1000000 == 0) {
-          VLOG(10) << "[worker-" << comm_spec_.worker_id() << "][vfile] "
+          VLOG(10) << "[worker-" << CommType::get().rank() << "][vfile] "
                    << line_no;
         }
         if (line.empty() || line[0] == '#')
@@ -121,11 +120,10 @@ class EVFragmentRebalanceLoader {
       io_adaptor->Close();
     }
 
-    fid_t fnum = comm_spec_.fnum();
+    fid_t fnum = CommType::get().size();
     partitioner_t partitioner(fnum, id_list);
 
-    std::shared_ptr<vertex_map_t> vm_ptr =
-        std::make_shared<vertex_map_t>(comm_spec_);
+    std::shared_ptr<vertex_map_t> vm_ptr = std::make_shared<vertex_map_t>();
     vm_ptr->SetPartitioner(partitioner);
     vm_ptr->Init();
     auto builder = vm_ptr->GetLocalBuilder();
@@ -140,8 +138,8 @@ class EVFragmentRebalanceLoader {
     {
       auto io_adaptor =
           std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(efile)));
-      io_adaptor->SetPartialRead(comm_spec_.worker_id(),
-                                 comm_spec_.worker_num());
+      io_adaptor->SetPartialRead(CommType::get().rank(),
+                                 CommType::get().size());
       io_adaptor->Open();
       std::string line;
       edata_t e_data;
@@ -152,7 +150,7 @@ class EVFragmentRebalanceLoader {
       while (io_adaptor->ReadLine(line)) {
         ++lineNo;
         if (lineNo % 1000000 == 0) {
-          VLOG(10) << "[worker-" << comm_spec_.worker_id() << "][efile] "
+          VLOG(10) << "[worker-" << CommType::get().rank() << "][efile] "
                    << lineNo;
         }
         if (line.empty() || line[0] == '#')
@@ -175,7 +173,7 @@ class EVFragmentRebalanceLoader {
       io_adaptor->Close();
     }
 
-    std::vector<std::vector<int>> degree_lists(fnum);
+    std::vector<std::vector<int64_t>> degree_lists(fnum);
     std::vector<std::vector<vid_t>> gid_map(fnum);
     for (fid_t i = 0; i < fnum; ++i) {
       degree_lists[i].resize(vm_ptr->GetInnerVertexSize(i), 0);
@@ -198,9 +196,8 @@ class EVFragmentRebalanceLoader {
     for (fid_t i = 0; i < fnum; ++i) {
       CHECK_LT(degree_lists[i].size(),
                static_cast<size_t>(std::numeric_limits<int>::max()));
-      MPI_Allreduce(MPI_IN_PLACE, degree_lists[i].data(),
-                    degree_lists[i].size(), MPI_INT, MPI_SUM,
-                    comm_spec_.comm());
+      CommType::get().sum(degree_lists[i].data(), degree_lists[i].data(),
+                          degree_lists[i].size());
     }
 
     size_t total_edge_num = 0;
@@ -252,7 +249,7 @@ class EVFragmentRebalanceLoader {
       vnum_list.push_back(cur_num);
     }
 
-    if (comm_spec_.worker_id() == 0) {
+    if (CommType::get().rank() == 0) {
       LOG(INFO) << "Total score = " << total_score;
       for (fid_t i = 0; i < fnum; ++i) {
         LOG(INFO) << "[frag-" << i
@@ -278,10 +275,10 @@ class EVFragmentRebalanceLoader {
 
     std::vector<ShuffleOut<vid_t, vid_t, edata_t>> edges_to_frag(fnum);
     for (fid_t i = 0; i < fnum; ++i) {
-      int worker_id = comm_spec_.FragToWorker(i);
-      edges_to_frag[i].Init(comm_spec_.comm(), edge_tag, 4096000);
+      int worker_id = i;
+      edges_to_frag[i].Init(edge_tag, 4096000);
       edges_to_frag[i].SetDestination(worker_id, i);
-      if (comm_spec_.worker_id() == worker_id) {
+      if (CommType::get().rank() == worker_id) {
         edges_to_frag[i].DisableComm();
       }
     }
@@ -291,7 +288,7 @@ class EVFragmentRebalanceLoader {
 
     std::thread edge_recv_thread([&]() {
       ShuffleIn<vid_t, vid_t, edata_t> data_in;
-      data_in.Init(comm_spec_.fnum(), comm_spec_.comm(), edge_tag);
+      data_in.Init(CommType::get().size(), edge_tag);
       fid_t dst_fid;
       int src_worker_id;
       while (!data_in.Finished()) {
@@ -299,7 +296,7 @@ class EVFragmentRebalanceLoader {
         if (src_worker_id == -1) {
           break;
         }
-        CHECK_EQ(dst_fid, comm_spec_.fid());
+        CHECK_EQ(dst_fid, CommType::get().rank());
         auto& buffers = data_in.buffers();
         foreach_rval(buffers, [&](vid_t&& src, vid_t&& dst, edata_t&& data) {
           processed_edges.emplace_back(src, dst, std::move(data));
@@ -324,7 +321,7 @@ class EVFragmentRebalanceLoader {
 
     edge_recv_thread.join();
     {
-      auto& buffers = edges_to_frag[comm_spec_.fid()].buffers();
+      auto& buffers = edges_to_frag[CommType::get().rank()].buffers();
       foreach_rval(buffers, [&](vid_t&& src, vid_t&& dst, edata_t&& data) {
         processed_edges.emplace_back(src, dst, std::move(data));
       });
@@ -336,14 +333,14 @@ class EVFragmentRebalanceLoader {
         vid_t gid;
         CHECK(vm_ptr->GetGid(id_list[i], gid));
         fid_t fid = vm_ptr->GetFidFromGid(gid);
-        if (fid == comm_spec_.fid()) {
+        if (fid == CommType::get().rank()) {
           processed_vertices.emplace_back(gid, vdata_list[i]);
         }
       }
     }
 
     fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr));
-    fragment->Init(comm_spec_.fid(), spec.directed, processed_vertices,
+    fragment->Init(CommType::get().rank(), spec.directed, processed_vertices,
                    processed_edges);
 
     if (!std::is_same<vdata_t, EmptyType>::value) {
@@ -360,7 +357,7 @@ class EVFragmentRebalanceLoader {
     if (spec.serialize) {
       bool serialized = serializeFragment(fragment, vm_ptr, spec);
       if (!serialized) {
-        VLOG(2) << "[worker-" << comm_spec_.worker_id()
+        VLOG(2) << "[worker-" << CommType::get().rank()
                 << "] Serialization failed.";
       }
     }
@@ -374,7 +371,7 @@ class EVFragmentRebalanceLoader {
     snprintf(vm_fbuf, sizeof(vm_fbuf), "%s/%s", prefix.c_str(),
              kSerializationVertexMapFilename);
     snprintf(frag_fbuf, sizeof(frag_fbuf), kSerializationFilenameFormat,
-             prefix.c_str(), comm_spec_.fid());
+             prefix.c_str(), CommType::get().rank());
     std::string vm_path = vm_fbuf;
     std::string frag_path = frag_fbuf;
     return exists_file(vm_path) && exists_file(frag_path);
@@ -393,12 +390,12 @@ class EVFragmentRebalanceLoader {
     auto io_adaptor =
         std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(typed_prefix));
     if (io_adaptor->IsExist()) {
-      std::shared_ptr<vertex_map_t> vm_ptr =
-          std::make_shared<vertex_map_t>(comm_spec_);
-      vm_ptr->template Deserialize<IOADAPTOR_T>(typed_prefix, comm_spec_.fid());
+      std::shared_ptr<vertex_map_t> vm_ptr = std::make_shared<vertex_map_t>();
+      vm_ptr->template Deserialize<IOADAPTOR_T>(typed_prefix,
+                                                CommType::get().rank());
       fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr));
       fragment->template Deserialize<IOADAPTOR_T>(typed_prefix,
-                                                  comm_spec_.fid());
+                                                  CommType::get().rank());
       return true;
     } else {
       return false;
@@ -423,7 +420,6 @@ class EVFragmentRebalanceLoader {
 
   static constexpr int edge_tag = 6;
 
-  CommSpec comm_spec_;
   line_parser_t line_parser_;
 };
 

@@ -30,10 +30,9 @@ class EVFragmentMutator {
   using edata_t = typename FRAG_T::edata_t;
 
  public:
-  explicit EVFragmentMutator(const CommSpec& comm_spec)
-      : comm_spec_(comm_spec), t0_(0), t1_(0) {}
+  explicit EVFragmentMutator() : t0_(0), t1_(0) {}
   ~EVFragmentMutator() {
-    if (comm_spec_.worker_id() == 0) {
+    if (CommType::get().rank() == 0) {
       VLOG(1) << "mutating graph: " << t0_ << " s + " << t1_ << " s";
     }
   }
@@ -46,14 +45,14 @@ class EVFragmentMutator {
     if (efile == "" && vfile == "") {
       return frag;
     }
-    MPI_Barrier(comm_spec_.comm());
+    CommType::get().barrier();
     t0_ -= GetCurrentTime();
-    BasicFragmentMutator<fragment_t> mutator(comm_spec_, frag);
+    BasicFragmentMutator<fragment_t> mutator(frag);
     mutator.Start();
     if (!vfile.empty() || !std::is_same<vdata_t, EmptyType>::value) {
       auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(vfile));
-      io_adaptor->SetPartialRead(comm_spec_.worker_id(),
-                                 comm_spec_.worker_num());
+      io_adaptor->SetPartialRead(CommType::get().rank(),
+                                 CommType::get().size());
       io_adaptor->Open();
       std::string line;
 
@@ -67,7 +66,7 @@ class EVFragmentMutator {
       while (io_adaptor->ReadLine(line)) {
         ++lineNo;
         if (lineNo % 1000000 == 0) {
-          VLOG(10) << "[worker-" << comm_spec_.worker_id() << "][efile] "
+          VLOG(10) << "[worker-" << CommType::get().rank() << "][efile] "
                    << lineNo;
         }
         if (line.empty() || line[0] == '#')
@@ -90,8 +89,8 @@ class EVFragmentMutator {
     }
     {
       auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(efile));
-      io_adaptor->SetPartialRead(comm_spec_.worker_id(),
-                                 comm_spec_.worker_num());
+      io_adaptor->SetPartialRead(CommType::get().rank(),
+                                 CommType::get().size());
       io_adaptor->Open();
 
       std::string line;
@@ -105,7 +104,7 @@ class EVFragmentMutator {
       while (io_adaptor->ReadLine(line)) {
         ++lineNo;
         if (lineNo % 1000000 == 0) {
-          VLOG(10) << "[worker-" << comm_spec_.worker_id() << "][efile] "
+          VLOG(10) << "[worker-" << CommType::get().rank() << "][efile] "
                    << lineNo;
         }
         istrm.str(line);
@@ -130,18 +129,17 @@ class EVFragmentMutator {
       }
       VLOG(1) << "read edges to add: " << count;
     }
-    MPI_Barrier(comm_spec_.comm());
+    CommType::get().barrier();
     t0_ += GetCurrentTime();
     t1_ -= GetCurrentTime();
     auto ret = mutator.MutateFragment();
-    MPI_Barrier(comm_spec_.comm());
+    CommType::get().barrier();
     t1_ += GetCurrentTime();
 
     return ret;
   }
 
  private:
-  CommSpec comm_spec_;
   double t0_;
   double t1_;
 };

@@ -23,6 +23,7 @@ limitations under the License.
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
+#include <grape/communication/comm.h>
 #include <grape/fragment/loader.h>
 #include <grape/fragment/partitioner.h>
 #include <grape/grape.h>
@@ -57,16 +58,13 @@ int main(int argc, char* argv[]) {
   using app_t = grape::Sampler<graph_t>;
 
   // init comm
-  grape::InitMPIComm();
   {
-    grape::CommSpec comm_spec;
-    comm_spec.Init(MPI_COMM_WORLD);
-
-    bool is_coordinator = (comm_spec.worker_id() == grape::kCoordinatorRank);
+    bool is_coordinator =
+        (grape::CommType::get().rank() == grape::kCoordinatorRank);
     auto spec = grape::DefaultParallelEngineSpec();
+    int local_num = grape::CommType::get().local_size();
     spec.thread_num =
-        (std::thread::hardware_concurrency() + comm_spec.local_num() - 1) /
-        comm_spec.local_num();
+        (std::thread::hardware_concurrency() + local_num - 1) / local_num;
 
     // load graph and app
     auto graph_spec = grape::DefaultLoadGraphSpec();
@@ -77,8 +75,8 @@ int main(int argc, char* argv[]) {
       graph_spec.set_serialize(true, FLAGS_serialization_prefix);
     }
     graph_spec.set_directed(false);
-    auto fragment = grape::LoadGraph<graph_t>(FLAGS_efile, FLAGS_vfile,
-                                              comm_spec, graph_spec);
+    auto fragment =
+        grape::LoadGraph<graph_t>(FLAGS_efile, FLAGS_vfile, graph_spec);
     auto app = std::make_shared<app_t>();
 
     // init indices
@@ -97,7 +95,7 @@ int main(int argc, char* argv[]) {
       std::vector<std::string> edge_msgs;
       if (is_coordinator) {
         consumer = std::unique_ptr<KafkaConsumer>(new KafkaConsumer(
-            comm_spec.worker_id(), FLAGS_broker_list, FLAGS_group_id,
+            grape::CommType::get().rank(), FLAGS_broker_list, FLAGS_group_id,
             FLAGS_input_topic, FLAGS_partition_num, FLAGS_time_interval,
             FLAGS_batch_size));
       }
@@ -107,13 +105,12 @@ int main(int argc, char* argv[]) {
         if (is_coordinator) {
           consumer->ConsumeMessages(query_vertices, edge_msgs);
         }
-        grape::sync_comm::Bcast(query_vertices, grape::kCoordinatorRank,
-                                comm_spec.comm());
+        grape::CommType::get().bcast(query_vertices, grape::kCoordinatorRank);
 
-        fragment->ExtendFragment(edge_msgs, comm_spec, graph_spec);
+        fragment->ExtendFragment(edge_msgs, graph_spec);
         if (!query_vertices.empty()) {
           auto worker = app_t::CreateWorker(app, fragment);
-          worker->Init(comm_spec, spec);
+          worker->Init(spec);
 
           auto t_begin = grape::GetCurrentTime();
           worker->Query(FLAGS_sampling_strategy, FLAGS_hop_and_num,
@@ -136,7 +133,7 @@ int main(int argc, char* argv[]) {
       ostream.close();
     } else {
       auto worker = app_t::CreateWorker(app, fragment);
-      worker->Init(comm_spec, spec);
+      worker->Init(spec);
       auto t_begin = grape::GetCurrentTime();
       worker->Query(FLAGS_sampling_strategy, FLAGS_hop_and_num, query_vertices);
       LOG(INFO) << "Query: " << grape::GetCurrentTime() - t_begin << " s";
@@ -153,6 +150,5 @@ int main(int argc, char* argv[]) {
       ostream.close();
     }
   }
-  grape::FinalizeMPIComm();
   google::ShutdownGoogleLogging();
 }

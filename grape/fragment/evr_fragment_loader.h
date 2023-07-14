@@ -23,12 +23,12 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "grape/communication/comm.h"
 #include "grape/fragment/basic_fragment_loader.h"
 #include "grape/fragment/partitioner.h"
 #include "grape/io/line_parser_base.h"
 #include "grape/io/local_io_adaptor.h"
 #include "grape/io/tsv_line_parser.h"
-#include "grape/worker/comm_spec.h"
 
 namespace grape {
 
@@ -53,7 +53,9 @@ class EVRFragmentLoader {
 
   using vertex_map_t = typename fragment_t::vertex_map_t;
   using partitioner_t = RfilePartitioner<oid_t>;
-  static_assert(std::is_same<typename vertex_map_t::partitioner_t, partitioner_t>::value, "Partitioner type not match!");
+  static_assert(
+      std::is_same<typename vertex_map_t::partitioner_t, partitioner_t>::value,
+      "Partitioner type not match!");
   using io_adaptor_t = IOADAPTOR_T;
   using line_parser_t = LINE_PARSER_T;
 
@@ -64,14 +66,13 @@ class EVRFragmentLoader {
                 "LineParser type is invalid");
 
  public:
-  explicit EVRFragmentLoader(const CommSpec& comm_spec)
-      : comm_spec_(comm_spec), basic_fragment_loader_(comm_spec) {}
+  explicit EVRFragmentLoader() : basic_fragment_loader_() {}
 
   ~EVRFragmentLoader() = default;
 
   std::shared_ptr<fragment_t> LoadFragment(const std::string& efile,
                                            const std::string& vfile,
-					   const std::string& rfile,
+                                           const std::string& rfile,
                                            const LoadGraphSpec& spec) {
     std::shared_ptr<fragment_t> fragment(nullptr);
     CHECK(!spec.rebalance);
@@ -83,10 +84,10 @@ class EVRFragmentLoader {
       if (!deserialized) {
         flag = 1;
       }
-      MPI_Allreduce(&flag, &sum, 1, MPI_INT, MPI_SUM, comm_spec_.comm());
+      sum = CommType::get().sum(flag);
       if (sum != 0) {
         fragment.reset();
-        if (comm_spec_.worker_id() == 0) {
+        if (CommType::get().rank() == 0) {
           VLOG(2) << "Deserialization failed, start loading graph from "
                      "efile and vfile.";
         }
@@ -107,7 +108,7 @@ class EVRFragmentLoader {
       while (io_adaptor->ReadLine(line)) {
         ++line_no;
         if (line_no % 1000000 == 0) {
-          VLOG(10) << "[worker-" << comm_spec_.worker_id() << "][vfile] "
+          VLOG(10) << "[worker-" << CommType::get().rank() << "][vfile] "
                    << line_no;
         }
         if (line.empty() || line[0] == '#')
@@ -141,8 +142,8 @@ class EVRFragmentLoader {
     {
       auto io_adaptor =
           std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(efile)));
-      io_adaptor->SetPartialRead(comm_spec_.worker_id(),
-                                 comm_spec_.worker_num());
+      io_adaptor->SetPartialRead(CommType::get().rank(),
+                                 CommType::get().size());
       io_adaptor->Open();
       std::string line;
       edata_t e_data;
@@ -152,7 +153,7 @@ class EVRFragmentLoader {
       while (io_adaptor->ReadLine(line)) {
         ++lineNo;
         if (lineNo % 1000000 == 0) {
-          VLOG(10) << "[worker-" << comm_spec_.worker_id() << "][efile] "
+          VLOG(10) << "[worker-" << CommType::get().rank() << "][efile] "
                    << lineNo;
         }
         if (line.empty() || line[0] == '#')
@@ -170,7 +171,7 @@ class EVRFragmentLoader {
       io_adaptor->Close();
     }
 
-    VLOG(1) << "[worker-" << comm_spec_.worker_id()
+    VLOG(1) << "[worker-" << CommType::get().rank()
             << "] finished add vertices and edges";
 
     basic_fragment_loader_.ConstructFragment(fragment, spec.directed);
@@ -179,7 +180,7 @@ class EVRFragmentLoader {
       bool serialized = basic_fragment_loader_.SerializeFragment(
           fragment, spec.serialization_prefix);
       if (!serialized) {
-        VLOG(2) << "[worker-" << comm_spec_.worker_id()
+        VLOG(2) << "[worker-" << CommType::get().rank()
                 << "] Serialization failed.";
       }
     }
@@ -188,8 +189,6 @@ class EVRFragmentLoader {
   }
 
  private:
-  CommSpec comm_spec_;
-
   BasicFragmentLoader<fragment_t, io_adaptor_t> basic_fragment_loader_;
   line_parser_t line_parser_;
 };

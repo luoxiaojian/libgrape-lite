@@ -21,6 +21,7 @@ limitations under the License.
 #include <vector>
 
 #include "flat_hash_map/flat_hash_map.hpp"
+#include "grape/communication/comm.h"
 #include "grape/config.h"
 #include "grape/types.h"
 #include "grape/utils/string_view_vector.h"
@@ -70,14 +71,12 @@ struct KeyBuffer {
     }
   }
 
-  static void SendTo(const type& buffer, int dst_worker_id, int tag,
-                     MPI_Comm comm) {
-    sync_comm::Send(buffer, dst_worker_id, tag, comm);
+  static void SendTo(const type& buffer, int dst_worker_id, int tag) {
+    sync_comm::Send(buffer, dst_worker_id, tag);
   }
 
-  static void RecvFrom(type& buffer, int src_worker_id, int tag,
-                       MPI_Comm comm) {
-    sync_comm::Recv(buffer, src_worker_id, tag, comm);
+  static void RecvFrom(type& buffer, int src_worker_id, int tag) {
+    sync_comm::Recv(buffer, src_worker_id, tag);
   }
 };
 
@@ -119,14 +118,12 @@ struct KeyBuffer<nonstd::string_view> {
     }
   }
 
-  static void SendTo(const type& buffer, int dst_worker_id, int tag,
-                     MPI_Comm comm) {
-    sync_comm::Send(buffer, dst_worker_id, tag, comm);
+  static void SendTo(const type& buffer, int dst_worker_id, int tag) {
+    sync_comm::Send(buffer, dst_worker_id, tag);
   }
 
-  static void RecvFrom(type& buffer, int src_worker_id, int tag,
-                       MPI_Comm comm) {
-    sync_comm::Recv(buffer, src_worker_id, tag, comm);
+  static void RecvFrom(type& buffer, int src_worker_id, int tag) {
+    sync_comm::Recv(buffer, src_worker_id, tag);
   }
 };
 
@@ -508,29 +505,33 @@ namespace sync_comm {
 template <typename OID_T, typename VID_T>
 struct CommImpl<IdIndexer<OID_T, VID_T>> {
   static void send(const IdIndexer<OID_T, VID_T>& indexer, int dst_worker_id,
-                   int tag, MPI_Comm comm) {
-    InArchive arc;
-    arc << indexer.hash_policy_.get_mod_function_index() << indexer.max_lookups_
-        << indexer.num_elements_ << indexer.num_slots_minus_one_;
-    Send(arc, dst_worker_id, tag, comm);
-    id_indexer_impl::KeyBuffer<OID_T>::SendTo(indexer.keys_, dst_worker_id, tag,
-                                              comm);
-    Send(indexer.indices_, dst_worker_id, tag, comm);
-    Send(indexer.distances_, dst_worker_id, tag, comm);
+                   int tag) {
+    {
+      InArchive arc;
+      arc << indexer.hash_policy_.get_mod_function_index()
+          << indexer.max_lookups_ << indexer.num_elements_
+          << indexer.num_slots_minus_one_;
+
+      CommImpl<InArchive>::send(arc, dst_worker_id, tag);
+    }
+    id_indexer_impl::KeyBuffer<OID_T>::SendTo(indexer.keys_, dst_worker_id,
+                                              tag);
+    Send(indexer.indices_, dst_worker_id, tag);
+    Send(indexer.distances_, dst_worker_id, tag);
   }
 
-  static void recv(IdIndexer<OID_T, VID_T>& indexer, int src_worker_id, int tag,
-                   MPI_Comm comm) {
+  static void recv(IdIndexer<OID_T, VID_T>& indexer, int src_worker_id,
+                   int tag) {
     OutArchive arc;
-    Recv(arc, src_worker_id, tag, comm);
+    CommImpl<OutArchive>::recv(arc, src_worker_id, tag);
     size_t mod_function_index;
     arc >> mod_function_index >> indexer.max_lookups_ >>
         indexer.num_elements_ >> indexer.num_slots_minus_one_;
     indexer.hash_policy_.set_mod_function_by_index(mod_function_index);
     id_indexer_impl::KeyBuffer<OID_T>::RecvFrom(indexer.keys_, src_worker_id,
-                                                tag, comm);
-    Recv(indexer.indices_, src_worker_id, tag, comm);
-    Recv(indexer.distances_, src_worker_id, tag, comm);
+                                                tag);
+    Recv(indexer.indices_, src_worker_id, tag);
+    Recv(indexer.distances_, src_worker_id, tag);
   }
 };
 

@@ -65,27 +65,20 @@ void Init() {
     mkdir(FLAGS_out_prefix.c_str(), 0777);
   }
 
-  grape::InitMPIComm();
-  grape::CommSpec comm_spec;
-  comm_spec.Init(MPI_COMM_WORLD);
-  if (comm_spec.worker_id() == grape::kCoordinatorRank) {
+  if (grape::CommType::get().rank() == grape::kCoordinatorRank) {
     VLOG(1) << "Workers of libgrape-lite initialized.";
   }
 }
 
-void Finalize() {
-  grape::FinalizeMPIComm();
-  VLOG(1) << "Workers finalized.";
-}
+void Finalize() { VLOG(1) << "Workers finalized."; }
 
 template <typename FRAG_T, typename APP_T, typename... Args>
 void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
-             const grape::CommSpec& comm_spec,
              const grape::ParallelEngineSpec& spec,
              const std::string& out_prefix, Args... args) {
   timer_next("load application");
   auto worker = APP_T::CreateWorker(app, fragment);
-  worker->Init(comm_spec, spec);
+  worker->Init(spec);
   timer_next("run algorithm");
   worker->Query(std::forward<Args>(args)...);
   timer_next("print output");
@@ -98,7 +91,8 @@ void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
   ostream.close();
   worker->Finalize();
   timer_end();
-  VLOG(1) << "Worker-" << comm_spec.worker_id() << " finished: " << output_path;
+  VLOG(1) << "Worker-" << grape::CommType::get().rank()
+          << " finished: " << output_path;
 }
 
 template <typename T>
@@ -117,8 +111,7 @@ struct ParamConverter<std::string> {
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
           grape::LoadStrategy load_strategy, template <class> class APP_T,
           typename... Args>
-void CreateAndQuery(const grape::CommSpec& comm_spec,
-                    const std::string& out_prefix, int fnum,
+void CreateAndQuery(const std::string& out_prefix, int fnum,
                     const grape::ParallelEngineSpec& spec, Args... args) {
   timer_next("load graph");
   grape::LoadGraphSpec graph_spec = grape::DefaultLoadGraphSpec();
@@ -133,11 +126,11 @@ void CreateAndQuery(const grape::CommSpec& comm_spec,
                                         load_strategy, VertexMapType>;
       std::shared_ptr<FRAG_T> fragment = grape::LoadGraphAndMutate<FRAG_T>(
           FLAGS_efile, FLAGS_vfile, FLAGS_delta_efile, FLAGS_delta_vfile,
-          comm_spec, graph_spec);
+          graph_spec);
       using AppType = APP_T<FRAG_T>;
       auto app = std::make_shared<AppType>();
-      DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                        out_prefix, args...);
+      DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix,
+                                        args...);
     } else {
       using VertexMapType = grape::LocalVertexMap<OID_T, VID_T>;
       using FRAG_T =
@@ -145,11 +138,11 @@ void CreateAndQuery(const grape::CommSpec& comm_spec,
                                         load_strategy, VertexMapType>;
       std::shared_ptr<FRAG_T> fragment = grape::LoadGraphAndMutate<FRAG_T>(
           FLAGS_efile, FLAGS_vfile, FLAGS_delta_efile, FLAGS_delta_vfile,
-          comm_spec, graph_spec);
+          graph_spec);
       using AppType = APP_T<FRAG_T>;
       auto app = std::make_shared<AppType>();
-      DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                        out_prefix, args...);
+      DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix,
+                                        args...);
     }
   } else {
     if (FLAGS_segmented_partition) {
@@ -160,12 +153,12 @@ void CreateAndQuery(const grape::CommSpec& comm_spec,
         using FRAG_T =
             grape::ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
                                             load_strategy, VertexMapType>;
-        std::shared_ptr<FRAG_T> fragment = grape::LoadGraph<FRAG_T>(
-            FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+        std::shared_ptr<FRAG_T> fragment =
+            grape::LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, graph_spec);
         using AppType = APP_T<FRAG_T>;
         auto app = std::make_shared<AppType>();
-        DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                          out_prefix, args...);
+        DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix,
+                                          args...);
       } else {
         using VertexMapType =
             grape::LocalVertexMap<OID_T, VID_T,
@@ -173,12 +166,12 @@ void CreateAndQuery(const grape::CommSpec& comm_spec,
         using FRAG_T =
             grape::ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
                                             load_strategy, VertexMapType>;
-        std::shared_ptr<FRAG_T> fragment = grape::LoadGraph<FRAG_T>(
-            FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+        std::shared_ptr<FRAG_T> fragment =
+            grape::LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, graph_spec);
         using AppType = APP_T<FRAG_T>;
         auto app = std::make_shared<AppType>();
-        DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                          out_prefix, args...);
+        DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix,
+                                          args...);
       }
     } else {
       graph_spec.set_rebalance(false, 0);
@@ -187,23 +180,23 @@ void CreateAndQuery(const grape::CommSpec& comm_spec,
         using FRAG_T =
             grape::ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
                                             load_strategy, VertexMapType>;
-        std::shared_ptr<FRAG_T> fragment = grape::LoadGraph<FRAG_T>(
-            FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+        std::shared_ptr<FRAG_T> fragment =
+            grape::LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, graph_spec);
         using AppType = APP_T<FRAG_T>;
         auto app = std::make_shared<AppType>();
-        DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                          out_prefix, args...);
+        DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix,
+                                          args...);
       } else {
         using VertexMapType = grape::LocalVertexMap<OID_T, VID_T>;
         using FRAG_T =
             grape::ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
                                             load_strategy, VertexMapType>;
-        std::shared_ptr<FRAG_T> fragment = grape::LoadGraph<FRAG_T>(
-            FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+        std::shared_ptr<FRAG_T> fragment =
+            grape::LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, graph_spec);
         using AppType = APP_T<FRAG_T>;
         auto app = std::make_shared<AppType>();
-        DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                          out_prefix, args...);
+        DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix,
+                                          args...);
       }
     }
   }
@@ -211,18 +204,16 @@ void CreateAndQuery(const grape::CommSpec& comm_spec,
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
 void Run() {
-  grape::CommSpec comm_spec;
-  comm_spec.Init(MPI_COMM_WORLD);
-
-  bool is_coordinator = comm_spec.worker_id() == grape::kCoordinatorRank;
+  bool is_coordinator =
+      grape::CommType::get().rank() == grape::kCoordinatorRank;
   timer_start(is_coordinator);
 
   // FIXME: no barrier apps. more manager? or use a dynamic-cast.
-  auto spec = grape::MultiProcessSpec(comm_spec, __AFFINITY__);
-  int fnum = comm_spec.fnum();
+  auto spec = grape::MultiProcessSpec(__AFFINITY__);
+  int fnum = grape::CommType::get().size();
   CreateAndQuery<OID_T, VID_T, VDATA_T, EDATA_T, grape::LoadStrategy::kOnlyOut,
                  grape::SSSP, OID_T>(
-      comm_spec, FLAGS_out_prefix, fnum, spec,
+      FLAGS_out_prefix, fnum, spec,
       ParamConverter<OID_T>::FromInt64(FLAGS_sssp_source));
 }
 

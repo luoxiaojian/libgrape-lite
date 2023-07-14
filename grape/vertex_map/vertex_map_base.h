@@ -23,7 +23,6 @@ limitations under the License.
 #include "grape/fragment/id_parser.h"
 #include "grape/serialization/in_archive.h"
 #include "grape/serialization/out_archive.h"
-#include "grape/worker/comm_spec.h"
 
 namespace grape {
 
@@ -63,10 +62,8 @@ class VertexMapBase {
   using partitioner_t = PARTITIONER_T;
   using oid_t = OID_T;
   using vid_t = VID_T;
-  explicit VertexMapBase(const CommSpec& comm_spec)
-      : comm_spec_(comm_spec), partitioner_() {
-    comm_spec_.Dup();
-    id_parser_.init(comm_spec_.fnum());
+  explicit VertexMapBase() : partitioner_() {
+    id_parser_.init(CommType::get().size());
   }
   virtual ~VertexMapBase() = default;
 
@@ -78,7 +75,7 @@ class VertexMapBase {
     partitioner_ = std::move(partitioner);
   }
 
-  fid_t GetFragmentNum() const { return comm_spec_.fnum(); }
+  fid_t GetFragmentNum() const { return CommType::get().size(); }
 
   VID_T Lid2Gid(fid_t fid, const VID_T& lid) const {
     return id_parser_.generate_global_id(fid, lid);
@@ -94,8 +91,6 @@ class VertexMapBase {
 
   VID_T MaxVertexNum() const { return id_parser_.max_local_id(); }
 
-  const CommSpec& GetCommSpec() const { return comm_spec_; }
-
   template <typename IOADAPTOR_T>
   void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
     partitioner_.template serialize<IOADAPTOR_T>(writer);
@@ -103,7 +98,7 @@ class VertexMapBase {
 
   template <typename IOADAPTOR_T>
   void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
-    id_parser_.init(comm_spec_.fnum());
+    id_parser_.init(CommType::get().size());
     partitioner_.template deserialize<IOADAPTOR_T>(reader);
   }
 
@@ -116,7 +111,6 @@ class VertexMapBase {
   PARTITIONER_T& GetPartitioner() { return partitioner_; }
 
  protected:
-  CommSpec comm_spec_;
   PARTITIONER_T partitioner_;
   IdParser<VID_T> id_parser_;
 
