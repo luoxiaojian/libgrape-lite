@@ -16,7 +16,7 @@ limitations under the License.
 #ifndef GRAPE_COMMUNICATION_MPI_COMM_H_
 #define GRAPE_COMMUNICATION_MPI_COMM_H_
 
-#ifdef USE_MPI
+// #ifdef USE_MPI
 
 #include "grape/serialization/in_archive.h"
 #include "grape/serialization/out_archive.h"
@@ -491,10 +491,36 @@ static inline void irecv_buffer(T* ptr, size_t len, int src_worker_id, int tag,
 
 }  // namespace mpi_comm_ops
 
+class MPICommAllocator {
+ public:
+  MPICommAllocator()
+      : comm_(NULL_COMM), rank_(0), size_(1), local_rank_(0), local_size_(1) {}
+  ~MPICommAllocator() {
+    if (comm_ != NULL_COMM) {
+      MPI_Comm_free(&comm_);
+    }
+  }
+
+  void init() {
+    comm_ = comm;
+    MPI_Comm_rank(comm_, &rank_);
+    MPI_Comm_size(comm_, &size_);
+  }
+
+ private:
+  MPI_Comm comm_;
+  int rank_;
+  int size_;
+
+  int local_rank_;
+  int local_size_;
+};
+
+using CommAlloatorType = MPICommAllocator;
 using CommType = MPIComm;
 
 }  // namespace grape
 
-#endif
+// #endif
 
 #endif  // GRAPE_COMMUNICATION_MPI_COMM_H_
