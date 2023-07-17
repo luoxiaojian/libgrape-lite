@@ -81,11 +81,11 @@ void Init() {
   }
 
 #ifdef USE_MPI
-  MPIComm::get().init();
+  MPICommAllocator::get().init();
 #else
   TCPComm::get().init(FLAGS_hostfile, FLAGS_worker_id);
 #endif
-  if (CommType::get().rank() == kCoordinatorRank) {
+  if (CommAllocatorType::get().rank() == kCoordinatorRank) {
     VLOG(1) << "Workers of libgrape-lite initialized.";
   }
 }
@@ -98,7 +98,7 @@ void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
              Args... args) {
   timer_next("load application");
   auto worker = APP_T::CreateWorker(app, fragment);
-  worker->Init(spec);
+  worker->Init(CommAllocatorType::get(), spec);
   timer_next("run algorithm");
   worker->Query(std::forward<Args>(args)...);
   timer_next("print output");
@@ -110,12 +110,10 @@ void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
     worker->Output(ostream);
     ostream.close();
     worker->Finalize();
-    VLOG(1) << "Worker-" << CommType::get().rank()
-            << " finished: " << output_path;
+    VLOG(1) << "Worker-" << fragment->fid() << " finished: " << output_path;
   } else {
     worker->Finalize();
-    VLOG(1) << "Worker-" << CommType::get().rank()
-            << " finished without output";
+    VLOG(1) << "Worker-" << fragment->fid() << " finished without output";
   }
   timer_end();
 }
@@ -134,13 +132,14 @@ void CreateAndQuery(const std::string& out_prefix, int fnum,
   } else if (FLAGS_serialize) {
     graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
+  CommType loader_comm = CommAllocatorType::get().allocate();
   if (FLAGS_segmented_partition) {
     using VertexMapType =
         GlobalVertexMap<OID_T, VID_T, SegmentedPartitioner<OID_T>>;
     using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
                                             load_strategy, VertexMapType>;
     std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, graph_spec);
+        LoadGraph<FRAG_T>(loader_comm, FLAGS_efile, FLAGS_vfile, graph_spec);
     using AppType = APP_T<FRAG_T>;
     auto app = std::make_shared<AppType>();
     DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix, args...);
@@ -149,7 +148,7 @@ void CreateAndQuery(const std::string& out_prefix, int fnum,
     using FRAG_T =
         ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy>;
     std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, graph_spec);
+        LoadGraph<FRAG_T>(loader_comm, FLAGS_efile, FLAGS_vfile, graph_spec);
     using AppType = APP_T<FRAG_T>;
     auto app = std::make_shared<AppType>();
     DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix, args...);
@@ -158,14 +157,16 @@ void CreateAndQuery(const std::string& out_prefix, int fnum,
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
 void Run() {
-  bool is_coordinator = CommType::get().rank() == kCoordinatorRank;
+  int worker_id = CommAllocatorType::get().rank();
+  int worker_num = CommAllocatorType::get().size();
+  bool is_coordinator = worker_id == kCoordinatorRank;
   timer_start(is_coordinator);
 #ifdef GRANULA
   std::string job_id = FLAGS_jobid;
   granula::startMonitorProcess(getpid());
   granula::operation grapeJob("grape", "Id.Unique", "Job", "Id.Unique");
   granula::operation loadGraph("grape", "Id.Unique", "LoadGraph", "Id.Unique");
-  if (CommType::get().rank() == kCoordinatorRank) {
+  if (worker_id == kCoordinatorRank) {
     std::cout << grapeJob.getOperationInfo("StartTime", grapeJob.getEpoch())
               << std::endl;
     std::cout << loadGraph.getOperationInfo("StartTime", loadGraph.getEpoch())
@@ -177,14 +178,16 @@ void Run() {
 #endif
 
 #ifdef GRANULA
-  if (CommType::get().rank() == kCoordinatorRank) {
+  if (worker_id == kCoordinatorRank) {
     std::cout << loadGraph.getOperationInfo("EndTime", loadGraph.getEpoch())
               << std::endl;
   }
 #endif
   // FIXME: no barrier apps. more manager? or use a dynamic-cast.
   std::string out_prefix = FLAGS_out_prefix;
-  auto spec = MultiProcessSpec(__AFFINITY__);
+  int local_id = CommAllocatorType::get().local_rank();
+  int local_size = CommAllocatorType::get().local_size();
+  auto spec = MultiProcessSpec(local_id, local_size, __AFFINITY__);
   if (FLAGS_app_concurrency != -1) {
     spec.thread_num = FLAGS_app_concurrency;
     if (__AFFINITY__) {
@@ -198,7 +201,7 @@ void Run() {
       }
     }
   }
-  int fnum = CommType::get().size();
+  int fnum = worker_num;
   std::string name = FLAGS_application;
   if (name.find("sssp") != std::string::npos) {
     if (name == "sssp_auto") {
@@ -278,7 +281,7 @@ void Run() {
 #endif
 
 #ifdef GRANULA
-  if (CommType::get().rank() == kCoordinatorRank) {
+  if (worker_id == kCoordinatorRank) {
     std::cout << offloadGraph.getOperationInfo("StartTime",
                                                offloadGraph.getEpoch())
               << std::endl;

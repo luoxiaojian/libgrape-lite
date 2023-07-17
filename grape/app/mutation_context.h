@@ -157,7 +157,7 @@ class MutationContext : public ContextBase {
     remove_edge(src_oid, dst_oid);
   }
 
-  void apply_mutation(std::shared_ptr<fragment_t> fragment) {
+  void apply_mutation(std::shared_ptr<fragment_t> fragment, CommType& comm) {
     {
       int local_to_mutate = 1;
       if (id_to_add_.empty() && esrc_to_add_.empty() &&
@@ -166,12 +166,12 @@ class MutationContext : public ContextBase {
           id_to_remove_.empty() && esrc_to_remove_.empty()) {
         local_to_mutate = 0;
       }
-      int global_to_mutate = CommType::get().sum(local_to_mutate);
+      int global_to_mutate = comm.sum(local_to_mutate);
       if (global_to_mutate == 0) {
         return;
       }
     }
-    BasicFragmentMutator<fragment_t> mutator(fragment);
+    BasicFragmentMutator<fragment_t> mutator(fragment, comm);
     mutator.AddVerticesToRemove(std::move(parsed_vid_to_remove_));
     mutator.AddVerticesToUpdate(std::move(parsed_vertices_to_update_));
     mutator.Start();

@@ -22,12 +22,12 @@ limitations under the License.
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include <grape/communication/comm.h>
 #include <grape/fragment/loader.h>
 #include <grape/fragment/mutable_edgecut_fragment.h>
 #include <grape/grape.h>
 #include <grape/util.h>
 #include <grape/vertex_map/global_vertex_map.h>
-#include <grape/communication/comm.h>
 
 #include "bfs/bfs.h"
 #include "bfs/bfs_auto.h"
@@ -80,11 +80,11 @@ void Init() {
   }
 
 #ifdef USE_MPI
-  grape::MPIComm::get().init();
+  grape::MPICommAllocator::get().init();
 #else
   grape::TCPComm::get().init(FLAGS_hostfile, FLAGS_worker_id);
 #endif
-  if (grape::CommType::get().rank() == grape::kCoordinatorRank) {
+  if (grape::CommAllocatorType::get().rank() == grape::kCoordinatorRank) {
     VLOG(1) << "Workers of libgrape-lite initialized.";
   }
 }
@@ -97,7 +97,7 @@ void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
              const std::string& out_prefix, Args... args) {
   timer_next("load application");
   auto worker = APP_T::CreateWorker(app, fragment);
-  worker->Init(spec);
+  worker->Init(grape::CommAllocatorType::get(), spec);
   timer_next("run algorithm");
   worker->Query(std::forward<Args>(args)...);
   timer_next("print output");
@@ -110,8 +110,7 @@ void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
   ostream.close();
   worker->Finalize();
   timer_end();
-  VLOG(1) << "Worker-" << grape::CommType::get().rank()
-          << " finished: " << output_path;
+  VLOG(1) << "Worker-" << fragment->fid() << " finished: " << output_path;
 }
 
 template <typename T>
@@ -138,9 +137,10 @@ void CreateAndQuery(const std::string& out_prefix, int fnum,
   graph_spec.set_rebalance(false, 0);
   using FRAG_T = grape::MutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
                                                load_strategy>;
+  grape::CommType loader_comm = grape::CommAllocatorType::get().allocate();
   std::shared_ptr<FRAG_T> fragment = grape::LoadGraphAndMutate<FRAG_T>(
-      FLAGS_efile, FLAGS_vfile, FLAGS_delta_efile, FLAGS_delta_vfile,
-      graph_spec);
+      loader_comm, FLAGS_efile, FLAGS_vfile, FLAGS_delta_efile,
+      FLAGS_delta_vfile, graph_spec);
   using AppType = APP_T<FRAG_T>;
   auto app = std::make_shared<AppType>();
   DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix, args...);
@@ -148,8 +148,9 @@ void CreateAndQuery(const std::string& out_prefix, int fnum,
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
 void Run() {
-  bool is_coordinator =
-      grape::CommType::get().rank() == grape::kCoordinatorRank;
+  int worker_id = grape::CommAllocatorType::get().rank();
+  int worker_num = grape::CommAllocatorType::get().size();
+  bool is_coordinator = worker_id == grape::kCoordinatorRank;
   timer_start(is_coordinator);
 
   // FIXME: no barrier apps. more manager? or use a dynamic-cast.
@@ -158,8 +159,10 @@ void Run() {
   std::string delta_efile = FLAGS_delta_efile;
   std::string delta_vfile = FLAGS_delta_vfile;
   std::string out_prefix = FLAGS_out_prefix;
-  auto spec = grape::MultiProcessSpec(__AFFINITY__);
-  int fnum = grape::CommType::get().size();
+  int local_id = grape::CommAllocatorType::get().local_rank();
+  int local_size = grape::CommAllocatorType::get().local_size();
+  auto spec = grape::MultiProcessSpec(local_id, local_size, __AFFINITY__);
+  int fnum = worker_num;
   std::string name = FLAGS_application;
   if (name.find("sssp") != std::string::npos) {
     if (name == "sssp") {

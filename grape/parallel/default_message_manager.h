@@ -34,15 +34,17 @@ namespace grape {
  */
 class DefaultMessageManager : public MessageManagerBase {
  public:
-  DefaultMessageManager() : mpi_comm_(CommType::get()) {}
+  DefaultMessageManager() : comm_() {}
   ~DefaultMessageManager() override {}
 
   /**
    * @brief Inherit
    */
-  void Init() override {
-    fid_ = mpi_comm_.rank();
-    fnum_ = mpi_comm_.size();
+  void Init(CommType&& comm) override {
+    comm_ = std::move(comm);
+
+    fid_ = comm_.rank();
+    fnum_ = comm_.size();
 
     force_terminate_ = false;
     terminate_info_.Init(fnum_);
@@ -86,7 +88,7 @@ class DefaultMessageManager : public MessageManagerBase {
       if (arc.Empty()) {
         continue;
       }
-      mpi_comm_.send(dst_fid, std::move(arc.GetBufferVector()), 0);
+      comm_.send(dst_fid, std::move(arc.GetBufferVector()), 0);
     }
 
     for (fid_t i = 1; i < fnum_; ++i) {
@@ -96,7 +98,7 @@ class DefaultMessageManager : public MessageManagerBase {
         continue;
       }
       std::vector<char> buf;
-      mpi_comm_.recv_from_tagged(src_fid, buf, 0);
+      comm_.recv_from_tagged(src_fid, buf, 0);
       auto& arc = to_recv_[src_fid];
       arc = std::move(buf);
     }
@@ -307,13 +309,13 @@ class DefaultMessageManager : public MessageManagerBase {
       ++lengths_out_[fid_];
     }
     int terminate_flag = force_terminate_ ? 1 : 0;
-    int terminate_flag_sum = mpi_comm_.sum(terminate_flag);
+    int terminate_flag_sum = comm_.sum(terminate_flag);
     if (terminate_flag_sum > 0) {
       terminate_info_.success = false;
-      mpi_comm_.gather(terminate_info_.info[fid_], terminate_info_.info);
+      comm_.gather(terminate_info_.info[fid_], terminate_info_.info);
       return true;
     } else {
-      mpi_comm_.gather(lengths_out_, lengths_in_);
+      comm_.gather(lengths_out_, lengths_in_);
       for (auto& vec : lengths_in_) {
         for (auto s : vec) {
           if (s != 0) {
@@ -340,7 +342,7 @@ class DefaultMessageManager : public MessageManagerBase {
   bool force_terminate_;
 
   TerminateInfo terminate_info_;
-  CommType& mpi_comm_;
+  CommType comm_;
 };
 
 }  // namespace grape

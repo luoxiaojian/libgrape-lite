@@ -37,23 +37,25 @@ class Communicator {
   Communicator() {}
   virtual ~Communicator() {}
 
+  void InitCommunicator(CommType&& comm) { comm_ = std::move(comm); }
+
   template <typename T>
   void SendTo(fid_t fid, const T& msg) {
     int dst_worker = fid;
-    sync_comm::Send(msg, dst_worker, 0);
+    sync_comm::Send(comm_, msg, dst_worker, 0);
   }
 
   template <typename T>
   void RecvFrom(fid_t fid, T& msg) {
     int src_worker = fid;
-    sync_comm::Recv(msg, src_worker, 0);
+    sync_comm::Recv(comm_, msg, src_worker, 0);
   }
 
   template <typename T, typename FUNC_T>
   void AllReduce(const T& msg_in, T& msg_out, const FUNC_T& func) {
     int worker_id, worker_num;
-    worker_id = CommType::get().rank();
-    worker_num = CommType::get().size();
+    worker_id = comm_.rank();
+    worker_num = comm_.size();
     if (worker_id == 0) {
       msg_out = msg_in;
       for (int src_worker = 1; src_worker < worker_num; ++src_worker) {
@@ -86,7 +88,21 @@ class Communicator {
   void Sum(const T& msg_in, T& msg_out) {
     AllReduce<T>(msg_in, msg_out, [](T& lhs, const T& rhs) { lhs += rhs; });
   }
+
+ private:
+  CommType comm_;
 };
+
+template <typename APP_T>
+typename std::enable_if<std::is_base_of<Communicator, APP_T>::value>::type
+InitCommunicator(std::shared_ptr<APP_T> app,
+                 CommAllocatorType& comm_allocator) {
+  app->InitCommunicator(comm_allocator.allocate());
+}
+
+template <typename APP_T>
+typename std::enable_if<!std::is_base_of<Communicator, APP_T>::value>::type
+InitCommunicator(std::shared_ptr<APP_T> app, CommAllocatorType&) {}
 
 }  // namespace grape
 

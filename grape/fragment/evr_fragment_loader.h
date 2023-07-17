@@ -66,28 +66,31 @@ class EVRFragmentLoader {
                 "LineParser type is invalid");
 
  public:
-  EVRFragmentLoader() : basic_fragment_loader_() {}
+  EVRFragmentLoader() {}
 
   ~EVRFragmentLoader() = default;
 
-  std::shared_ptr<fragment_t> LoadFragment(const std::string& efile,
+  std::shared_ptr<fragment_t> LoadFragment(CommType& comm,
+                                           const std::string& efile,
                                            const std::string& vfile,
                                            const std::string& rfile,
                                            const LoadGraphSpec& spec) {
+    BasicFragmentLoader<fragment_t, io_adaptor_t> basic_fragment_loader(comm);
+
     std::shared_ptr<fragment_t> fragment(nullptr);
     CHECK(!spec.rebalance);
     if (spec.deserialize) {
-      bool deserialized = basic_fragment_loader_.DeserializeFragment(
+      bool deserialized = basic_fragment_loader.DeserializeFragment(
           fragment, spec.deserialization_prefix);
       int flag = 0;
       int sum = 0;
       if (!deserialized) {
         flag = 1;
       }
-      sum = CommType::get().sum(flag);
+      sum = comm.sum(flag);
       if (sum != 0) {
         fragment.reset();
-        if (CommType::get().rank() == 0) {
+        if (comm.rank() == 0) {
           VLOG(2) << "Deserialization failed, start loading graph from "
                      "efile and vfile.";
         }
@@ -108,8 +111,7 @@ class EVRFragmentLoader {
       while (io_adaptor->ReadLine(line)) {
         ++line_no;
         if (line_no % 1000000 == 0) {
-          VLOG(10) << "[worker-" << CommType::get().rank() << "][vfile] "
-                   << line_no;
+          VLOG(10) << "[worker-" << comm.rank() << "][vfile] " << line_no;
         }
         if (line.empty() || line[0] == '#')
           continue;
@@ -128,22 +130,21 @@ class EVRFragmentLoader {
     partitioner_t partitioner;
     partitioner.Init(rfile);
 
-    basic_fragment_loader_.SetPartitioner(std::move(partitioner));
+    basic_fragment_loader.SetPartitioner(std::move(partitioner));
 
-    basic_fragment_loader_.Start();
+    basic_fragment_loader.Start();
 
     {
       size_t vnum = id_list.size();
       for (size_t i = 0; i < vnum; ++i) {
-        basic_fragment_loader_.AddVertex(id_list[i], vdata_list[i]);
+        basic_fragment_loader.AddVertex(id_list[i], vdata_list[i]);
       }
     }
 
     {
       auto io_adaptor =
           std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(efile)));
-      io_adaptor->SetPartialRead(CommType::get().rank(),
-                                 CommType::get().size());
+      io_adaptor->SetPartialRead(comm.rank(), comm.size());
       io_adaptor->Open();
       std::string line;
       edata_t e_data;
@@ -153,8 +154,7 @@ class EVRFragmentLoader {
       while (io_adaptor->ReadLine(line)) {
         ++lineNo;
         if (lineNo % 1000000 == 0) {
-          VLOG(10) << "[worker-" << CommType::get().rank() << "][efile] "
-                   << lineNo;
+          VLOG(10) << "[worker-" << comm.rank() << "][efile] " << lineNo;
         }
         if (line.empty() || line[0] == '#')
           continue;
@@ -166,22 +166,20 @@ class EVRFragmentLoader {
           continue;
         }
 
-        basic_fragment_loader_.AddEdge(src, dst, e_data);
+        basic_fragment_loader.AddEdge(src, dst, e_data);
       }
       io_adaptor->Close();
     }
 
-    VLOG(1) << "[worker-" << CommType::get().rank()
-            << "] finished add vertices and edges";
+    VLOG(1) << "[worker-" << comm.rank() << "] finished add vertices and edges";
 
-    basic_fragment_loader_.ConstructFragment(fragment, spec.directed);
+    basic_fragment_loader.ConstructFragment(fragment, spec.directed);
 
     if (spec.serialize) {
-      bool serialized = basic_fragment_loader_.SerializeFragment(
+      bool serialized = basic_fragment_loader.SerializeFragment(
           fragment, spec.serialization_prefix);
       if (!serialized) {
-        VLOG(2) << "[worker-" << CommType::get().rank()
-                << "] Serialization failed.";
+        VLOG(2) << "[worker-" << comm.rank() << "] Serialization failed.";
       }
     }
 
@@ -189,7 +187,6 @@ class EVRFragmentLoader {
   }
 
  private:
-  BasicFragmentLoader<fragment_t, io_adaptor_t> basic_fragment_loader_;
   line_parser_t line_parser_;
 };
 

@@ -36,15 +36,15 @@ namespace sync_comm {
 
 template <class T, class Enable = void>
 struct CommImpl {
-  static void send(const T& value, int dst_worker_id, int tag) {
+  static void send(CommType& comm, const T& value, int dst_worker_id, int tag) {
     InArchive arc;
     arc << value;
-    CommType::get().send(dst_worker_id, std::move(arc.GetBufferVector()), tag);
+    comm.send(dst_worker_id, std::move(arc.GetBufferVector()), tag);
   }
 
-  static void recv(T& value, int src_worker_id, int tag) {
+  static void recv(CommType& comm, T& value, int src_worker_id, int tag) {
     std::vector<char> buf;
-    CommType::get().recv_from_tagged(src_worker_id, buf, tag);
+    comm.recv_from_tagged(src_worker_id, buf, tag);
     OutArchive arc(std::move(buf));
     arc >> value;
   }
@@ -52,14 +52,14 @@ struct CommImpl {
 
 template <class T>
 struct CommImpl<T, typename std::enable_if<std::is_pod<T>::value>::type> {
-  static void send(const T& value, int dst_worker_id, int tag) {
-    CommType::get().send(dst_worker_id, reinterpret_cast<const char*>(&value),
-                         sizeof(T), tag);
+  static void send(CommType& comm, const T& value, int dst_worker_id, int tag) {
+    comm.send(dst_worker_id, reinterpret_cast<const char*>(&value), sizeof(T),
+              tag);
   }
 
-  static void recv(T& value, int src_worker_id, int tag) {
+  static void recv(CommType& comm, T& value, int src_worker_id, int tag) {
     std::vector<char> buf;
-    CommType::get().recv_from_tagged(src_worker_id, buf, tag);
+    comm.recv_from_tagged(src_worker_id, buf, tag);
     memcpy(&value, buf.data(), sizeof(T));
   }
 };
@@ -67,15 +67,16 @@ struct CommImpl<T, typename std::enable_if<std::is_pod<T>::value>::type> {
 template <class T>
 struct CommImpl<std::vector<T>,
                 typename std::enable_if<std::is_pod<T>::value>::type> {
-  static void send(const std::vector<T>& vec, int dst_worker_id, int tag) {
-    CommType::get().send(dst_worker_id,
-                         reinterpret_cast<const char*>(vec.data()),
-                         vec.size() * sizeof(T), tag);
+  static void send(CommType& comm, const std::vector<T>& vec, int dst_worker_id,
+                   int tag) {
+    comm.send(dst_worker_id, reinterpret_cast<const char*>(vec.data()),
+              vec.size() * sizeof(T), tag);
   }
 
-  static void recv(std::vector<T>& vec, int src_worker_id, int tag) {
+  static void recv(CommType& comm, std::vector<T>& vec, int src_worker_id,
+                   int tag) {
     std::vector<char> buf;
-    CommType::get().recv_from_tagged(src_worker_id, buf, tag);
+    comm.recv_from_tagged(src_worker_id, buf, tag);
     vec.resize(buf.size() / sizeof(T));
     memcpy(vec.data(), buf.data(), buf.size());
   }
@@ -83,69 +84,78 @@ struct CommImpl<std::vector<T>,
 
 template <>
 struct CommImpl<InArchive, void> {
-  static void send(const InArchive& arc, int dst_worker_id, int tag) {
-    CommImpl<std::vector<char>>::send(arc.GetBufferVector(), dst_worker_id,
-                                      tag);
+  static void send(CommType& comm, const InArchive& arc, int dst_worker_id,
+                   int tag) {
+    CommImpl<std::vector<char>>::send(comm, arc.GetBufferVector(),
+                                      dst_worker_id, tag);
   }
 
-  static void recv(InArchive& arc, int src_worker_id, int tag) {
-    CommImpl<std::vector<char>>::recv(arc.GetBufferVector(), src_worker_id,
-                                      tag);
+  static void recv(CommType& comm, InArchive& arc, int src_worker_id, int tag) {
+    CommImpl<std::vector<char>>::recv(comm, arc.GetBufferVector(),
+                                      src_worker_id, tag);
   }
 };
 
 template <>
 struct CommImpl<OutArchive, void> {
-  static void send(const OutArchive& arc, int dst_worker_id, int tag) {
-    CommType::get().send(dst_worker_id, arc.GetBuffer(), arc.GetSize(), tag);
+  static void send(CommType& comm, const OutArchive& arc, int dst_worker_id,
+                   int tag) {
+    comm.send(dst_worker_id, arc.GetBuffer(), arc.GetSize(), tag);
   }
 
-  static void recv(OutArchive& arc, int src_worker_id, int tag) {
+  static void recv(CommType& comm, OutArchive& arc, int src_worker_id,
+                   int tag) {
     std::vector<char> buf;
-    CommType::get().recv_from_tagged(src_worker_id, buf, tag);
+    comm.recv_from_tagged(src_worker_id, buf, tag);
     arc = OutArchive(std::move(buf));
   }
 };
 
 template <>
 struct CommImpl<StringViewVector, void> {
-  static void send(const StringViewVector& vec, int dst_worker_id, int tag) {
-    CommImpl<std::vector<char>>::send(vec.content_buffer(), dst_worker_id, tag);
-    CommImpl<std::vector<size_t>>::send(vec.offset_buffer(), dst_worker_id,
-                                        tag);
+  static void send(CommType& comm, const StringViewVector& vec,
+                   int dst_worker_id, int tag) {
+    CommImpl<std::vector<char>>::send(comm, vec.content_buffer(), dst_worker_id,
+                                      tag);
+    CommImpl<std::vector<size_t>>::send(comm, vec.offset_buffer(),
+                                        dst_worker_id, tag);
   }
 
-  static void recv(StringViewVector& vec, int src_worker_id, int tag) {
-    CommImpl<std::vector<char>>::recv(vec.content_buffer(), src_worker_id, tag);
-    CommImpl<std::vector<size_t>>::recv(vec.offset_buffer(), src_worker_id,
-                                        tag);
+  static void recv(CommType& comm, StringViewVector& vec, int src_worker_id,
+                   int tag) {
+    CommImpl<std::vector<char>>::recv(comm, vec.content_buffer(), src_worker_id,
+                                      tag);
+    CommImpl<std::vector<size_t>>::recv(comm, vec.offset_buffer(),
+                                        src_worker_id, tag);
   }
 };
 
 template <class T>
 struct CommImpl<std::vector<T>,
                 typename std::enable_if<!std::is_pod<T>::value>::type> {
-  static void send(const std::vector<T>& vec, int dst_worker_id, int tag) {
+  static void send(CommType& comm, const std::vector<T>& vec, int dst_worker_id,
+                   int tag) {
     InArchive arc;
     arc << vec;
-    CommImpl<InArchive>::send(arc, dst_worker_id, tag);
+    CommImpl<InArchive>::send(comm, arc, dst_worker_id, tag);
   }
 
-  static void recv(std::vector<T>& vec, int src_worker_id, int tag) {
+  static void recv(CommType& comm, std::vector<T>& vec, int src_worker_id,
+                   int tag) {
     OutArchive arc;
-    CommImpl<OutArchive>::recv(arc, src_worker_id, tag);
+    CommImpl<OutArchive>::recv(comm, arc, src_worker_id, tag);
     arc >> vec;
   }
 };
 
 template <typename T>
-void Send(const T& obj, int dst_worker_id, int tag) {
-  CommImpl<T>::send(obj, dst_worker_id, tag);
+void Send(CommType& comm, const T& obj, int dst_worker_id, int tag) {
+  CommImpl<T>::send(comm, obj, dst_worker_id, tag);
 }
 
 template <typename T>
-void Recv(T& obj, int src_worker_id, int tag) {
-  CommImpl<T>::recv(obj, src_worker_id, tag);
+void Recv(CommType& comm, T& obj, int src_worker_id, int tag) {
+  CommImpl<T>::recv(comm, obj, src_worker_id, tag);
 }
 
 }  // namespace sync_comm

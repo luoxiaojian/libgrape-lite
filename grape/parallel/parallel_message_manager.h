@@ -55,15 +55,17 @@ class ParallelMessageManager : public MessageManagerBase {
   static constexpr size_t default_msg_send_block_capacity = 2 * 1023 * 1024;
 
  public:
-  ParallelMessageManager() : mpi_comm_(CommType::get()) {}
+  ParallelMessageManager() {}
   ~ParallelMessageManager() override {}
 
   /**
    * @brief Inherit
    */
-  void Init() override {
-    fid_ = mpi_comm_.rank();
-    fnum_ = mpi_comm_.size();
+  void Init(CommType&& comm) override {
+    comm_ = std::move(comm);
+
+    fid_ = comm_.rank();
+    fnum_ = comm_.size();
 
     force_terminate_ = false;
     terminate_info_.Init(fnum_);
@@ -121,10 +123,10 @@ class ParallelMessageManager : public MessageManagerBase {
     }
     flag[1] = force_terminate_ ? 1 : 0;
     int64_t ret[2];
-    mpi_comm_.sum(flag, ret, 2);
+    comm_.sum(flag, ret, 2);
     if (ret[1] > 0) {
       terminate_info_.success = false;
-      mpi_comm_.gather(terminate_info_.info[fid_], terminate_info_.info);
+      comm_.gather(terminate_info_.info[fid_], terminate_info_.info);
       return true;
     }
     return (ret[0] == 0);
@@ -135,7 +137,7 @@ class ParallelMessageManager : public MessageManagerBase {
    */
   void Finalize() override {
     waitSend();
-    mpi_comm_.barrier();
+    comm_.barrier();
     stopRecvThread();
   }
 
@@ -400,26 +402,26 @@ class ParallelMessageManager : public MessageManagerBase {
               to_self_.emplace_back(std::move(item.second));
             } else {
               std::vector<char> buf = std::move(item.second.GetBufferVector());
-              mpi_comm_.send(item.first, std::move(buf), msg_round);
+              comm_.send(item.first, std::move(buf), msg_round);
             }
           }
           for (fid_t i = 0; i < fnum_; ++i) {
             if (i == fid_) {
               continue;
             }
-            mpi_comm_.send_empty(i, msg_round);
+            comm_.send_empty(i, msg_round);
           }
-          mpi_comm_.wait_send();
+          comm_.wait_send();
         },
         round + 1);
   }
 
   void probeAllIncomingMessages() {
-    int self_worker_id = mpi_comm_.rank();
+    int self_worker_id = comm_.rank();
     while (true) {
       int src_worker_id, tag;
       std::vector<char> buf;
-      mpi_comm_.recv(src_worker_id, buf, tag);
+      comm_.recv(src_worker_id, buf, tag);
       if (src_worker_id == self_worker_id) {
         break;
       }
@@ -437,7 +439,7 @@ class ParallelMessageManager : public MessageManagerBase {
   }
 
   void stopRecvThread() {
-    mpi_comm_.send_empty(mpi_comm_.rank(), 0);
+    comm_.send_empty(comm_.rank(), 0);
     recv_thread_.join();
   }
 
@@ -483,7 +485,7 @@ class ParallelMessageManager : public MessageManagerBase {
 
   bool force_terminate_;
   TerminateInfo terminate_info_;
-  CommType& mpi_comm_;
+  CommType comm_;
 };
 
 }  // namespace grape

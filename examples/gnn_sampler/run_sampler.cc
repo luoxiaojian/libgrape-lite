@@ -57,12 +57,20 @@ int main(int argc, char* argv[]) {
       grape::AppendOnlyEdgecutFragment<oid_t, vid_t, vdata_t, edata_t>;
   using app_t = grape::Sampler<graph_t>;
 
+#ifdef USE_MPI
+  grape::MPICommAllocator::get().init();
+#else
+  grape::TCPComm::get().init(FLAGS_hostfile, FLAGS_worker_id);
+#endif
+
+  grape::CommType comm = grape::CommAllocatorType::get().allocate();
+
   // init comm
   {
-    bool is_coordinator =
-        (grape::CommType::get().rank() == grape::kCoordinatorRank);
+    int worker_id = comm.rank();
+    bool is_coordinator = (worker_id == grape::kCoordinatorRank);
     auto spec = grape::DefaultParallelEngineSpec();
-    int local_num = grape::CommType::get().local_size();
+    int local_num = comm.local_size();
     spec.thread_num =
         (std::thread::hardware_concurrency() + local_num - 1) / local_num;
 
@@ -76,7 +84,7 @@ int main(int argc, char* argv[]) {
     }
     graph_spec.set_directed(false);
     auto fragment =
-        grape::LoadGraph<graph_t>(FLAGS_efile, FLAGS_vfile, graph_spec);
+        grape::LoadGraph<graph_t>(comm, FLAGS_efile, FLAGS_vfile, graph_spec);
     auto app = std::make_shared<app_t>();
 
     // init indices
@@ -95,9 +103,8 @@ int main(int argc, char* argv[]) {
       std::vector<std::string> edge_msgs;
       if (is_coordinator) {
         consumer = std::unique_ptr<KafkaConsumer>(new KafkaConsumer(
-            grape::CommType::get().rank(), FLAGS_broker_list, FLAGS_group_id,
-            FLAGS_input_topic, FLAGS_partition_num, FLAGS_time_interval,
-            FLAGS_batch_size));
+            comm.rank(), FLAGS_broker_list, FLAGS_group_id, FLAGS_input_topic,
+            FLAGS_partition_num, FLAGS_time_interval, FLAGS_batch_size));
       }
       while (true) {
         query_vertices.clear();
@@ -105,12 +112,12 @@ int main(int argc, char* argv[]) {
         if (is_coordinator) {
           consumer->ConsumeMessages(query_vertices, edge_msgs);
         }
-        grape::CommType::get().bcast(query_vertices, grape::kCoordinatorRank);
+        comm.bcast(query_vertices, grape::kCoordinatorRank);
 
-        fragment->ExtendFragment(edge_msgs, graph_spec);
+        fragment->ExtendFragment(comm, edge_msgs, graph_spec);
         if (!query_vertices.empty()) {
           auto worker = app_t::CreateWorker(app, fragment);
-          worker->Init(spec);
+          worker->Init(grape::CommAllocatorType::get(), spec);
 
           auto t_begin = grape::GetCurrentTime();
           worker->Query(FLAGS_sampling_strategy, FLAGS_hop_and_num,
@@ -133,7 +140,7 @@ int main(int argc, char* argv[]) {
       ostream.close();
     } else {
       auto worker = app_t::CreateWorker(app, fragment);
-      worker->Init(spec);
+      worker->Init(grape::CommAllocatorType::get(), spec);
       auto t_begin = grape::GetCurrentTime();
       worker->Query(FLAGS_sampling_strategy, FLAGS_hop_and_num, query_vertices);
       LOG(INFO) << "Query: " << grape::GetCurrentTime() - t_begin << " s";

@@ -51,8 +51,8 @@ class BasicFragmentMutator {
   using partitioner_t = typename vertex_map_t::partitioner_t;
 
  public:
-  explicit BasicFragmentMutator(std::shared_ptr<fragment_t> fragment)
-      : fragment_(fragment), vm_ptr_(fragment->GetVertexMap()) {}
+  BasicFragmentMutator(std::shared_ptr<fragment_t> fragment, CommType& comm)
+      : fragment_(fragment), vm_ptr_(fragment->GetVertexMap()), comm_(comm) {}
 
   ~BasicFragmentMutator() = default;
 
@@ -126,7 +126,7 @@ class BasicFragmentMutator {
       shuf.Flush();
     }
     recv_thread_.join();
-    fid_t fid = CommType::get().rank();
+    fid_t fid = comm_.rank();
     got_vertices_to_add_.emplace_back(
         std::move(vertices_to_add_[fid].buffers()));
     got_vertices_to_remove_.emplace_back(
@@ -187,7 +187,7 @@ class BasicFragmentMutator {
     }
     got_vertices_to_update_.clear();
 
-    auto builder = vm_ptr_->GetLocalBuilder();
+    auto builder = vm_ptr_->GetLocalBuilder(comm_);
     for (auto& buffers : got_vertices_to_add_) {
       foreach_rval(buffers,
                    [this, &builder](internal_oid_t&& id, vdata_t&& data) {
@@ -222,8 +222,8 @@ class BasicFragmentMutator {
     got_edges_to_add_.clear();
 
     {
-      std::vector<std::vector<vid_t>> tmp(CommType::get().size());
-      CommType::get().gather(parsed_vertices_to_remove_, tmp);
+      std::vector<std::vector<vid_t>> tmp(comm_.size());
+      comm_.gather(parsed_vertices_to_remove_, tmp);
       for (auto& vec : tmp) {
         for (auto& gid : vec) {
           mutation_.vertices_to_remove.emplace_back(gid);
@@ -232,8 +232,8 @@ class BasicFragmentMutator {
     }
     {
       std::vector<std::vector<internal::Vertex<vid_t, vdata_t>>> tmp(
-          CommType::get().size());
-      CommType::get().gather(parsed_vertices_to_update_, tmp);
+          comm_.size());
+      comm_.gather(parsed_vertices_to_update_, tmp);
       for (auto& vec : tmp) {
         for (auto& v : vec) {
           mutation_.vertices_to_update.emplace_back(std::move(v));
@@ -242,8 +242,8 @@ class BasicFragmentMutator {
     }
     {
       std::vector<std::vector<internal::Vertex<vid_t, vdata_t>>> tmp(
-          CommType::get().size());
-      CommType::get().gather(parsed_vertices_to_add_, tmp);
+          comm_.size());
+      comm_.gather(parsed_vertices_to_add_, tmp);
       for (auto& vec : tmp) {
         for (auto& v : vec) {
           mutation_.vertices_to_add.emplace_back(std::move(v));
@@ -257,7 +257,7 @@ class BasicFragmentMutator {
   }
 
   void Start() {
-    fid_t fnum = CommType::get().size();
+    fid_t fnum = comm_.size();
     vertices_to_add_.resize(fnum);
     vertices_to_remove_.resize(fnum);
     vertices_to_update_.resize(fnum);
@@ -266,19 +266,19 @@ class BasicFragmentMutator {
     edges_to_update_.resize(fnum);
     for (fid_t fid = 0; fid < fnum; ++fid) {
       int worker_id = fid;
-      vertices_to_add_[fid].Init(va_tag);
+      vertices_to_add_[fid].Init(&comm_, va_tag);
       vertices_to_add_[fid].SetDestination(worker_id, fid);
-      vertices_to_remove_[fid].Init(vr_tag);
+      vertices_to_remove_[fid].Init(&comm_, vr_tag);
       vertices_to_remove_[fid].SetDestination(worker_id, fid);
-      vertices_to_update_[fid].Init(vu_tag);
+      vertices_to_update_[fid].Init(&comm_, vu_tag);
       vertices_to_update_[fid].SetDestination(worker_id, fid);
-      edges_to_add_[fid].Init(ea_tag);
+      edges_to_add_[fid].Init(&comm_, ea_tag);
       edges_to_add_[fid].SetDestination(worker_id, fid);
-      edges_to_remove_[fid].Init(er_tag);
+      edges_to_remove_[fid].Init(&comm_, er_tag);
       edges_to_remove_[fid].SetDestination(worker_id, fid);
-      edges_to_update_[fid].Init(eu_tag);
+      edges_to_update_[fid].Init(&comm_, eu_tag);
       edges_to_update_[fid].SetDestination(worker_id, fid);
-      if (worker_id == CommType::get().rank()) {
+      if (worker_id == comm_.rank()) {
         vertices_to_add_[fid].DisableComm();
         vertices_to_remove_[fid].DisableComm();
         vertices_to_update_[fid].DisableComm();
@@ -302,7 +302,7 @@ class BasicFragmentMutator {
       std::vector<typename ShuffleBuffer<vdata_t>::type>&& data_lists) {
     CHECK_EQ(id_lists.size(), vertices_to_add_.size());
     CHECK_EQ(data_lists.size(), vertices_to_add_.size());
-    for (fid_t i = 0; i < CommType::get().size(); ++i) {
+    for (fid_t i = 0; i < comm_.size(); ++i) {
       vertices_to_add_[i].AppendBuffers(std::move(id_lists[i]),
                                         std::move(data_lists[i]));
     }
@@ -326,7 +326,7 @@ class BasicFragmentMutator {
     CHECK_EQ(src_lists.size(), edges_to_add_.size());
     CHECK_EQ(dst_lists.size(), edges_to_add_.size());
     CHECK_EQ(data_lists.size(), edges_to_add_.size());
-    for (fid_t i = 0; i < CommType::get().size(); ++i) {
+    for (fid_t i = 0; i < comm_.size(); ++i) {
       edges_to_add_[i].AppendBuffers(std::move(src_lists[i]),
                                      std::move(dst_lists[i]),
                                      std::move(data_lists[i]));
@@ -342,7 +342,7 @@ class BasicFragmentMutator {
   void RemoveVertices(
       std::vector<typename ShuffleBuffer<oid_t>::type>&& id_lists) {
     CHECK_EQ(id_lists.size(), vertices_to_remove_.size());
-    for (fid_t i = 0; i < CommType::get().size(); ++i) {
+    for (fid_t i = 0; i < comm_.size(); ++i) {
       vertices_to_remove_[i].AppendBuffers(std::move(id_lists[i]));
     }
   }
@@ -362,7 +362,7 @@ class BasicFragmentMutator {
       std::vector<typename ShuffleBuffer<oid_t>::type>&& dst_lists) {
     CHECK_EQ(src_lists.size(), edges_to_add_.size());
     CHECK_EQ(dst_lists.size(), edges_to_add_.size());
-    for (fid_t i = 0; i < CommType::get().size(); ++i) {
+    for (fid_t i = 0; i < comm_.size(); ++i) {
       edges_to_remove_[i].AppendBuffers(std::move(src_lists[i]),
                                         std::move(dst_lists[i]));
     }
@@ -393,7 +393,7 @@ class BasicFragmentMutator {
       std::vector<typename ShuffleBuffer<vdata_t>::type>&& data_lists) {
     CHECK_EQ(id_lists.size(), vertices_to_update_.size());
     CHECK_EQ(data_lists.size(), vertices_to_update_.size());
-    for (fid_t i = 0; i < CommType::get().size(); ++i) {
+    for (fid_t i = 0; i < comm_.size(); ++i) {
       vertices_to_update_[i].AppendBuffers(std::move(id_lists[i]),
                                            std::move(data_lists[i]));
     }
@@ -416,7 +416,7 @@ class BasicFragmentMutator {
     CHECK_EQ(src_lists.size(), edges_to_update_.size());
     CHECK_EQ(dst_lists.size(), edges_to_update_.size());
     CHECK_EQ(data_lists.size(), edges_to_update_.size());
-    for (fid_t i = 0; i < CommType::get().size(); ++i) {
+    for (fid_t i = 0; i < comm_.size(); ++i) {
       edges_to_update_[i].AppendBuffers(std::move(src_lists[i]),
                                         std::move(dst_lists[i]),
                                         std::move(data_lists[i]));
@@ -425,12 +425,12 @@ class BasicFragmentMutator {
 
  private:
   void recvThreadRoutine() {
-    if (CommType::get().size() == 1) {
+    if (comm_.size() == 1) {
       return;
     }
     std::thread vertexRemoveThread([&, this]() {
       ShuffleIn<internal_oid_t> data_in;
-      data_in.Init(CommType::get().size(), vr_tag);
+      data_in.Init(&comm_, vr_tag);
       fid_t dst_fid;
       int src_worker_id;
       while (!data_in.Finished()) {
@@ -444,7 +444,7 @@ class BasicFragmentMutator {
     });
     std::thread vertexUpdateThread([&, this]() {
       ShuffleIn<internal_oid_t, vdata_t> data_in;
-      data_in.Init(CommType::get().size(), vu_tag);
+      data_in.Init(&comm_, vu_tag);
       fid_t dst_fid;
       int src_worker_id;
       while (!data_in.Finished()) {
@@ -458,7 +458,7 @@ class BasicFragmentMutator {
     });
     std::thread vertexAddThread([&, this]() {
       ShuffleIn<internal_oid_t, vdata_t> data_in;
-      data_in.Init(CommType::get().size(), va_tag);
+      data_in.Init(&comm_, va_tag);
       fid_t dst_fid;
       int src_worker_id;
       while (!data_in.Finished()) {
@@ -472,7 +472,7 @@ class BasicFragmentMutator {
     });
     std::thread edgeAddThread([&, this]() {
       ShuffleIn<internal_oid_t, internal_oid_t, edata_t> data_in;
-      data_in.Init(CommType::get().size(), ea_tag);
+      data_in.Init(&comm_, ea_tag);
       fid_t dst_fid;
       int src_worker_id;
       while (!data_in.Finished()) {
@@ -486,7 +486,7 @@ class BasicFragmentMutator {
     });
     std::thread edgeRemoveThread([&, this]() {
       ShuffleIn<internal_oid_t, internal_oid_t> data_in;
-      data_in.Init(CommType::get().size(), er_tag);
+      data_in.Init(&comm_, er_tag);
       fid_t dst_fid;
       int src_worker_id;
       while (!data_in.Finished()) {
@@ -500,7 +500,7 @@ class BasicFragmentMutator {
     });
     std::thread edgeUpdateThread([&, this]() {
       ShuffleIn<internal_oid_t, internal_oid_t, edata_t> data_in;
-      data_in.Init(CommType::get().size(), eu_tag);
+      data_in.Init(&comm_, eu_tag);
       fid_t dst_fid;
       int src_worker_id;
       while (!data_in.Finished()) {
@@ -557,6 +557,7 @@ class BasicFragmentMutator {
   static constexpr int eu_tag = 6;
 
   mutation_t mutation_;
+  CommType& comm_;
 };
 
 }  // namespace grape

@@ -66,21 +66,23 @@ class EVFragmentRebalanceLoader {
 
   ~EVFragmentRebalanceLoader() = default;
 
-  std::shared_ptr<fragment_t> LoadFragment(const std::string& efile,
+  std::shared_ptr<fragment_t> LoadFragment(CommType& comm,
+                                           const std::string& efile,
                                            const std::string& vfile,
                                            const LoadGraphSpec& spec) {
     std::shared_ptr<fragment_t> fragment(nullptr);
     if (spec.deserialize) {
-      bool deserialized = deserializeFragment(fragment, spec);
+      bool deserialized =
+          deserializeFragment(comm.rank(), comm.size(), fragment, spec);
       int flag = 0;
       int sum = 0;
       if (!deserialized) {
         flag = 1;
       }
-      sum = CommType::get().sum(flag);
+      sum = comm.sum(flag);
       if (sum != 0) {
         fragment.reset();
-        if (CommType::get().rank() == 0) {
+        if (comm.rank() == 0) {
           VLOG(2) << "Deserialization failed, start loading graph from "
                      "efile and vfile.";
         }
@@ -103,8 +105,7 @@ class EVFragmentRebalanceLoader {
       while (io_adaptor->ReadLine(line)) {
         ++line_no;
         if (line_no % 1000000 == 0) {
-          VLOG(10) << "[worker-" << CommType::get().rank() << "][vfile] "
-                   << line_no;
+          VLOG(10) << "[worker-" << comm.rank() << "][vfile] " << line_no;
         }
         if (line.empty() || line[0] == '#')
           continue;
@@ -120,13 +121,14 @@ class EVFragmentRebalanceLoader {
       io_adaptor->Close();
     }
 
-    fid_t fnum = CommType::get().size();
+    fid_t fnum = comm.size();
     partitioner_t partitioner(fnum, id_list);
 
-    std::shared_ptr<vertex_map_t> vm_ptr = std::make_shared<vertex_map_t>();
+    std::shared_ptr<vertex_map_t> vm_ptr =
+        std::make_shared<vertex_map_t>(comm.rank(), fnum);
     vm_ptr->SetPartitioner(partitioner);
     vm_ptr->Init();
-    auto builder = vm_ptr->GetLocalBuilder();
+    auto builder = vm_ptr->GetLocalBuilder(comm);
 
     for (auto id : id_list) {
       builder.add_vertex(id);
@@ -138,8 +140,7 @@ class EVFragmentRebalanceLoader {
     {
       auto io_adaptor =
           std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(efile)));
-      io_adaptor->SetPartialRead(CommType::get().rank(),
-                                 CommType::get().size());
+      io_adaptor->SetPartialRead(comm.rank(), comm.size());
       io_adaptor->Open();
       std::string line;
       edata_t e_data;
@@ -150,8 +151,7 @@ class EVFragmentRebalanceLoader {
       while (io_adaptor->ReadLine(line)) {
         ++lineNo;
         if (lineNo % 1000000 == 0) {
-          VLOG(10) << "[worker-" << CommType::get().rank() << "][efile] "
-                   << lineNo;
+          VLOG(10) << "[worker-" << comm.rank() << "][efile] " << lineNo;
         }
         if (line.empty() || line[0] == '#')
           continue;
@@ -196,8 +196,8 @@ class EVFragmentRebalanceLoader {
     for (fid_t i = 0; i < fnum; ++i) {
       CHECK_LT(degree_lists[i].size(),
                static_cast<size_t>(std::numeric_limits<int>::max()));
-      CommType::get().sum(degree_lists[i].data(), degree_lists[i].data(),
-                          degree_lists[i].size());
+      comm.sum(degree_lists[i].data(), degree_lists[i].data(),
+               degree_lists[i].size());
     }
 
     size_t total_edge_num = 0;
@@ -249,7 +249,7 @@ class EVFragmentRebalanceLoader {
       vnum_list.push_back(cur_num);
     }
 
-    if (CommType::get().rank() == 0) {
+    if (comm.rank() == 0) {
       LOG(INFO) << "Total score = " << total_score;
       for (fid_t i = 0; i < fnum; ++i) {
         LOG(INFO) << "[frag-" << i
@@ -276,9 +276,9 @@ class EVFragmentRebalanceLoader {
     std::vector<ShuffleOut<vid_t, vid_t, edata_t>> edges_to_frag(fnum);
     for (fid_t i = 0; i < fnum; ++i) {
       int worker_id = i;
-      edges_to_frag[i].Init(edge_tag, 4096000);
+      edges_to_frag[i].Init(&comm, edge_tag, 4096000);
       edges_to_frag[i].SetDestination(worker_id, i);
-      if (CommType::get().rank() == worker_id) {
+      if (comm.rank() == worker_id) {
         edges_to_frag[i].DisableComm();
       }
     }
@@ -288,7 +288,7 @@ class EVFragmentRebalanceLoader {
 
     std::thread edge_recv_thread([&]() {
       ShuffleIn<vid_t, vid_t, edata_t> data_in;
-      data_in.Init(CommType::get().size(), edge_tag);
+      data_in.Init(&comm, edge_tag);
       fid_t dst_fid;
       int src_worker_id;
       while (!data_in.Finished()) {
@@ -296,7 +296,7 @@ class EVFragmentRebalanceLoader {
         if (src_worker_id == -1) {
           break;
         }
-        CHECK_EQ(dst_fid, CommType::get().rank());
+        CHECK_EQ(dst_fid, comm.rank());
         auto& buffers = data_in.buffers();
         foreach_rval(buffers, [&](vid_t&& src, vid_t&& dst, edata_t&& data) {
           processed_edges.emplace_back(src, dst, std::move(data));
@@ -321,7 +321,7 @@ class EVFragmentRebalanceLoader {
 
     edge_recv_thread.join();
     {
-      auto& buffers = edges_to_frag[CommType::get().rank()].buffers();
+      auto& buffers = edges_to_frag[comm.rank()].buffers();
       foreach_rval(buffers, [&](vid_t&& src, vid_t&& dst, edata_t&& data) {
         processed_edges.emplace_back(src, dst, std::move(data));
       });
@@ -333,14 +333,14 @@ class EVFragmentRebalanceLoader {
         vid_t gid;
         CHECK(vm_ptr->GetGid(id_list[i], gid));
         fid_t fid = vm_ptr->GetFidFromGid(gid);
-        if (fid == CommType::get().rank()) {
+        if (fid == comm.rank()) {
           processed_vertices.emplace_back(gid, vdata_list[i]);
         }
       }
     }
 
     fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr));
-    fragment->Init(CommType::get().rank(), spec.directed, processed_vertices,
+    fragment->Init(comm.rank(), spec.directed, processed_vertices,
                    processed_edges);
 
     if (!std::is_same<vdata_t, EmptyType>::value) {
@@ -355,10 +355,9 @@ class EVFragmentRebalanceLoader {
     }
 
     if (spec.serialize) {
-      bool serialized = serializeFragment(fragment, vm_ptr, spec);
+      bool serialized = serializeFragment(fragment, vm_ptr, spec, comm);
       if (!serialized) {
-        VLOG(2) << "[worker-" << CommType::get().rank()
-                << "] Serialization failed.";
+        VLOG(2) << "[worker-" << comm.rank() << "] Serialization failed.";
       }
     }
 
@@ -366,36 +365,36 @@ class EVFragmentRebalanceLoader {
   }
 
  private:
-  bool existSerializationFile(const std::string& prefix) {
+  bool existSerializationFile(const std::string& prefix, fid_t fid) {
     char vm_fbuf[1024], frag_fbuf[1024];
     snprintf(vm_fbuf, sizeof(vm_fbuf), "%s/%s", prefix.c_str(),
              kSerializationVertexMapFilename);
     snprintf(frag_fbuf, sizeof(frag_fbuf), kSerializationFilenameFormat,
-             prefix.c_str(), CommType::get().rank());
+             prefix.c_str(), fid);
     std::string vm_path = vm_fbuf;
     std::string frag_path = frag_fbuf;
     return exists_file(vm_path) && exists_file(frag_path);
   }
 
-  bool deserializeFragment(std::shared_ptr<fragment_t>& fragment,
+  bool deserializeFragment(fid_t fid, fid_t fnum,
+                           std::shared_ptr<fragment_t>& fragment,
                            const LoadGraphSpec& spec) {
     std::string type_prefix = fragment_t::type_info();
     CHECK(spec.rebalance);
     type_prefix += ("_rb_" + std::to_string(spec.rebalance_vertex_factor));
     std::string typed_prefix = spec.deserialization_prefix + "/" + type_prefix;
     LOG(INFO) << "typed_prefix = " << typed_prefix;
-    if (!existSerializationFile(typed_prefix)) {
+    if (!existSerializationFile(typed_prefix, fid)) {
       return false;
     }
     auto io_adaptor =
         std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(typed_prefix));
     if (io_adaptor->IsExist()) {
-      std::shared_ptr<vertex_map_t> vm_ptr = std::make_shared<vertex_map_t>();
-      vm_ptr->template Deserialize<IOADAPTOR_T>(typed_prefix,
-                                                CommType::get().rank());
+      std::shared_ptr<vertex_map_t> vm_ptr =
+          std::make_shared<vertex_map_t>(fid, fnum);
+      vm_ptr->template Deserialize<IOADAPTOR_T>(typed_prefix, fid);
       fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr));
-      fragment->template Deserialize<IOADAPTOR_T>(typed_prefix,
-                                                  CommType::get().rank());
+      fragment->template Deserialize<IOADAPTOR_T>(typed_prefix, fid);
       return true;
     } else {
       return false;
@@ -404,7 +403,7 @@ class EVFragmentRebalanceLoader {
 
   bool serializeFragment(std::shared_ptr<fragment_t> fragment,
                          std::shared_ptr<vertex_map_t> vm_ptr,
-                         const LoadGraphSpec& spec) {
+                         const LoadGraphSpec& spec, CommType& comm) {
     std::string type_prefix = fragment_t::type_info();
     CHECK(spec.rebalance);
     type_prefix += ("_rb_" + std::to_string(spec.rebalance_vertex_factor));
@@ -412,7 +411,7 @@ class EVFragmentRebalanceLoader {
     char serial_file[1024];
     snprintf(serial_file, sizeof(serial_file), "%s/%s", typed_prefix.c_str(),
              kSerializationVertexMapFilename);
-    vm_ptr->template Serialize<IOADAPTOR_T>(typed_prefix);
+    vm_ptr->template Serialize<IOADAPTOR_T>(typed_prefix, comm);
     fragment->template Serialize<IOADAPTOR_T>(typed_prefix);
 
     return true;

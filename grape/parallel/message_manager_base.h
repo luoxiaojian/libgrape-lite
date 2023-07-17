@@ -50,7 +50,7 @@ class MessageManagerBase {
    *
    * @param comm MPI_Comm object.
    */
-  virtual void Init() = 0;
+  virtual void Init(CommType&& comm) = 0;
 
   /**
    * @brief This function will be called before Init step of applications.

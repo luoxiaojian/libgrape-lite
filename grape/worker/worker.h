@@ -68,16 +68,20 @@ class Worker {
 
   ~Worker() = default;
 
-  void Init(const ParallelEngineSpec& pe_spec = DefaultParallelEngineSpec()) {
+  void Init(CommAllocatorType& comm_allocator,
+            const ParallelEngineSpec& pe_spec = DefaultParallelEngineSpec()) {
+    worker_comm_ = comm_allocator.allocate();
+
     auto& graph = const_cast<fragment_t&>(context_->fragment());
     // prepare for the query
-    graph.PrepareToRunApp(prepare_conf_);
+    graph.PrepareToRunApp(prepare_conf_, worker_comm_);
 
-    CommType::get().barrier();
+    worker_comm_.barrier();
 
-    messages_.Init();
+    messages_.Init(comm_allocator.allocate());
 
     InitParallelEngine(app_, pe_spec);
+    InitCommunicator(app_, comm_allocator);
   }
 
   void Finalize() {}
@@ -86,10 +90,10 @@ class Worker {
   void Query(Args&&... args) {
     double t = GetCurrentTime();
 
-    CommType::get().barrier();
+    worker_comm_.barrier();
 
     context_->Init(messages_, std::forward<Args>(args)...);
-    processMutation();
+    processMutation(worker_comm_);
 
     int round = 0;
 
@@ -98,11 +102,11 @@ class Worker {
     messages_.StartARound();
 
     runPEval();
-    processMutation();
+    processMutation(worker_comm_);
 
     messages_.FinishARound();
 
-    if (CommType::get().rank() == kCoordinatorRank) {
+    if (worker_comm_.rank() == kCoordinatorRank) {
       VLOG(1) << "[Coordinator]: Finished PEval, time: " << GetCurrentTime() - t
               << " sec";
     }
@@ -115,18 +119,18 @@ class Worker {
       messages_.StartARound();
 
       runIncEval();
-      processMutation();
+      processMutation(worker_comm_);
 
       messages_.FinishARound();
 
-      if (CommType::get().rank() == kCoordinatorRank) {
+      if (worker_comm_.rank() == kCoordinatorRank) {
         VLOG(1) << "[Coordinator]: Finished IncEval - " << step
                 << ", time: " << GetCurrentTime() - t << " sec";
       }
       ++step;
     }
 
-    CommType::get().barrier();
+    worker_comm_.barrier();
 
     messages_.Finalize();
   }
@@ -175,15 +179,15 @@ class Worker {
   template <typename T = context_t>
   typename std::enable_if<
       std::is_base_of<MutationContext<fragment_t>, T>::value>::type
-  processMutation() {
-    context_->apply_mutation(fragment_);
-    fragment_->PrepareToRunApp(prepare_conf_);
+  processMutation(CommType& comm) {
+    context_->apply_mutation(fragment_, comm);
+    fragment_->PrepareToRunApp(prepare_conf_, comm);
   }
 
   template <typename T = context_t>
   typename std::enable_if<
       !std::is_base_of<MutationContext<fragment_t>, T>::value>::type
-  processMutation() {}
+  processMutation(CommType&) {}
 
   std::shared_ptr<APP_T> app_;
   std::shared_ptr<context_t> context_;
@@ -191,6 +195,7 @@ class Worker {
   message_manager_t messages_;
 
   PrepareConf prepare_conf_;
+  CommType worker_comm_;
 };
 
 template <typename APP_T>

@@ -57,6 +57,7 @@ void RunUndirectedPageRankOpt(const std::string& out_prefix,
   if (FLAGS_serialize) {
     graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
+  CommType loader_comm = CommAllocatorType::get().allocate();
   if (FLAGS_segmented_partition) {
     using VertexMapType =
         GlobalVertexMap<int64_t, uint32_t, SegmentedPartitioner<int64_t>>;
@@ -64,14 +65,14 @@ void RunUndirectedPageRankOpt(const std::string& out_prefix,
         ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType, EmptyType,
                                  load_strategy, VertexMapType>;
     std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, graph_spec);
+        LoadGraph<FRAG_T>(loader_comm, FLAGS_efile, FLAGS_vfile, graph_spec);
     bool push;
     if (fragment->fnum() >= 8) {
       uint64_t local_ivnum = fragment->GetInnerVerticesNum();
       uint64_t local_ovnum = fragment->GetOuterVerticesNum();
       uint64_t total_ivnum, total_ovnum;
-      total_ivnum = CommType::get().sum(local_ivnum);
-      total_ovnum = CommType::get().sum(local_ovnum);
+      total_ivnum = loader_comm.sum(local_ivnum);
+      total_ovnum = loader_comm.sum(local_ovnum);
 
       double avg_degree = static_cast<double>(FLAGS_edge_num) /
                           static_cast<double>(FLAGS_vertex_num);
@@ -111,13 +112,13 @@ void RunUndirectedPageRankOpt(const std::string& out_prefix,
     using FRAG_T = ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType,
                                             EmptyType, load_strategy>;
     std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, graph_spec);
+        LoadGraph<FRAG_T>(loader_comm, FLAGS_efile, FLAGS_vfile, graph_spec);
 
     uint64_t local_ivnum = fragment->GetInnerVerticesNum();
     uint64_t local_ovnum = fragment->GetOuterVerticesNum();
     uint64_t total_ivnum, total_ovnum;
-    total_ivnum = CommType::get().sum(local_ivnum);
-    total_ovnum = CommType::get().sum(local_ovnum);
+    total_ivnum = loader_comm.sum(local_ivnum);
+    total_ovnum = loader_comm.sum(local_ovnum);
 
     if (static_cast<double>(total_ovnum) >
         static_cast<double>(total_ivnum) * 3.2) {
@@ -146,6 +147,7 @@ void RunUndirectedPageRankOptBeta(const std::string& out_prefix,
   LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
   graph_spec.set_directed(FLAGS_directed);
   graph_spec.set_rebalance(FLAGS_rebalance, FLAGS_rebalance_vertex_factor);
+  CommType loader_comm = CommAllocatorType::get().allocate();
   if (FLAGS_deserialize) {
     graph_spec.set_deserialize(true, FLAGS_serialization_prefix);
   }
@@ -158,14 +160,14 @@ void RunUndirectedPageRankOptBeta(const std::string& out_prefix,
       ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType, EmptyType,
                                load_strategy, VertexMapType>;
   std::shared_ptr<FRAG_T> fragment = LoadGraphPartitioned<FRAG_T>(
-      FLAGS_efile, FLAGS_vfile, FLAGS_rfile, graph_spec);
+      loader_comm, FLAGS_efile, FLAGS_vfile, FLAGS_rfile, graph_spec);
   bool push;
   if (fragment->fnum() >= 8) {
     uint64_t local_ivnum = fragment->GetInnerVerticesNum();
     uint64_t local_ovnum = fragment->GetOuterVerticesNum();
     uint64_t total_ivnum, total_ovnum;
-    total_ivnum = CommType::get().sum(local_ivnum);
-    total_ovnum = CommType::get().sum(local_ovnum);
+    total_ivnum = loader_comm.sum(local_ivnum);
+    total_ovnum = loader_comm.sum(local_ovnum);
 
     double avg_degree = static_cast<double>(FLAGS_edge_num) /
                         static_cast<double>(FLAGS_vertex_num);
@@ -252,6 +254,7 @@ void RunDirectedCDLP(const std::string& out_prefix,
                      const ParallelEngineSpec& spec) {
   timer_next("load graph");
   LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
+  CommType loader_comm = CommAllocatorType::get().allocate();
   graph_spec.set_directed(FLAGS_directed);
   graph_spec.set_rebalance(FLAGS_rebalance, FLAGS_rebalance_vertex_factor);
   if (FLAGS_deserialize) {
@@ -265,7 +268,7 @@ void RunDirectedCDLP(const std::string& out_prefix,
                                           EmptyType, LoadStrategy::kOnlyOut>;
 
   std::shared_ptr<FRAG_T> fragment =
-      LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, graph_spec);
+      LoadGraph<FRAG_T>(loader_comm, FLAGS_efile, FLAGS_vfile, graph_spec);
 
   std::pair<int64_t, int64_t> min_max_id =
       get_min_max_id(*fragment->GetVertexMap());
@@ -286,6 +289,7 @@ void RunDirectedCDLPBeta(const std::string& out_prefix,
                          const ParallelEngineSpec& spec) {
   timer_next("load graph");
   LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
+  CommType loader_comm = CommAllocatorType::get().allocate();
   graph_spec.set_directed(FLAGS_directed);
   graph_spec.set_rebalance(FLAGS_rebalance, FLAGS_rebalance_vertex_factor);
   if (FLAGS_deserialize) {
@@ -302,7 +306,7 @@ void RunDirectedCDLPBeta(const std::string& out_prefix,
                                LoadStrategy::kOnlyOut, VertexMapType>;
 
   std::shared_ptr<FRAG_T> fragment = LoadGraphPartitioned<FRAG_T>(
-      FLAGS_efile, FLAGS_vfile, FLAGS_rfile, graph_spec);
+      loader_comm, FLAGS_efile, FLAGS_vfile, FLAGS_rfile, graph_spec);
 
   std::pair<int64_t, int64_t> min_max_id =
       get_min_max_id(*fragment->GetVertexMap());
@@ -323,6 +327,7 @@ void RunUndirectedCDLP(const std::string& out_prefix,
                        const ParallelEngineSpec& spec) {
   timer_next("load graph");
   LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
+  CommType loader_comm = CommAllocatorType::get().allocate();
   graph_spec.set_directed(FLAGS_directed);
   graph_spec.set_rebalance(FLAGS_rebalance, FLAGS_rebalance_vertex_factor);
   if (FLAGS_deserialize) {
@@ -339,7 +344,7 @@ void RunUndirectedCDLP(const std::string& out_prefix,
                                LoadStrategy::kOnlyOut, VertexMapType>;
 
   std::shared_ptr<FRAG_T> fragment =
-      LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, graph_spec);
+      LoadGraph<FRAG_T>(loader_comm, FLAGS_efile, FLAGS_vfile, graph_spec);
 
   double avg_degree = static_cast<double>(FLAGS_edge_num) /
                       static_cast<double>(FLAGS_vertex_num);
@@ -376,6 +381,7 @@ void RunUndirectedCDLPBeta(const std::string& out_prefix,
                            const ParallelEngineSpec& spec) {
   timer_next("load graph");
   LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
+  CommType loader_comm = CommAllocatorType::get().allocate();
   graph_spec.set_directed(FLAGS_directed);
   graph_spec.set_rebalance(FLAGS_rebalance, FLAGS_rebalance_vertex_factor);
   if (FLAGS_deserialize) {
@@ -392,7 +398,7 @@ void RunUndirectedCDLPBeta(const std::string& out_prefix,
                                LoadStrategy::kOnlyOut, VertexMapType>;
 
   std::shared_ptr<FRAG_T> fragment = LoadGraphPartitioned<FRAG_T>(
-      FLAGS_efile, FLAGS_vfile, FLAGS_rfile, graph_spec);
+      loader_comm, FLAGS_efile, FLAGS_vfile, FLAGS_rfile, graph_spec);
 
   double avg_degree = static_cast<double>(FLAGS_edge_num) /
                       static_cast<double>(FLAGS_vertex_num);
@@ -431,6 +437,7 @@ void CreateAndQueryOpt(const std::string& out_prefix,
                        const ParallelEngineSpec& spec, Args... args) {
   timer_next("load graph");
   LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
+  CommType loader_comm = CommAllocatorType::get().allocate();
   graph_spec.set_directed(FLAGS_directed);
   graph_spec.set_rebalance(FLAGS_rebalance, FLAGS_rebalance_vertex_factor);
   if (FLAGS_deserialize) {
@@ -446,7 +453,7 @@ void CreateAndQueryOpt(const std::string& out_prefix,
         ImmutableEdgecutFragment<int64_t, uint32_t, grape::EmptyType, EDATA_T,
                                  load_strategy, VertexMapType>;
     std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, graph_spec);
+        LoadGraph<FRAG_T>(loader_comm, FLAGS_efile, FLAGS_vfile, graph_spec);
     using AppType = APP_T<FRAG_T>;
     auto app = std::make_shared<AppType>();
     DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix, args...);
@@ -455,7 +462,7 @@ void CreateAndQueryOpt(const std::string& out_prefix,
     using FRAG_T = ImmutableEdgecutFragment<int64_t, uint32_t, grape::EmptyType,
                                             EDATA_T, load_strategy>;
     std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, graph_spec);
+        LoadGraph<FRAG_T>(loader_comm, FLAGS_efile, FLAGS_vfile, graph_spec);
     using AppType = APP_T<FRAG_T>;
     auto app = std::make_shared<AppType>();
     DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix, args...);
@@ -468,6 +475,7 @@ void CreateAndQueryOptBeta(const std::string& out_prefix,
                            const ParallelEngineSpec& spec, Args... args) {
   timer_next("load graph");
   LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
+  CommType loader_comm = CommAllocatorType::get().allocate();
   graph_spec.set_directed(FLAGS_directed);
   graph_spec.set_rebalance(FLAGS_rebalance, FLAGS_rebalance_vertex_factor);
   CHECK(!FLAGS_rfile.empty() && exists_file(FLAGS_rfile));
@@ -483,19 +491,21 @@ void CreateAndQueryOptBeta(const std::string& out_prefix,
       ImmutableEdgecutFragment<int64_t, uint32_t, grape::EmptyType, EDATA_T,
                                load_strategy, VertexMapType>;
   std::shared_ptr<FRAG_T> fragment = LoadGraphPartitioned<FRAG_T>(
-      FLAGS_efile, FLAGS_vfile, FLAGS_rfile, graph_spec);
+      loader_comm, FLAGS_efile, FLAGS_vfile, FLAGS_rfile, graph_spec);
   using AppType = APP_T<FRAG_T>;
   auto app = std::make_shared<AppType>();
   DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix, args...);
 }
 
 void RunOpt() {
-  bool is_coordinator = CommType::get().rank() == kCoordinatorRank;
+  bool is_coordinator = CommAllocatorType::get().rank() == kCoordinatorRank;
   timer_start(is_coordinator);
 
   // FIXME: no barrier apps. more manager? or use a dynamic-cast.
   std::string out_prefix = FLAGS_out_prefix;
-  auto spec = MultiProcessSpec(__AFFINITY__);
+  int local_id = CommAllocatorType::get().local_rank();
+  int local_size = CommAllocatorType::get().local_size();
+  auto spec = MultiProcessSpec(local_id, local_size, __AFFINITY__);
   if (FLAGS_app_concurrency != -1) {
     spec.thread_num = FLAGS_app_concurrency;
     if (__AFFINITY__) {

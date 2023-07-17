@@ -55,12 +55,14 @@ template <typename T>
 struct ShuffleBuffer {
   using type = std::vector<T>;
 
-  static void SendTo(const type& buffer, int dst_worker_id, int tag) {
-    sync_comm::Send(buffer, dst_worker_id, tag);
+  static void SendTo(CommType& comm, const type& buffer, int dst_worker_id,
+                     int tag) {
+    sync_comm::Send(comm, buffer, dst_worker_id, tag);
   }
 
-  static void RecvFrom(type& buffer, int src_worker_id, int tag) {
-    sync_comm::Recv(buffer, src_worker_id, tag);
+  static void RecvFrom(CommType& comm, type& buffer, int src_worker_id,
+                       int tag) {
+    sync_comm::Recv(comm, buffer, src_worker_id, tag);
   }
 };
 
@@ -68,12 +70,14 @@ template <>
 struct ShuffleBuffer<nonstd::string_view> {
   using type = StringViewVector;
 
-  static void SendTo(const type& buffer, int dst_worker_id, int tag) {
-    sync_comm::Send(buffer, dst_worker_id, tag);
+  static void SendTo(CommType& comm, const type& buffer, int dst_worker_id,
+                     int tag) {
+    sync_comm::Send(comm, buffer, dst_worker_id, tag);
   }
 
-  static void RecvFrom(type& buffer, int src_worker_id, int tag) {
-    sync_comm::Recv(buffer, src_worker_id, tag);
+  static void RecvFrom(CommType& comm, type& buffer, int src_worker_id,
+                       int tag) {
+    sync_comm::Recv(comm, buffer, src_worker_id, tag);
   }
 };
 
@@ -138,14 +142,14 @@ struct ShuffleBufferTuple : public ShuffleBufferTuple<Rest...> {
     ShuffleBufferTuple<Rest...>::resize(size);
   }
 
-  void SendTo(int dst_worker_id, int tag) {
-    ShuffleBuffer<First>::SendTo(first, dst_worker_id, tag);
-    ShuffleBufferTuple<Rest...>::SendTo(dst_worker_id, tag);
+  void SendTo(CommType& comm, int dst_worker_id, int tag) {
+    ShuffleBuffer<First>::SendTo(comm, first, dst_worker_id, tag);
+    ShuffleBufferTuple<Rest...>::SendTo(comm, dst_worker_id, tag);
   }
 
-  void RecvFrom(int src_worker_id, int tag) {
-    ShuffleBuffer<First>::RecvFrom(first, src_worker_id, tag);
-    ShuffleBufferTuple<Rest...>::RecvFrom(src_worker_id, tag);
+  void RecvFrom(CommType& comm, int src_worker_id, int tag) {
+    ShuffleBuffer<First>::RecvFrom(comm, first, src_worker_id, tag);
+    ShuffleBufferTuple<Rest...>::RecvFrom(comm, src_worker_id, tag);
   }
 
   void Clear() {
@@ -192,12 +196,12 @@ struct ShuffleBufferTuple<First> {
 
   void resize(size_t size) { first.resize(size); }
 
-  void SendTo(int dst_worker_id, int tag) {
-    ShuffleBuffer<First>::SendTo(first, dst_worker_id, tag);
+  void SendTo(CommType& comm, int dst_worker_id, int tag) {
+    ShuffleBuffer<First>::SendTo(comm, first, dst_worker_id, tag);
   }
 
-  void RecvFrom(int src_worker_id, int tag) {
-    ShuffleBuffer<First>::RecvFrom(first, src_worker_id, tag);
+  void RecvFrom(CommType& comm, int src_worker_id, int tag) {
+    ShuffleBuffer<First>::RecvFrom(comm, first, src_worker_id, tag);
   }
 
   void Clear() { first.clear(); }
@@ -325,7 +329,8 @@ class ShuffleOut {
   ShuffleOut() {}
   ~ShuffleOut() {}
 
-  void Init(int tag = 0, size_t cs = 4096) {
+  void Init(CommType* comm, int tag = 0, size_t cs = 4096) {
+    comm_ = comm;
     tag_ = tag;
     chunk_size_ = cs;
     current_size_ = 0;
@@ -405,11 +410,11 @@ class ShuffleOut {
  private:
   void issue() {
     frag_shuffle_header header(current_size_, dst_frag_id_);
-    CommType::get().send(dst_worker_id_, reinterpret_cast<const char*>(&header),
-                         sizeof(header), tag_);
+    comm_->send(dst_worker_id_, reinterpret_cast<const char*>(&header),
+                sizeof(header), tag_);
 
     if (current_size_) {
-      buffers_.SendTo(dst_worker_id_, tag_);
+      buffers_.SendTo(*comm_, dst_worker_id_, tag_);
     }
   }
 
@@ -420,16 +425,19 @@ class ShuffleOut {
   fid_t dst_frag_id_;
   int tag_;
   bool comm_disabled_;
+
+  CommType* comm_;
 };
 
 template <typename... TYPES>
 class ShuffleIn {
  public:
-  ShuffleIn() {}
+  ShuffleIn() : comm_(NULL) {}
   ~ShuffleIn() {}
 
-  void Init(fid_t fnum, int tag = 0) {
-    remaining_frag_num_ = fnum - 1;
+  void Init(CommType* comm, int tag = 0) {
+    comm_ = comm;
+    remaining_frag_num_ = comm->size() - 1;
     tag_ = tag;
     current_size_ = 0;
   }
@@ -442,14 +450,14 @@ class ShuffleIn {
         return -1;
       }
       int src_worker_id;
-      CommType::get().recv_tagged(src_worker_id, buf, tag_);
+      comm_->recv_tagged(src_worker_id, buf, tag_);
       memcpy(&header, buf.data(), sizeof(header));
       if (header.size == 0) {
         --remaining_frag_num_;
       } else {
         current_size_ += header.size;
         fid = header.fid;
-        buffers_.RecvFrom(src_worker_id, tag_);
+        buffers_.RecvFrom(*comm_, src_worker_id, tag_);
         return src_worker_id;
       }
     }
@@ -458,13 +466,13 @@ class ShuffleIn {
   int RecvFrom(int src_worker_id) {
     frag_shuffle_header header;
     std::vector<char> buf;
-    CommType::get().recv_from_tagged(src_worker_id, buf, tag_);
+    comm_->recv_from_tagged(src_worker_id, buf, tag_);
     memcpy(&header, buf.data(), sizeof(header));
     if (header.size == 0) {
       --remaining_frag_num_;
     } else {
       current_size_ += header.size;
-      buffers_.RecvFrom(src_worker_id, tag_);
+      buffers_.RecvFrom(*comm_, src_worker_id, tag_);
     }
     return header.size;
   }
@@ -486,6 +494,8 @@ class ShuffleIn {
   fid_t remaining_frag_num_;
   int tag_;
   size_t current_size_;
+
+  CommType* comm_;
 };
 
 }  // namespace grape

@@ -32,11 +32,10 @@ inline ParallelEngineSpec DefaultParallelEngineSpec() {
   return spec;
 }
 
-inline ParallelEngineSpec MultiProcessSpec(bool affinity = false) {
+inline ParallelEngineSpec MultiProcessSpec(int local_id, int local_num,
+                                           bool affinity = false) {
   ParallelEngineSpec spec;
   uint32_t total_thread_num = std::thread::hardware_concurrency();
-  int local_num = CommType::get().local_size();
-  int local_id = CommType::get().local_rank();
   uint32_t each_process_thread_num =
       (total_thread_num + local_num - 1) / local_num;
   spec.thread_num = each_process_thread_num;

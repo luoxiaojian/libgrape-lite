@@ -62,7 +62,7 @@ class VertexMapBase {
   using partitioner_t = PARTITIONER_T;
   using oid_t = OID_T;
   using vid_t = VID_T;
-  VertexMapBase() : partitioner_() { id_parser_.init(CommType::get().size()); }
+  VertexMapBase(fid_t fnum) : partitioner_() { id_parser_.init(fnum); }
   virtual ~VertexMapBase() = default;
 
   void SetPartitioner(const PARTITIONER_T& partitioner) {
@@ -73,9 +73,7 @@ class VertexMapBase {
     partitioner_ = std::move(partitioner);
   }
 
-  fid_t GetFragmentNum() const {
-    return static_cast<fid_t>(CommType::get().size());
-  }
+  fid_t GetFragmentNum() const { return fnum_; }
 
   VID_T Lid2Gid(fid_t fid, const VID_T& lid) const {
     return id_parser_.generate_global_id(fid, lid);
@@ -93,12 +91,18 @@ class VertexMapBase {
 
   template <typename IOADAPTOR_T>
   void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+    InArchive arc;
+    arc << fnum_;
+    CHECK(writer->WriteArchive(arc));
     partitioner_.template serialize<IOADAPTOR_T>(writer);
   }
 
   template <typename IOADAPTOR_T>
   void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
-    id_parser_.init(CommType::get().size());
+    OutArchive arc;
+    CHECK(reader->ReadArchive(arc));
+    arc >> fnum_;
+    id_parser_.init(fnum_);
     partitioner_.template deserialize<IOADAPTOR_T>(reader);
   }
 
@@ -111,6 +115,7 @@ class VertexMapBase {
   PARTITIONER_T& GetPartitioner() { return partitioner_; }
 
  protected:
+  fid_t fnum_;
   PARTITIONER_T partitioner_;
   IdParser<VID_T> id_parser_;
 

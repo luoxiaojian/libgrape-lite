@@ -489,9 +489,9 @@ class AppendOnlyEdgecutFragment
     fragment_indices_->Init(this);
   }
 
-  void ExtendFragment(std::vector<std::string>& edge_messages,
+  void ExtendFragment(CommType& comm, std::vector<std::string>& edge_messages,
                       const LoadGraphSpec& spec) {
-    CommType::get().bcast(edge_messages, kCoordinatorRank);
+    comm.bcast(edge_messages, kCoordinatorRank);
 
     if (edge_messages.empty()) {
       return;
@@ -713,7 +713,7 @@ class AppendOnlyEdgecutFragment
     initOuterVerticesOfFragment();
   }
 
-  void PrepareToRunApp(PrepareConf conf) override {}
+  void PrepareToRunApp(PrepareConf conf, CommType& comm) override {}
 
   fid_t GetFragIdByGid(const vid_t& gid) const {
     return id_parser_.get_fragment_id(gid);

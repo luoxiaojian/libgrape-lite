@@ -95,17 +95,17 @@ class BasicFragmentLoader {
   static constexpr LoadStrategy load_strategy = fragment_t::load_strategy;
 
  public:
-  BasicFragmentLoader() {
-    fid_ = static_cast<fid_t>(CommType::get().rank());
-    fnum_ = static_cast<fid_t>(CommType::get().size());
-    vm_ptr_ = std::make_shared<vertex_map_t>();
+  BasicFragmentLoader(CommType& comm) : comm_(comm) {
+    fid_ = static_cast<fid_t>(comm.rank());
+    fnum_ = static_cast<fid_t>(comm.size());
+    vm_ptr_ = std::make_shared<vertex_map_t>(fid_, fnum_);
     vertices_to_frag_.resize(fnum_);
     edges_to_frag_.resize(fnum_);
     for (fid_t fid = 0; fid < fnum_; ++fid) {
       int worker_id = fid;
-      vertices_to_frag_[fid].Init(vertex_tag, 4096000);
+      vertices_to_frag_[fid].Init(&comm_, vertex_tag, 4096000);
       vertices_to_frag_[fid].SetDestination(worker_id, fid);
-      edges_to_frag_[fid].Init(edge_tag, 4096000);
+      edges_to_frag_[fid].Init(&comm_, edge_tag, 4096000);
       edges_to_frag_[fid].SetDestination(worker_id, fid);
       if (worker_id == static_cast<int>(fid_)) {
         vertices_to_frag_[fid].DisableComm();
@@ -174,7 +174,7 @@ class BasicFragmentLoader {
     char serial_file[1024];
     snprintf(serial_file, sizeof(serial_file), "%s/%s", typed_prefix.c_str(),
              kSerializationVertexMapFilename);
-    vm_ptr_->template Serialize<IOADAPTOR_T>(typed_prefix);
+    vm_ptr_->template Serialize<IOADAPTOR_T>(typed_prefix, comm_);
     fragment->template Serialize<IOADAPTOR_T>(typed_prefix);
 
     return true;
@@ -201,11 +201,9 @@ class BasicFragmentLoader {
     auto io_adaptor =
         std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(typed_prefix));
     if (io_adaptor->IsExist()) {
-      vm_ptr_->template Deserialize<IOADAPTOR_T>(typed_prefix,
-                                                 fid_);
+      vm_ptr_->template Deserialize<IOADAPTOR_T>(typed_prefix, fid_);
       fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr_));
-      fragment->template Deserialize<IOADAPTOR_T>(typed_prefix,
-                                                  fid_);
+      fragment->template Deserialize<IOADAPTOR_T>(typed_prefix, fid_);
       return true;
     } else {
       return false;
@@ -223,17 +221,15 @@ class BasicFragmentLoader {
     edge_recv_thread_.join();
     recv_thread_running_ = false;
 
-    CommType::get().barrier();
+    comm_.barrier();
 
-    got_vertices_.emplace_back(
-        std::move(vertices_to_frag_[fid_].buffers()));
+    got_vertices_.emplace_back(std::move(vertices_to_frag_[fid_].buffers()));
     vertices_to_frag_[fid_].Clear();
-    got_edges_.emplace_back(
-        std::move(edges_to_frag_[fid_].buffers()));
+    got_edges_.emplace_back(std::move(edges_to_frag_[fid_].buffers()));
     edges_to_frag_[fid_].Clear();
 
     vm_ptr_->Init();
-    auto builder = vm_ptr_->GetLocalBuilder();
+    auto builder = vm_ptr_->GetLocalBuilder(comm_);
     for (auto& buffers : got_vertices_) {
       foreach_helper(
           buffers,
@@ -274,8 +270,7 @@ class BasicFragmentLoader {
     }
 
     fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr_));
-    fragment->Init(fid_, directed, processed_vertices_,
-                   processed_edges_);
+    fragment->Init(fid_, directed, processed_vertices_, processed_edges_);
 
     if (!std::is_same<vdata_t, EmptyType>::value) {
       initOuterVertexData(fragment);
@@ -284,7 +279,7 @@ class BasicFragmentLoader {
 
   void vertexRecvRoutine() {
     ShuffleIn<internal_oid_t, vdata_t> data_in;
-    data_in.Init(fnum_, vertex_tag);
+    data_in.Init(&comm_, vertex_tag);
     fid_t dst_fid;
     int src_worker_id;
     while (!data_in.Finished()) {
@@ -299,7 +294,7 @@ class BasicFragmentLoader {
 
   void edgeRecvRoutine() {
     ShuffleIn<internal_oid_t, internal_oid_t, edata_t> data_in;
-    data_in.Init(fnum_, edge_tag);
+    data_in.Init(&comm_, edge_tag);
     fid_t dst_fid;
     int src_worker_id;
     while (!data_in.Finished()) {
@@ -323,7 +318,7 @@ class BasicFragmentLoader {
       request_gid_lists[fid].emplace_back(fragment->GetOuterVertexGid(v));
     }
     std::vector<std::vector<vid_t>> requested_gid_lists(worker_num);
-    CommType::get().all_to_all(request_gid_lists, requested_gid_lists);
+    comm_.all_to_all(request_gid_lists, requested_gid_lists);
     std::vector<std::vector<vdata_t>> response_vdata_lists(worker_num);
     for (int i = 0; i < worker_num; ++i) {
       auto& id_vec = requested_gid_lists[i];
@@ -336,7 +331,7 @@ class BasicFragmentLoader {
       }
     }
     std::vector<std::vector<vdata_t>> responsed_vdata_lists(worker_num);
-    CommType::get().all_to_all(response_vdata_lists, responsed_vdata_lists);
+    comm_.all_to_all(response_vdata_lists, responsed_vdata_lists);
     for (int i = 0; i < worker_num; ++i) {
       auto& id_vec = request_gid_lists[i];
       auto& data_vec = responsed_vdata_lists[i];
@@ -369,6 +364,8 @@ class BasicFragmentLoader {
 
   std::vector<internal::Vertex<vid_t, vdata_t>> processed_vertices_;
   std::vector<Edge<vid_t, edata_t>> processed_edges_;
+
+  CommType& comm_;
 
   static constexpr int vertex_tag = 5;
   static constexpr int edge_tag = 6;
