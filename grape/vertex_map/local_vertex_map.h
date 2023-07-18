@@ -215,14 +215,12 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
         fid, oid_to_index_, gid_to_index_, partitioner_, id_parser_);
   }
 
-  template <typename IOADAPTOR_T>
   void Serialize(const std::string& prefix) {
     char fbuf[1024];
     snprintf(fbuf, sizeof(fbuf), "%s/%s_%d", prefix.c_str(),
              kSerializationVertexMapFilename, comm_spec_.fid());
 
-    auto io_adaptor =
-        std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(fbuf)));
+    auto io_adaptor = create_io_adaptor(fbuf);
     io_adaptor->Open("wb");
 
     base_t::serialize(io_adaptor);
@@ -235,14 +233,12 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     io_adaptor->Close();
   }
 
-  template <typename IOADAPTOR_T>
   void Deserialize(const std::string& prefix, fid_t fid) {
     char fbuf[1024];
     snprintf(fbuf, sizeof(fbuf), "%s/%s_%d", prefix.c_str(),
              kSerializationVertexMapFilename, fid);
 
-    auto io_adaptor =
-        std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(fbuf)));
+    auto io_adaptor = create_io_adaptor(fbuf);
     io_adaptor->Open();
 
     base_t::deserialize(io_adaptor);

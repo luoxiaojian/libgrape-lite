@@ -400,16 +400,14 @@ class EdgecutFragmentBase
     send_thread.join();
   }
 
-  template <typename IOADAPTOR_T>
-  void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+  void serialize(std::unique_ptr<IOAdaptorBase>& writer) {
     base_t::serialize(writer);
     InArchive arc;
     arc << inner_vertices_ << outer_vertices_;
     CHECK(writer->WriteArchive(arc));
   }
 
-  template <typename IOADAPTOR_T>
-  void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+  void deserialize(std::unique_ptr<IOAdaptorBase>& reader) {
     base_t::deserialize(reader);
     OutArchive arc;
     CHECK(reader->ReadArchive(arc));

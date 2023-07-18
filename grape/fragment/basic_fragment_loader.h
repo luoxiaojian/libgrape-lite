@@ -30,6 +30,7 @@ limitations under the License.
 #include "grape/config.h"
 #include "grape/graph/edge.h"
 #include "grape/graph/vertex.h"
+#include "grape/io/io_adaptor_factory.h"
 #include "grape/util.h"
 #include "grape/utils/concurrent_queue.h"
 #include "grape/utils/vertex_array.h"
@@ -84,7 +85,7 @@ inline LoadGraphSpec DefaultLoadGraphSpec(LoadStrategy strategy) {
   return spec;
 }
 
-template <typename FRAG_T, typename IOADAPTOR_T>
+template <typename FRAG_T>
 class BasicFragmentLoader {
   using fragment_t = FRAG_T;
   using oid_t = typename fragment_t::oid_t;
@@ -176,8 +177,8 @@ class BasicFragmentLoader {
     char serial_file[1024];
     snprintf(serial_file, sizeof(serial_file), "%s/%s", typed_prefix.c_str(),
              kSerializationVertexMapFilename);
-    vm_ptr_->template Serialize<IOADAPTOR_T>(typed_prefix);
-    fragment->template Serialize<IOADAPTOR_T>(typed_prefix);
+    vm_ptr_->Serialize(typed_prefix);
+    fragment->Serialize(typed_prefix);
 
     return true;
   }
@@ -201,14 +202,11 @@ class BasicFragmentLoader {
     if (!existSerializationFile(typed_prefix)) {
       return false;
     }
-    auto io_adaptor =
-        std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(typed_prefix));
+    auto io_adaptor = create_io_adaptor(typed_prefix);
     if (io_adaptor->IsExist()) {
-      vm_ptr_->template Deserialize<IOADAPTOR_T>(typed_prefix,
-                                                 comm_spec_.fid());
+      vm_ptr_->Deserialize(typed_prefix, comm_spec_.fid());
       fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr_));
-      fragment->template Deserialize<IOADAPTOR_T>(typed_prefix,
-                                                  comm_spec_.fid());
+      fragment->Deserialize(typed_prefix, comm_spec_.fid());
       return true;
     } else {
       return false;

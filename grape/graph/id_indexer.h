@@ -51,8 +51,7 @@ template <typename T>
 struct KeyBuffer {
   using type = std::vector<T, Allocator<T>>;
 
-  template <typename IOADAPTOR_T>
-  static void serialize(std::unique_ptr<IOADAPTOR_T>& writer, type& buffer) {
+  static void serialize(std::unique_ptr<IOAdaptorBase>& writer, type& buffer) {
     size_t size = buffer.size();
     CHECK(writer->Write(&size, sizeof(size_t)));
     if (size > 0) {
@@ -60,8 +59,8 @@ struct KeyBuffer {
     }
   }
 
-  template <typename IOADAPTOR_T>
-  static void deserialize(std::unique_ptr<IOADAPTOR_T>& reader, type& buffer) {
+  static void deserialize(std::unique_ptr<IOAdaptorBase>& reader,
+                          type& buffer) {
     size_t size;
     CHECK(reader->Read(&size, sizeof(size_t)));
     if (size > 0) {
@@ -85,8 +84,7 @@ template <>
 struct KeyBuffer<nonstd::string_view> {
   using type = StringViewVector;
 
-  template <typename IOADAPTOR_T>
-  static void serialize(std::unique_ptr<IOADAPTOR_T>& writer, type& buffer) {
+  static void serialize(std::unique_ptr<IOAdaptorBase>& writer, type& buffer) {
     size_t content_buffer_size = buffer.content_buffer().size();
     CHECK(writer->Write(&content_buffer_size, sizeof(size_t)));
     if (content_buffer_size > 0) {
@@ -101,8 +99,8 @@ struct KeyBuffer<nonstd::string_view> {
     }
   }
 
-  template <typename IOADAPTOR_T>
-  static void deserialize(std::unique_ptr<IOADAPTOR_T>& reader, type& buffer) {
+  static void deserialize(std::unique_ptr<IOAdaptorBase>& reader,
+                          type& buffer) {
     size_t content_buffer_size;
     CHECK(reader->Read(&content_buffer_size, sizeof(size_t)));
     if (content_buffer_size > 0) {
@@ -330,8 +328,7 @@ class IdIndexer {
 
   key_buffer_t& keys() { return keys_; }
 
-  template <typename IOADAPTOR_T>
-  void Serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+  void Serialize(std::unique_ptr<IOAdaptorBase>& writer) {
     id_indexer_impl::KeyBuffer<KEY_T>::serialize(writer, keys_);
     InArchive arc;
     arc << hash_policy_.get_mod_function_index() << max_lookups_
@@ -349,8 +346,7 @@ class IdIndexer {
     }
   }
 
-  template <typename IOADAPTOR_T>
-  void Deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+  void Deserialize(std::unique_ptr<IOAdaptorBase>& reader) {
     id_indexer_impl::KeyBuffer<KEY_T>::deserialize(reader, keys_);
     OutArchive arc;
     CHECK(reader->ReadArchive(arc));

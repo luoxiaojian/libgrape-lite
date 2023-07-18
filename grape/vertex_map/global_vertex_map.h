@@ -28,6 +28,7 @@ limitations under the License.
 #include "grape/config.h"
 #include "grape/fragment/partitioner.h"
 #include "grape/graph/id_indexer.h"
+#include "grape/io/io_adaptor_factory.h"
 #include "grape/serialization/in_archive.h"
 #include "grape/serialization/out_archive.h"
 #include "grape/vertex_map/vertex_map_base.h"
@@ -216,9 +217,8 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   }
 
  private:
-  template <typename IOADAPTOR_T>
   void serialize(const std::string& path) {
-    auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(path));
+    auto io_adaptor = create_io_adaptor(path);
     io_adaptor->Open("wb");
     base_t::serialize(io_adaptor);
     for (fid_t i = 0; i < comm_spec_.fnum(); ++i) {
@@ -228,14 +228,13 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   }
 
  public:
-  template <typename IOADAPTOR_T>
   void Serialize(const std::string& prefix) {
     char fbuf[1024];
     snprintf(fbuf, sizeof(fbuf), "%s/%s", prefix.c_str(),
              kSerializationVertexMapFilename);
     std::string path = std::string(fbuf);
     if (comm_spec_.worker_id() == 0) {
-      serialize<IOADAPTOR_T>(path);
+      serialize(path);
     }
     MPI_Barrier(comm_spec_.comm());
     auto exists_file = [](const std::string& name) {
@@ -243,22 +242,20 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
       return f.good();
     };
     if (!exists_file(path) && comm_spec_.local_id() == 0) {
-      serialize<IOADAPTOR_T>(path);
+      serialize(path);
     }
     MPI_Barrier(comm_spec_.comm());
     if (!exists_file(path)) {
-      serialize<IOADAPTOR_T>(path);
+      serialize(path);
     }
   }
 
-  template <typename IOADAPTOR_T>
   void Deserialize(const std::string& prefix, fid_t fid) {
     char fbuf[1024];
     snprintf(fbuf, sizeof(fbuf), "%s/%s", prefix.c_str(),
              kSerializationVertexMapFilename);
 
-    auto io_adaptor =
-        std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(fbuf)));
+    auto io_adaptor = create_io_adaptor(fbuf);
     io_adaptor->Open();
 
     base_t::deserialize(io_adaptor);

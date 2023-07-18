@@ -91,7 +91,7 @@ std::shared_ptr<FRAG_T> MutateGraph(const grape::CommSpec& comm_spec,
                                     int efile_num,
                                     std::shared_ptr<FRAG_T> fragment) {
   timer_next("mutate graph");
-  grape::EVFragmentMutator<FRAG_T, grape::LocalIOAdaptor> mutator(comm_spec);
+  grape::EVFragmentMutator<FRAG_T> mutator(comm_spec);
   for (int i = 0; i < efile_num; ++i) {
     std::string path = efile_prefix + ".part_" + std::to_string(i);
     fragment = mutator.MutateFragment(path, "", fragment, FLAGS_directed);

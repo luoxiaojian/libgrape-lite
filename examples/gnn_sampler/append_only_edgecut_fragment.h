@@ -587,15 +587,13 @@ class AppendOnlyEdgecutFragment
     fragment_indices_->Rebuild();
   }
 
-  template <typename IOADAPTOR_T>
   void Serialize(const std::string prefix) {
     char fbuf[1024];
     snprintf(fbuf, sizeof(fbuf), kSerializationFilenameFormat, prefix.c_str(),
              fid_);
     VLOG(1) << "Serialize to " << fbuf;
 
-    auto io_adaptor =
-        std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(fbuf)));
+    auto io_adaptor = create_io_adaptor(fbuf);
     io_adaptor->Open("wb");
 
     base_t::serialize(io_adaptor);
@@ -643,14 +641,12 @@ class AppendOnlyEdgecutFragment
     io_adaptor->Close();
   }
 
-  template <typename IOADAPTOR_T>
   void Deserialize(const std::string prefix, const fid_t fid) {
     char fbuf[1024];
     snprintf(fbuf, sizeof(fbuf), kSerializationFilenameFormat, prefix.c_str(),
              fid);
     VLOG(1) << "Deserialize from " << fbuf;
-    auto io_adaptor =
-        std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(fbuf)));
+    auto io_adaptor = create_io_adaptor(fbuf);
     io_adaptor->Open();
 
     OutArchive oa;

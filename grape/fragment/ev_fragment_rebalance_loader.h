@@ -25,9 +25,8 @@ limitations under the License.
 
 #include "grape/fragment/basic_fragment_loader.h"
 #include "grape/fragment/partitioner.h"
-#include "grape/io/line_parser_base.h"
+#include "grape/io/line_parser_factory.h"
 #include "grape/io/local_io_adaptor.h"
-#include "grape/io/tsv_line_parser.h"
 #include "grape/worker/comm_spec.h"
 
 namespace grape {
@@ -37,13 +36,8 @@ namespace grape {
  * efile and vfile.
  *
  * @tparam FRAG_T Fragment type.
- * @tparam IOADAPTOR_T IOAdaptor type.
- * @tparam LINE_PARSER_T LineParser type.
  */
-template <typename FRAG_T, typename IOADAPTOR_T = LocalIOAdaptor,
-          typename LINE_PARSER_T =
-              TSVLineParser<typename FRAG_T::oid_t, typename FRAG_T::vdata_t,
-                            typename FRAG_T::edata_t>>
+template <typename FRAG_T>
 class EVFragmentRebalanceLoader {
   using fragment_t = FRAG_T;
   using oid_t = typename fragment_t::oid_t;
@@ -53,11 +47,6 @@ class EVFragmentRebalanceLoader {
 
   using vertex_map_t = typename fragment_t::vertex_map_t;
   using partitioner_t = typename vertex_map_t::partitioner_t;
-  using line_parser_t = LINE_PARSER_T;
-
-  static_assert(std::is_base_of<LineParserBase<oid_t, vdata_t, edata_t>,
-                                LINE_PARSER_T>::value,
-                "LineParser type is invalid");
 
  public:
   explicit EVFragmentRebalanceLoader(const CommSpec& comm_spec)
@@ -69,6 +58,7 @@ class EVFragmentRebalanceLoader {
                                            const std::string& vfile,
                                            const LoadGraphSpec& spec) {
     std::shared_ptr<fragment_t> fragment(nullptr);
+    line_parser_ = LineParserFactory<oid_t, vdata_t, edata_t>::create();
     if (spec.deserialize && (!spec.serialize)) {
       bool deserialized = deserializeFragment(fragment, spec);
       int flag = 0;
@@ -93,7 +83,7 @@ class EVFragmentRebalanceLoader {
 
     CHECK(!vfile.empty());
     {
-      auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(vfile));
+      auto io_adaptor = create_io_adaptor(vfile);
       io_adaptor->Open();
       std::string line;
       vdata_t v_data;
@@ -108,7 +98,7 @@ class EVFragmentRebalanceLoader {
         if (line.empty() || line[0] == '#')
           continue;
         try {
-          line_parser_.LineParserForVFile(line, vertex_id, v_data);
+          line_parser_->LineParserForVFile(line, vertex_id, v_data);
         } catch (std::exception& e) {
           VLOG(1) << e.what();
           continue;
@@ -136,8 +126,7 @@ class EVFragmentRebalanceLoader {
     std::vector<vid_t> src_list, dst_list;
     std::vector<edata_t> edata_list;
     {
-      auto io_adaptor =
-          std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(efile)));
+      auto io_adaptor = create_io_adaptor(efile);
       io_adaptor->SetPartialRead(comm_spec_.worker_id(),
                                  comm_spec_.worker_num());
       io_adaptor->Open();
@@ -157,7 +146,7 @@ class EVFragmentRebalanceLoader {
           continue;
 
         try {
-          line_parser_.LineParserForEFile(line, src, dst, e_data);
+          line_parser_->LineParserForEFile(line, src, dst, e_data);
         } catch (std::exception& e) {
           VLOG(1) << e.what();
           continue;
@@ -388,15 +377,13 @@ class EVFragmentRebalanceLoader {
     if (!existSerializationFile(typed_prefix)) {
       return false;
     }
-    auto io_adaptor =
-        std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(typed_prefix));
+    auto io_adaptor = create_io_adaptor(typed_prefix);
     if (io_adaptor->IsExist()) {
       std::shared_ptr<vertex_map_t> vm_ptr =
           std::make_shared<vertex_map_t>(comm_spec_);
-      vm_ptr->template Deserialize<IOADAPTOR_T>(typed_prefix, comm_spec_.fid());
+      vm_ptr->Deserialize(typed_prefix, comm_spec_.fid());
       fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr));
-      fragment->template Deserialize<IOADAPTOR_T>(typed_prefix,
-                                                  comm_spec_.fid());
+      fragment->Deserialize(typed_prefix, comm_spec_.fid());
       return true;
     } else {
       return false;
@@ -413,8 +400,8 @@ class EVFragmentRebalanceLoader {
     char serial_file[1024];
     snprintf(serial_file, sizeof(serial_file), "%s/%s", typed_prefix.c_str(),
              kSerializationVertexMapFilename);
-    vm_ptr->template Serialize<IOADAPTOR_T>(typed_prefix);
-    fragment->template Serialize<IOADAPTOR_T>(typed_prefix);
+    vm_ptr->Serialize(typed_prefix);
+    fragment->Serialize(typed_prefix);
 
     return true;
   }
@@ -422,7 +409,7 @@ class EVFragmentRebalanceLoader {
   static constexpr int edge_tag = 6;
 
   CommSpec comm_spec_;
-  line_parser_t line_parser_;
+  std::unique_ptr<LineParserBase<oid_t, vdata_t, edata_t>> line_parser_;
 };
 
 }  // namespace grape

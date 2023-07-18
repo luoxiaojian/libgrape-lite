@@ -20,6 +20,7 @@ limitations under the License.
 
 #include "flat_hash_map/flat_hash_map.hpp"
 #include "grape/config.h"
+#include "grape/io/io_adaptor_base.h"
 
 namespace grape {
 
@@ -60,13 +61,11 @@ class HashPartitioner {
     return *this;
   }
 
-  template <typename IOADAPTOR_T>
-  void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+  void serialize(std::unique_ptr<IOAdaptorBase>& writer) {
     CHECK(writer->Write(&fnum_, sizeof(fid_t)));
   }
 
-  template <typename IOADAPTOR_T>
-  void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+  void deserialize(std::unique_ptr<IOAdaptorBase>& reader) {
     CHECK(reader->Read(&fnum_, sizeof(fid_t)));
   }
 
@@ -121,13 +120,11 @@ class HashPartitioner<std::string> {
     return *this;
   }
 
-  template <typename IOADAPTOR_T>
-  void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+  void serialize(std::unique_ptr<IOAdaptorBase>& writer) {
     CHECK(writer->Write(&fnum_, sizeof(fid_t)));
   }
 
-  template <typename IOADAPTOR_T>
-  void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+  void deserialize(std::unique_ptr<IOAdaptorBase>& reader) {
     CHECK(reader->Read(&fnum_, sizeof(fid_t)));
   }
 
@@ -179,15 +176,13 @@ class SegmentedPartitioner {
     return *this;
   }
 
-  template <typename IOADAPTOR_T>
-  void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+  void serialize(std::unique_ptr<IOAdaptorBase>& writer) {
     InArchive arc;
     arc << fnum_ << o2f_;
     CHECK(writer->WriteArchive(arc));
   }
 
-  template <typename IOADAPTOR_T>
-  void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+  void deserialize(std::unique_ptr<IOAdaptorBase>& reader) {
     OutArchive arc;
     CHECK(reader->ReadArchive(arc));
     arc >> fnum_ >> o2f_;
@@ -247,15 +242,13 @@ class SegmentedPartitioner<std::string> {
     return *this;
   }
 
-  template <typename IOADAPTOR_T>
-  void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+  void serialize(std::unique_ptr<IOAdaptorBase>& writer) {
     InArchive arc;
     arc << fnum_ << o2f_;
     CHECK(writer->WriteArchive(arc));
   }
 
-  template <typename IOADAPTOR_T>
-  void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+  void deserialize(std::unique_ptr<IOAdaptorBase>& reader) {
     OutArchive arc;
     CHECK(reader->ReadArchive(arc));
     arc >> fnum_ >> o2f_;

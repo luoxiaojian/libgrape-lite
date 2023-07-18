@@ -332,14 +332,12 @@ class ImmutableEdgecutFragment
     }
   }
 
-  template <typename IOADAPTOR_T>
   void Serialize(const std::string& prefix) {
     char fbuf[1024];
     snprintf(fbuf, sizeof(fbuf), kSerializationFilenameFormat, prefix.c_str(),
              fid_);
 
-    auto io_adaptor =
-        std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(fbuf)));
+    auto io_adaptor = create_io_adaptor(fbuf);
     io_adaptor->Open("wb");
 
     base_t::serialize(io_adaptor);
@@ -362,13 +360,11 @@ class ImmutableEdgecutFragment
     io_adaptor->Close();
   }
 
-  template <typename IOADAPTOR_T>
   void Deserialize(const std::string& prefix, const fid_t fid) {
     char fbuf[1024];
     snprintf(fbuf, sizeof(fbuf), kSerializationFilenameFormat, prefix.c_str(),
              fid);
-    auto io_adaptor =
-        std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(fbuf)));
+    auto io_adaptor = create_io_adaptor(fbuf);
     io_adaptor->Open();
 
     base_t::deserialize(io_adaptor);

@@ -568,22 +568,20 @@ class DeMutableCSR<VID_T, Nbr<VID_T, EDATA_T>> {
     tail_.clear_edges();
   }
 
-  template <typename IOADAPTOR_T>
-  void Serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+  void Serialize(std::unique_ptr<IOAdaptorBase>& writer) {
     InArchive ia;
     ia << min_id_ << max_id_ << max_head_id_ << min_tail_id_ << dedup_;
     CHECK(writer->WriteArchive(ia));
-    head_.template Serialize<IOADAPTOR_T>(writer);
-    tail_.template Serialize<IOADAPTOR_T>(writer);
+    head_.Serialize(writer);
+    tail_.Serialize(writer);
   }
 
-  template <typename IOADAPTOR_T>
-  void Deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+  void Deserialize(std::unique_ptr<IOAdaptorBase>& reader) {
     OutArchive oa;
     CHECK(reader->ReadArchive(oa));
     oa >> min_id_ >> max_id_ >> max_head_id_ >> min_tail_id_ >> dedup_;
-    head_.template Deserialize<IOADAPTOR_T>(reader);
-    tail_.template Deserialize<IOADAPTOR_T>(reader);
+    head_.Deserialize(reader);
+    tail_.Deserialize(reader);
   }
 
  private:

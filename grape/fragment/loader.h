@@ -30,8 +30,6 @@ namespace grape {
  * @brief Loader manages graph loading from files.
  *
  * @tparam FRAG_T Type of Fragment
- * @tparam IOADAPTOR_T, Type of IOAdaptor, default is LocalIOAdaptor
- * @tparam LINE_PARSER_T, Type of LineParser, default is TSVLineParser
  *
  * SegmentedPartitioner<typename FRAG_T::oid_t>
  * @param efile The input file of edges.
@@ -40,41 +38,31 @@ namespace grape {
  * @param spec Specification to load graph.
  * @return std::shared_ptr<FRAG_T> Loadded Fragment.
  */
-template <typename FRAG_T, typename IOADAPTOR_T = LocalIOAdaptor,
-          typename LINE_PARSER_T =
-              TSVLineParser<typename FRAG_T::oid_t, typename FRAG_T::vdata_t,
-                            typename FRAG_T::edata_t>>
+template <typename FRAG_T>
 static std::shared_ptr<FRAG_T> LoadGraph(
     const std::string& efile, const std::string& vfile,
     const CommSpec& comm_spec,
     const LoadGraphSpec& spec = DefaultLoadGraphSpec(LoadStrategy::kOnlyOut)) {
   if (spec.rebalance) {
-    std::unique_ptr<
-        EVFragmentRebalanceLoader<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>>
-        loader(
-            new EVFragmentRebalanceLoader<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>(
-                comm_spec));
+    std::unique_ptr<EVFragmentRebalanceLoader<FRAG_T>> loader(
+        new EVFragmentRebalanceLoader<FRAG_T>(comm_spec));
     return loader->LoadFragment(efile, vfile, spec);
   } else {
-    std::unique_ptr<EVFragmentLoader<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>>
-        loader(new EVFragmentLoader<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>(
-            comm_spec));
+    std::unique_ptr<EVFragmentLoader<FRAG_T>> loader(
+        new EVFragmentLoader<FRAG_T>(comm_spec));
     return loader->LoadFragment(efile, vfile, spec);
   }
 }
 
-template <typename FRAG_T, typename IOADAPTOR_T = LocalIOAdaptor,
-          typename LINE_PARSER_T =
-              TSVLineParser<typename FRAG_T::oid_t, typename FRAG_T::vdata_t,
-                            typename FRAG_T::edata_t>>
+template <typename FRAG_T>
 static std::shared_ptr<FRAG_T> LoadGraphAndMutate(
     const std::string& efile, const std::string& vfile,
     const std::string& delta_efile, const std::string& delta_vfile,
     const CommSpec& comm_spec,
     const LoadGraphSpec& spec = DefaultLoadGraphSpec(LoadStrategy::kOnlyOut)) {
-  std::shared_ptr<FRAG_T> ret = LoadGraph<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>(
-      efile, vfile, comm_spec, spec);
-  EVFragmentMutator<FRAG_T, IOADAPTOR_T> mutator(comm_spec);
+  std::shared_ptr<FRAG_T> ret =
+      LoadGraph<FRAG_T>(efile, vfile, comm_spec, spec);
+  EVFragmentMutator<FRAG_T> mutator(comm_spec);
   return mutator.MutateFragment(delta_efile, delta_vfile, ret, spec.directed);
 }
 

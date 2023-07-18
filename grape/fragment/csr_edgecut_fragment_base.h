@@ -617,18 +617,16 @@ class CSREdgecutFragmentBase
     oe_builder.finish(oe_);
   }
 
-  template <typename IOADAPTOR_T>
-  void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+  void serialize(std::unique_ptr<IOAdaptorBase>& writer) {
     base_t::serialize(writer);
-    ie_.template Serialize<IOADAPTOR_T>(writer);
-    oe_.template Serialize<IOADAPTOR_T>(writer);
+    ie_.Serialize(writer);
+    oe_.Serialize(writer);
   }
 
-  template <typename IOADAPTOR_T>
-  void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+  void deserialize(std::unique_ptr<IOAdaptorBase>& reader) {
     base_t::deserialize(reader);
-    ie_.template Deserialize<IOADAPTOR_T>(reader);
-    oe_.template Deserialize<IOADAPTOR_T>(reader);
+    ie_.Deserialize(reader);
+    oe_.Deserialize(reader);
   }
 
   nbr_t* get_ie_begin(const vertex_t& v) { return ie_.get_begin(v.GetValue()); }

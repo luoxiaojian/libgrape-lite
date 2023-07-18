@@ -110,14 +110,10 @@ class HostFragment
     __allocate_device_fragment__();
   }
 
-  template <typename IOADAPTOR_T>
-  void Serialize(const std::string& prefix) {
-    base_t::template Serialize<IOADAPTOR_T>(prefix);
-  }
+  void Serialize(const std::string& prefix) { base_t::Serialize(prefix); }
 
-  template <typename IOADAPTOR_T>
   void Deserialize(const std::string& prefix, const fid_t fid) {
-    base_t::template Deserialize<IOADAPTOR_T>(prefix, fid);
+    base_t::Deserialize(prefix, fid);
     __allocate_device_fragment__();
   }
 

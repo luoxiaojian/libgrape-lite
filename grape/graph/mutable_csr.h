@@ -529,8 +529,7 @@ class MutableCSR<VID_T, Nbr<VID_T, EDATA_T>> {
     return;
   }
 
-  template <typename IOADAPTOR_T>
-  void Serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+  void Serialize(std::unique_ptr<IOAdaptorBase>& writer) {
     vid_t vnum = vertex_num();
     std::vector<int> degree(vnum);
     size_t edge_num = 0;
@@ -569,8 +568,7 @@ class MutableCSR<VID_T, Nbr<VID_T, EDATA_T>> {
     }
   }
 
-  template <typename IOADAPTOR_T>
-  void Deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+  void Deserialize(std::unique_ptr<IOAdaptorBase>& reader) {
     OutArchive oa;
     CHECK(reader->ReadArchive(oa));
     vid_t vnum;

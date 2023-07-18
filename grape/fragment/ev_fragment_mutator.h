@@ -18,10 +18,11 @@ limitations under the License.
 
 #include <grape/fragment/basic_fragment_mutator.h>
 #include <grape/fragment/partitioner.h>
+#include <grape/io/io_adaptor_factory.h>
 #include <grape/util.h>
 
 namespace grape {
-template <typename FRAG_T, typename IOADAPTOR_T>
+template <typename FRAG_T>
 class EVFragmentMutator {
   using fragment_t = FRAG_T;
   using oid_t = typename FRAG_T::oid_t;
@@ -51,7 +52,7 @@ class EVFragmentMutator {
     BasicFragmentMutator<fragment_t> mutator(comm_spec_, frag);
     mutator.Start();
     if (!vfile.empty() || !std::is_same<vdata_t, EmptyType>::value) {
-      auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(vfile));
+      auto io_adaptor = create_io_adaptor(vfile);
       io_adaptor->SetPartialRead(comm_spec_.worker_id(),
                                  comm_spec_.worker_num());
       io_adaptor->Open();
@@ -89,7 +90,7 @@ class EVFragmentMutator {
       VLOG(1) << "read vertices to add: " << count;
     }
     {
-      auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(efile));
+      auto io_adaptor = create_io_adaptor(efile);
       io_adaptor->SetPartialRead(comm_spec_.worker_id(),
                                  comm_spec_.worker_num());
       io_adaptor->Open();

@@ -22,6 +22,7 @@ limitations under the License.
 #include "grape/graph/adj_list.h"
 #include "grape/graph/edge.h"
 #include "grape/graph/vertex.h"
+#include "grape/io/io_adaptor_base.h"
 #include "grape/worker/comm_spec.h"
 
 namespace grape {
@@ -309,15 +310,13 @@ class FragmentBase {
                                                        fid_t fid) const = 0;
 
  protected:
-  template <typename IOADAPTOR_T>
-  void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+  void serialize(std::unique_ptr<IOAdaptorBase>& writer) {
     InArchive arc;
     arc << fid_ << fnum_ << directed_ << ivnum_ << vertices_;
     CHECK(writer->WriteArchive(arc));
   }
 
-  template <typename IOADAPTOR_T>
-  void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+  void deserialize(std::unique_ptr<IOAdaptorBase>& reader) {
     OutArchive arc;
     CHECK(reader->ReadArchive(arc));
     arc >> fid_ >> fnum_ >> directed_ >> ivnum_ >> vertices_;

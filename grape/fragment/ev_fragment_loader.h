@@ -25,9 +25,8 @@ limitations under the License.
 
 #include "grape/fragment/basic_fragment_loader.h"
 #include "grape/fragment/partitioner.h"
-#include "grape/io/line_parser_base.h"
-#include "grape/io/local_io_adaptor.h"
-#include "grape/io/tsv_line_parser.h"
+#include "grape/io/io_adaptor_factory.h"
+#include "grape/io/line_parser_factory.h"
 #include "grape/worker/comm_spec.h"
 
 namespace grape {
@@ -37,13 +36,8 @@ namespace grape {
  * efile and vfile.
  *
  * @tparam FRAG_T Fragment type.
- * @tparam IOADAPTOR_T IOAdaptor type.
- * @tparam LINE_PARSER_T LineParser type.
  */
-template <typename FRAG_T, typename IOADAPTOR_T = LocalIOAdaptor,
-          typename LINE_PARSER_T =
-              TSVLineParser<typename FRAG_T::oid_t, typename FRAG_T::vdata_t,
-                            typename FRAG_T::edata_t>>
+template <typename FRAG_T>
 class EVFragmentLoader {
   using fragment_t = FRAG_T;
   using oid_t = typename fragment_t::oid_t;
@@ -53,12 +47,6 @@ class EVFragmentLoader {
 
   using vertex_map_t = typename fragment_t::vertex_map_t;
   using partitioner_t = typename vertex_map_t::partitioner_t;
-  using io_adaptor_t = IOADAPTOR_T;
-  using line_parser_t = LINE_PARSER_T;
-
-  static_assert(std::is_base_of<LineParserBase<oid_t, vdata_t, edata_t>,
-                                LINE_PARSER_T>::value,
-                "LineParser type is invalid");
 
  public:
   explicit EVFragmentLoader(const CommSpec& comm_spec)
@@ -69,6 +57,7 @@ class EVFragmentLoader {
   std::shared_ptr<fragment_t> LoadFragment(const std::string& efile,
                                            const std::string& vfile,
                                            const LoadGraphSpec& spec) {
+    line_parser_ = LineParserFactory<oid_t, vdata_t, edata_t>::create();
     std::shared_ptr<fragment_t> fragment(nullptr);
     CHECK(!spec.rebalance);
     if (spec.deserialize && (!spec.serialize)) {
@@ -94,7 +83,7 @@ class EVFragmentLoader {
     std::vector<oid_t> id_list;
     std::vector<vdata_t> vdata_list;
     if (!vfile.empty()) {
-      auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(vfile));
+      auto io_adaptor = create_io_adaptor(vfile);
       io_adaptor->Open();
       std::string line;
       vdata_t v_data;
@@ -109,7 +98,7 @@ class EVFragmentLoader {
         if (line.empty() || line[0] == '#')
           continue;
         try {
-          line_parser_.LineParserForVFile(line, vertex_id, v_data);
+          line_parser_->LineParserForVFile(line, vertex_id, v_data);
         } catch (std::exception& e) {
           VLOG(1) << e.what();
           continue;
@@ -134,8 +123,7 @@ class EVFragmentLoader {
     }
 
     {
-      auto io_adaptor =
-          std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(efile)));
+      auto io_adaptor = create_io_adaptor(efile);
       io_adaptor->SetPartialRead(comm_spec_.worker_id(),
                                  comm_spec_.worker_num());
       io_adaptor->Open();
@@ -154,7 +142,7 @@ class EVFragmentLoader {
           continue;
 
         try {
-          line_parser_.LineParserForEFile(line, src, dst, e_data);
+          line_parser_->LineParserForEFile(line, src, dst, e_data);
         } catch (std::exception& e) {
           VLOG(1) << e.what();
           continue;
@@ -186,8 +174,8 @@ class EVFragmentLoader {
  private:
   CommSpec comm_spec_;
 
-  BasicFragmentLoader<fragment_t, io_adaptor_t> basic_fragment_loader_;
-  line_parser_t line_parser_;
+  BasicFragmentLoader<fragment_t> basic_fragment_loader_;
+  std::unique_ptr<LineParserBase<oid_t, vdata_t, edata_t>> line_parser_;
 };
 
 }  // namespace grape
