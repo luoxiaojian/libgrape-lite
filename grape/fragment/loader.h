@@ -47,7 +47,7 @@ template <typename FRAG_T, typename IOADAPTOR_T = LocalIOAdaptor,
 static std::shared_ptr<FRAG_T> LoadGraph(
     const std::string& efile, const std::string& vfile,
     const CommSpec& comm_spec,
-    const LoadGraphSpec& spec = DefaultLoadGraphSpec()) {
+    const LoadGraphSpec& spec = DefaultLoadGraphSpec(LoadStrategy::kOnlyOut)) {
   if (spec.rebalance) {
     std::unique_ptr<
         EVFragmentRebalanceLoader<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>>
@@ -71,7 +71,7 @@ static std::shared_ptr<FRAG_T> LoadGraphAndMutate(
     const std::string& efile, const std::string& vfile,
     const std::string& delta_efile, const std::string& delta_vfile,
     const CommSpec& comm_spec,
-    const LoadGraphSpec& spec = DefaultLoadGraphSpec()) {
+    const LoadGraphSpec& spec = DefaultLoadGraphSpec(LoadStrategy::kOnlyOut)) {
   std::shared_ptr<FRAG_T> ret = LoadGraph<FRAG_T, IOADAPTOR_T, LINE_PARSER_T>(
       efile, vfile, comm_spec, spec);
   EVFragmentMutator<FRAG_T, IOADAPTOR_T> mutator(comm_spec);

@@ -84,38 +84,39 @@ enum class MessageStrategy {
   kSyncOnOuterVertex = 3,               /// from b' to b and c' to c;
 };
 
-template <typename APP_T, typename GRAPH_T>
-constexpr inline bool check_load_strategy_compatible() {
-  return ((APP_T::load_strategy == LoadStrategy::kBothOutIn) &&
-          (GRAPH_T::load_strategy == LoadStrategy::kBothOutIn)) ||
-         ((APP_T::load_strategy == LoadStrategy::kOnlyIn) &&
-          ((GRAPH_T::load_strategy == LoadStrategy::kBothOutIn) ||
-           (GRAPH_T::load_strategy == LoadStrategy::kOnlyIn))) ||
-         ((APP_T::load_strategy == LoadStrategy::kOnlyOut) &&
-          ((GRAPH_T::load_strategy == LoadStrategy::kBothOutIn) ||
-           (GRAPH_T::load_strategy == LoadStrategy::kOnlyOut)));
+inline bool check_load_strategy_compatible(LoadStrategy app_load_strategy,
+                                           LoadStrategy graph_load_strategy) {
+  return ((app_load_strategy == LoadStrategy::kBothOutIn) &&
+          (graph_load_strategy == LoadStrategy::kBothOutIn)) ||
+         ((app_load_strategy == LoadStrategy::kOnlyIn) &&
+          ((graph_load_strategy == LoadStrategy::kBothOutIn) ||
+           (graph_load_strategy == LoadStrategy::kOnlyIn))) ||
+         ((app_load_strategy == LoadStrategy::kOnlyOut) &&
+          ((graph_load_strategy == LoadStrategy::kBothOutIn) ||
+           (graph_load_strategy == LoadStrategy::kOnlyOut)));
 }
 
-template <typename APP_T, typename GRAPH_T>
-constexpr inline bool check_message_strategy_valid() {
-  return ((APP_T::message_strategy ==
-           MessageStrategy::kAlongEdgeToOuterVertex) &&
-          (GRAPH_T::load_strategy == LoadStrategy::kBothOutIn)) ||
-         ((APP_T::message_strategy ==
+inline bool check_message_strategy_valid(MessageStrategy message_strategy,
+                                         LoadStrategy load_strategy) {
+  return ((message_strategy == MessageStrategy::kAlongEdgeToOuterVertex) &&
+          (load_strategy == LoadStrategy::kBothOutIn)) ||
+         ((message_strategy ==
            MessageStrategy::kAlongIncomingEdgeToOuterVertex) &&
-          ((GRAPH_T::load_strategy == LoadStrategy::kOnlyIn) ||
-           (GRAPH_T::load_strategy == LoadStrategy::kBothOutIn))) ||
-         ((APP_T::message_strategy ==
+          ((load_strategy == LoadStrategy::kOnlyIn) ||
+           (load_strategy == LoadStrategy::kBothOutIn))) ||
+         ((message_strategy ==
            MessageStrategy::kAlongOutgoingEdgeToOuterVertex) &&
-          ((GRAPH_T::load_strategy == LoadStrategy::kOnlyOut) ||
-           (GRAPH_T::load_strategy == LoadStrategy::kBothOutIn))) ||
-         (APP_T::message_strategy == MessageStrategy::kSyncOnOuterVertex);
+          ((load_strategy == LoadStrategy::kOnlyOut) ||
+           (load_strategy == LoadStrategy::kBothOutIn))) ||
+         (message_strategy == MessageStrategy::kSyncOnOuterVertex);
 }
 
-template <typename APP_T, typename GRAPH_T>
-constexpr inline bool check_app_fragment_consistency() {
-  return check_load_strategy_compatible<APP_T, GRAPH_T>() &&
-         check_message_strategy_valid<APP_T, GRAPH_T>();
+inline bool check_app_fragment_consistency(LoadStrategy app_load_strategy,
+                                           LoadStrategy graph_load_strategy,
+                                           MessageStrategy message_strategy) {
+  return check_load_strategy_compatible(app_load_strategy,
+                                        graph_load_strategy) &&
+         check_message_strategy_valid(message_strategy, graph_load_strategy);
 }
 
 template <typename T>

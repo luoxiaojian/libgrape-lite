@@ -69,7 +69,8 @@ int main(int argc, char* argv[]) {
         comm_spec.local_num();
 
     // load graph and app
-    auto graph_spec = grape::DefaultLoadGraphSpec();
+    auto graph_spec =
+        grape::DefaultLoadGraphSpec(grape::LoadStrategy::kOnlyOut);
     graph_spec.set_rebalance(false, 0);
     if (FLAGS_deserialize) {
       graph_spec.set_deserialize(true, FLAGS_serialization_prefix);

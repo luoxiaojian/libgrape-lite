@@ -52,6 +52,8 @@ struct LoadGraphSpec {
   bool deserialize;
   std::string deserialization_prefix;
 
+  LoadStrategy load_strategy;
+
   void set_directed(bool val = true) { directed = val; }
   void set_rebalance(bool flag, int weight) {
     rebalance = flag;
@@ -67,15 +69,18 @@ struct LoadGraphSpec {
     deserialize = flag;
     deserialization_prefix = prefix;
   }
+
+  void set_load_strategy(LoadStrategy strategy) { load_strategy = strategy; }
 };
 
-inline LoadGraphSpec DefaultLoadGraphSpec() {
+inline LoadGraphSpec DefaultLoadGraphSpec(LoadStrategy strategy) {
   LoadGraphSpec spec;
   spec.directed = true;
   spec.rebalance = true;
   spec.rebalance_vertex_factor = 0;
   spec.serialize = false;
   spec.deserialize = false;
+  spec.load_strategy = strategy;
   return spec;
 }
 
@@ -90,8 +95,6 @@ class BasicFragmentLoader {
 
   using vertex_map_t = typename fragment_t::vertex_map_t;
   using partitioner_t = typename vertex_map_t::partitioner_t;
-
-  static constexpr LoadStrategy load_strategy = fragment_t::load_strategy;
 
  public:
   explicit BasicFragmentLoader(const CommSpec& comm_spec)
@@ -168,7 +171,7 @@ class BasicFragmentLoader {
 
   bool SerializeFragment(std::shared_ptr<fragment_t>& fragment,
                          const std::string& serialization_prefix) {
-    std::string type_prefix = fragment_t::type_info();
+    std::string type_prefix = fragment_t::type_info(fragment->load_strategy());
     std::string typed_prefix = serialization_prefix + "/" + type_prefix;
     char serial_file[1024];
     snprintf(serial_file, sizeof(serial_file), "%s/%s", typed_prefix.c_str(),
@@ -190,9 +193,10 @@ class BasicFragmentLoader {
     return exists_file(vm_path) && exists_file(frag_path);
   }
 
-  bool DeserializeFragment(std::shared_ptr<fragment_t>& fragment,
+  bool DeserializeFragment(const LoadGraphSpec& spec,
+                           std::shared_ptr<fragment_t>& fragment,
                            const std::string& deserialization_prefix) {
-    std::string type_prefix = fragment_t::type_info();
+    std::string type_prefix = fragment_t::type_info(spec.load_strategy);
     std::string typed_prefix = deserialization_prefix + "/" + type_prefix;
     if (!existSerializationFile(typed_prefix)) {
       return false;
@@ -211,7 +215,8 @@ class BasicFragmentLoader {
     }
   }
 
-  void ConstructFragment(std::shared_ptr<fragment_t>& fragment, bool directed) {
+  void ConstructFragment(std::shared_ptr<fragment_t>& fragment, bool directed,
+                         LoadStrategy load_strategy) {
     for (auto& va : vertices_to_frag_) {
       va.Flush();
     }
@@ -273,8 +278,8 @@ class BasicFragmentLoader {
     }
 
     fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr_));
-    fragment->Init(comm_spec_.fid(), directed, processed_vertices_,
-                   processed_edges_);
+    fragment->Init(comm_spec_.fid(), directed, load_strategy,
+                   processed_vertices_, processed_edges_);
 
     if (!std::is_same<vdata_t, EmptyType>::value) {
       initOuterVertexData(fragment);

@@ -72,9 +72,10 @@ void Finalize() {
 template <typename FRAG_T>
 std::shared_ptr<FRAG_T> BuildGraph(const grape::CommSpec& comm_spec,
                                    const std::string& efile,
-                                   const std::string& vfile) {
+                                   const std::string& vfile,
+                                   grape::LoadStrategy load_strategy) {
   timer_next("load graph");
-  grape::LoadGraphSpec graph_spec = grape::DefaultLoadGraphSpec();
+  grape::LoadGraphSpec graph_spec = grape::DefaultLoadGraphSpec(load_strategy);
   graph_spec.set_directed(FLAGS_directed);
   graph_spec.set_rebalance(false, 0);
   graph_spec.set_deserialize(false, "");
@@ -123,11 +124,12 @@ void RunQuery(std::shared_ptr<FRAG_T> fragment,
 template <typename FRAG_T, typename APP_T, typename... Args>
 void BuildGraphAndQuery(const grape::CommSpec& comm_spec,
                         const std::string& efile, const std::string& vfile,
+                        grape::LoadStrategy load_strategy,
                         const std::string& efile_prefix, int efile_num,
                         const std::string& out_prefix,
                         const grape::ParallelEngineSpec& spec, Args... args) {
   std::shared_ptr<FRAG_T> fragment =
-      BuildGraph<FRAG_T>(comm_spec, efile, vfile);
+      BuildGraph<FRAG_T>(comm_spec, efile, vfile, load_strategy);
   fragment = MutateGraph(comm_spec, efile_prefix, efile_num, fragment);
   RunQuery<FRAG_T, APP_T, Args...>(fragment, comm_spec, out_prefix, spec,
                                    std::forward<Args>(args)...);
@@ -137,11 +139,12 @@ template <typename FRAG_T, typename APP_T, typename... Args>
 void BuildImmutableGraphAndQuery(const grape::CommSpec& comm_spec,
                                  const std::string& efile,
                                  const std::string& vfile,
+                                 grape::LoadStrategy load_strategy,
                                  const std::string& out_prefix,
                                  const grape::ParallelEngineSpec& spec,
                                  Args... args) {
   std::shared_ptr<FRAG_T> fragment =
-      BuildGraph<FRAG_T>(comm_spec, efile, vfile);
+      BuildGraph<FRAG_T>(comm_spec, efile, vfile, load_strategy);
   RunQuery<FRAG_T, APP_T, Args...>(fragment, comm_spec, out_prefix, spec,
                                    std::forward<Args>(args)...);
 }
@@ -166,14 +169,16 @@ void RunBenchmark() {
         grape::MutableEdgecutFragment<OID_T, VID_T, VDATA_T, double>;
     using AppType = grape::SSSP<GraphType>;
     BuildGraphAndQuery<GraphType, AppType, OID_T>(
-        comm_spec, efile, vfile, delta_efile_prefix, delta_efile_part_num,
-        out_prefix, spec, FLAGS_sssp_source);
+        comm_spec, efile, vfile, grape::LoadStrategy::kOnlyOut,
+        delta_efile_prefix, delta_efile_part_num, out_prefix, spec,
+        FLAGS_sssp_source);
   } else {
     using GraphType =
         grape::ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, double>;
     using AppType = grape::SSSP<GraphType>;
     BuildImmutableGraphAndQuery<GraphType, AppType, OID_T>(
-        comm_spec, efile, vfile, out_prefix, spec, FLAGS_sssp_source);
+        comm_spec, efile, vfile, grape::LoadStrategy::kOnlyOut, out_prefix,
+        spec, FLAGS_sssp_source);
   }
 }
 
@@ -194,19 +199,19 @@ void RunPageRankBenchmark() {
 
   if (delta_efile_part_num != 0) {
     using GraphType =
-        grape::MutableEdgecutFragment<OID_T, VID_T, VDATA_T, double,
-                                      grape::LoadStrategy::kBothOutIn>;
+        grape::MutableEdgecutFragment<OID_T, VID_T, VDATA_T, double>;
     using AppType = grape::PageRankLocalParallel<GraphType>;
     BuildGraphAndQuery<GraphType, AppType, double, int>(
-        comm_spec, efile, vfile, delta_efile_prefix, delta_efile_part_num,
-        out_prefix, spec, FLAGS_pr_d, FLAGS_pr_mr);
+        comm_spec, efile, vfile, grape::LoadStrategy::kBothOutIn,
+        delta_efile_prefix, delta_efile_part_num, out_prefix, spec, FLAGS_pr_d,
+        FLAGS_pr_mr);
   } else {
     using GraphType =
-        grape::ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, double,
-                                        grape::LoadStrategy::kBothOutIn>;
+        grape::ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, double>;
     using AppType = grape::PageRankLocalParallel<GraphType>;
     BuildImmutableGraphAndQuery<GraphType, AppType, double, int>(
-        comm_spec, efile, vfile, out_prefix, spec, FLAGS_pr_d, FLAGS_pr_mr);
+        comm_spec, efile, vfile, grape::LoadStrategy::kBothOutIn, out_prefix,
+        spec, FLAGS_pr_d, FLAGS_pr_mr);
   }
 }
 

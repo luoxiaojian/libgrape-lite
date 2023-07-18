@@ -32,14 +32,17 @@ class GPUBatchShuffleWorker {
   using context_t = typename APP_T::context_t;
   using message_manager_t = BatchShuffleMessageManager;
 
-  static_assert(grape::check_app_fragment_consistency<APP_T, fragment_t>(),
-                "The loaded graph is not valid for application");
-
   GPUBatchShuffleWorker(std::shared_ptr<APP_T> app,
                         std::shared_ptr<fragment_t> graph)
       : app_(std::move(app)),
         context_(std::make_shared<context_t>(*graph)),
-        messages_() {}
+        messages_() {
+    if (!grape::check_app_fragment_consistency(APP_T::load_strategy,
+                                               fragment_t::load_strategy,
+                                               APP_T::message_strategy)) {
+      LOG(FATAL) << "The loaded graph is not valid for application";
+    }
+  }
 
   template <class... Args>
   void Init(const grape::CommSpec& comm_spec, Args&&... args) {

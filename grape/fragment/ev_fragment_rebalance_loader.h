@@ -55,8 +55,6 @@ class EVFragmentRebalanceLoader {
   using partitioner_t = typename vertex_map_t::partitioner_t;
   using line_parser_t = LINE_PARSER_T;
 
-  static constexpr LoadStrategy load_strategy = fragment_t::load_strategy;
-
   static_assert(std::is_base_of<LineParserBase<oid_t, vdata_t, edata_t>,
                                 LINE_PARSER_T>::value,
                 "LineParser type is invalid");
@@ -343,8 +341,8 @@ class EVFragmentRebalanceLoader {
     }
 
     fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr));
-    fragment->Init(comm_spec_.fid(), spec.directed, processed_vertices,
-                   processed_edges);
+    fragment->Init(comm_spec_.fid(), spec.directed, spec.load_strategy,
+                   processed_vertices, processed_edges);
 
     if (!std::is_same<vdata_t, EmptyType>::value) {
       for (size_t i = 0; i < vertex_num; ++i) {
@@ -382,7 +380,7 @@ class EVFragmentRebalanceLoader {
 
   bool deserializeFragment(std::shared_ptr<fragment_t>& fragment,
                            const LoadGraphSpec& spec) {
-    std::string type_prefix = fragment_t::type_info();
+    std::string type_prefix = fragment_t::type_info(spec.load_strategy);
     CHECK(spec.rebalance);
     type_prefix += ("_rb_" + std::to_string(spec.rebalance_vertex_factor));
     std::string typed_prefix = spec.deserialization_prefix + "/" + type_prefix;
@@ -408,7 +406,7 @@ class EVFragmentRebalanceLoader {
   bool serializeFragment(std::shared_ptr<fragment_t> fragment,
                          std::shared_ptr<vertex_map_t> vm_ptr,
                          const LoadGraphSpec& spec) {
-    std::string type_prefix = fragment_t::type_info();
+    std::string type_prefix = fragment_t::type_info(spec.load_strategy);
     CHECK(spec.rebalance);
     type_prefix += ("_rb_" + std::to_string(spec.rebalance_vertex_factor));
     std::string typed_prefix = spec.serialization_prefix + "/" + type_prefix;

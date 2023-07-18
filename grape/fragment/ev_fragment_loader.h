@@ -56,8 +56,6 @@ class EVFragmentLoader {
   using io_adaptor_t = IOADAPTOR_T;
   using line_parser_t = LINE_PARSER_T;
 
-  static constexpr LoadStrategy load_strategy = fragment_t::load_strategy;
-
   static_assert(std::is_base_of<LineParserBase<oid_t, vdata_t, edata_t>,
                                 LINE_PARSER_T>::value,
                 "LineParser type is invalid");
@@ -75,7 +73,7 @@ class EVFragmentLoader {
     CHECK(!spec.rebalance);
     if (spec.deserialize && (!spec.serialize)) {
       bool deserialized = basic_fragment_loader_.DeserializeFragment(
-          fragment, spec.deserialization_prefix);
+          spec, fragment, spec.deserialization_prefix);
       int flag = 0;
       int sum = 0;
       if (!deserialized) {
@@ -170,7 +168,8 @@ class EVFragmentLoader {
     VLOG(1) << "[worker-" << comm_spec_.worker_id()
             << "] finished add vertices and edges";
 
-    basic_fragment_loader_.ConstructFragment(fragment, spec.directed);
+    basic_fragment_loader_.ConstructFragment(fragment, spec.directed,
+                                             spec.load_strategy);
 
     if (spec.serialize) {
       bool serialized = basic_fragment_loader_.SerializeFragment(

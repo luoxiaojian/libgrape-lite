@@ -51,7 +51,6 @@ struct MutableEdgecutFragmentTraits {
 };
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
-          LoadStrategy _load_strategy = LoadStrategy::kOnlyOut,
           typename VERTEX_MAP_T =
               GlobalVertexMap<OID_T, VID_T, HashPartitioner<OID_T>>>
 class MutableEdgecutFragment
@@ -78,8 +77,6 @@ class MutableEdgecutFragment
   using IsEdgeCut = std::true_type;
   using IsVertexCut = std::false_type;
 
-  static constexpr LoadStrategy load_strategy = _load_strategy;
-
   using inner_vertices_t = typename traits_t::inner_vertices_t;
   using outer_vertices_t = typename traits_t::outer_vertices_t;
   using vertices_t = typename traits_t::vertices_t;
@@ -104,15 +101,16 @@ class MutableEdgecutFragment
   using base_t::init;
   using base_t::IsInnerVertexGid;
 
-  static std::string type_info() { return ""; }
+  static std::string type_info(LoadStrategy load_strategy) { return ""; }
 
-  void Init(fid_t fid, bool directed, std::vector<internal_vertex_t>& vertices,
+  void Init(fid_t fid, bool directed, LoadStrategy load_strategy,
+            std::vector<internal_vertex_t>& vertices,
             std::vector<edge_t>& edges) override {
-    init(fid, directed);
+    init(fid, directed, load_strategy);
 
     ovnum_ = 0;
     static constexpr VID_T invalid_vid = std::numeric_limits<VID_T>::max();
-    if (load_strategy == LoadStrategy::kOnlyIn) {
+    if (this->load_strategy() == LoadStrategy::kOnlyIn) {
       for (auto& e : edges) {
         if (IsInnerVertexGid(e.dst)) {
           if (!IsInnerVertexGid(e.src)) {
@@ -126,7 +124,7 @@ class MutableEdgecutFragment
           }
         }
       }
-    } else if (load_strategy == LoadStrategy::kOnlyOut) {
+    } else if (this->load_strategy() == LoadStrategy::kOnlyOut) {
       for (auto& e : edges) {
         if (IsInnerVertexGid(e.src)) {
           if (!IsInnerVertexGid(e.dst)) {
@@ -140,7 +138,7 @@ class MutableEdgecutFragment
           }
         }
       }
-    } else if (load_strategy == LoadStrategy::kBothOutIn) {
+    } else if (this->load_strategy() == LoadStrategy::kBothOutIn) {
       for (auto& e : edges) {
         if (IsInnerVertexGid(e.src)) {
           if (!IsInnerVertexGid(e.dst)) {
@@ -165,7 +163,7 @@ class MutableEdgecutFragment
                              id_parser_.max_local_id());
     initOuterVerticesOfFragment();
 
-    buildCSR(this->Vertices(), edges, load_strategy);
+    buildCSR(this->Vertices(), edges, this->load_strategy());
 
     ivdata_.clear();
     ivdata_.resize(ivnum_);
@@ -251,7 +249,7 @@ class MutableEdgecutFragment
       vid_t ovnum = this->GetOuterVerticesNum();
       auto& edges_to_add = mutation.edges_to_add;
       static constexpr VID_T invalid_vid = std::numeric_limits<VID_T>::max();
-      if (load_strategy == LoadStrategy::kOnlyIn) {
+      if (this->load_strategy() == LoadStrategy::kOnlyIn) {
         for (auto& e : edges_to_add) {
           if (IsInnerVertexGid(e.dst)) {
             e.dst = id_parser_.get_local_id(e.dst);
@@ -269,7 +267,7 @@ class MutableEdgecutFragment
             }
           }
         }
-      } else if (load_strategy == LoadStrategy::kOnlyOut) {
+      } else if (this->load_strategy() == LoadStrategy::kOnlyOut) {
         for (auto& e : edges_to_add) {
           if (IsInnerVertexGid(e.src)) {
             e.src = id_parser_.get_local_id(e.src);
@@ -287,7 +285,7 @@ class MutableEdgecutFragment
             }
           }
         }
-      } else if (load_strategy == LoadStrategy::kBothOutIn) {
+      } else if (this->load_strategy() == LoadStrategy::kBothOutIn) {
         for (auto& e : edges_to_add) {
           if (IsInnerVertexGid(e.src)) {
             e.src = id_parser_.get_local_id(e.src);

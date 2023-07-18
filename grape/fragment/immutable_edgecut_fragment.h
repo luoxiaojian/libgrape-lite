@@ -114,7 +114,6 @@ struct ImmutableEdgecutFragmentTraits {
  *
  */
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
-          LoadStrategy _load_strategy = LoadStrategy::kOnlyOut,
           typename VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T>>
 class ImmutableEdgecutFragment
     : public CSREdgecutFragmentBase<
@@ -138,8 +137,6 @@ class ImmutableEdgecutFragment
 
   using IsEdgeCut = std::true_type;
   using IsVertexCut = std::false_type;
-
-  static constexpr LoadStrategy load_strategy = _load_strategy;
 
   using vertex_range_t = VertexRange<VID_T>;
   using inner_vertices_t = typename traits_t::inner_vertices_t;
@@ -166,7 +163,7 @@ class ImmutableEdgecutFragment
   using base_t::init;
   using base_t::IsInnerVertexGid;
 
-  static std::string type_info() {
+  static std::string type_info(LoadStrategy load_strategy) {
     std::string ret = "";
     if (std::is_same<EDATA_T, EmptyType>::value) {
       ret += "empty";
@@ -178,11 +175,11 @@ class ImmutableEdgecutFragment
       LOG(FATAL) << "Edge data type not supported...";
     }
 
-    if (_load_strategy == LoadStrategy::kOnlyOut) {
+    if (load_strategy == LoadStrategy::kOnlyOut) {
       ret += "_out";
-    } else if (_load_strategy == LoadStrategy::kOnlyIn) {
+    } else if (load_strategy == LoadStrategy::kOnlyIn) {
       ret += "_in";
-    } else if (_load_strategy == LoadStrategy::kBothOutIn) {
+    } else if (load_strategy == LoadStrategy::kBothOutIn) {
       ret += "_both";
     } else {
       LOG(FATAL) << "Invalid load strategy...";
@@ -199,9 +196,10 @@ class ImmutableEdgecutFragment
     return ret;
   }
 
-  void Init(fid_t fid, bool directed, std::vector<internal_vertex_t>& vertices,
+  void Init(fid_t fid, bool directed, LoadStrategy load_strategy,
+            std::vector<internal_vertex_t>& vertices,
             std::vector<edge_t>& edges) override {
-    init(fid, directed);
+    init(fid, directed, load_strategy);
 
     static constexpr VID_T invalid_vid = std::numeric_limits<VID_T>::max();
     {
@@ -268,7 +266,7 @@ class ImmutableEdgecutFragment
         }
       };
 
-      if (load_strategy == LoadStrategy::kOnlyIn) {
+      if (this->load_strategy() == LoadStrategy::kOnlyIn) {
         if (directed) {
           for (auto& e : edges) {
             iter_in(e, outer_vertices);
@@ -278,7 +276,7 @@ class ImmutableEdgecutFragment
             iter_in_undirected(e, outer_vertices);
           }
         }
-      } else if (load_strategy == LoadStrategy::kOnlyOut) {
+      } else if (this->load_strategy() == LoadStrategy::kOnlyOut) {
         if (directed) {
           for (auto& e : edges) {
             iter_out(e, outer_vertices);
@@ -288,7 +286,7 @@ class ImmutableEdgecutFragment
             iter_out_undirected(e, outer_vertices);
           }
         }
-      } else if (load_strategy == LoadStrategy::kBothOutIn) {
+      } else if (this->load_strategy() == LoadStrategy::kBothOutIn) {
         for (auto& e : edges) {
           iter_out_in(e, outer_vertices);
         }
@@ -313,7 +311,7 @@ class ImmutableEdgecutFragment
     this->outer_vertices_.SetRange(ivnum_, ivnum_ + ovnum_);
     this->vertices_.SetRange(0, ivnum_ + ovnum_);
 
-    buildCSR(this->Vertices(), edges, load_strategy);
+    buildCSR(this->Vertices(), edges, this->load_strategy());
 
     initOuterVerticesOfFragment();
 
@@ -348,7 +346,7 @@ class ImmutableEdgecutFragment
 
     InArchive ia;
 
-    int ils = underlying_value(load_strategy);
+    int ils = underlying_value(this->load_strategy());
     ia << ovnum_ << ils;
     CHECK(io_adaptor->WriteArchive(ia));
     ia.Clear();
@@ -380,7 +378,7 @@ class ImmutableEdgecutFragment
     CHECK(io_adaptor->ReadArchive(oa));
     oa >> ovnum_ >> ils;
     auto got_load_strategy = LoadStrategy(ils);
-    if (got_load_strategy != load_strategy) {
+    if (got_load_strategy != this->load_strategy()) {
       LOG(FATAL) << "load strategy not consistent.";
     }
 

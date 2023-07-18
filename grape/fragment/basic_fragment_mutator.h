@@ -48,7 +48,6 @@ class BasicFragmentMutator {
   using vdata_t = typename FRAG_T::vdata_t;
   using edata_t = typename FRAG_T::edata_t;
   using mutation_t = Mutation<vid_t, vdata_t, edata_t>;
-  static constexpr LoadStrategy load_strategy = FRAG_T::load_strategy;
   using partitioner_t = typename vertex_map_t::partitioner_t;
 
  public:

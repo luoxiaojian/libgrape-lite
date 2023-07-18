@@ -119,12 +119,12 @@ void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
 }
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
-          LoadStrategy load_strategy, template <class> class APP_T,
-          typename... Args>
+          template <class> class APP_T, typename... Args>
 void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
-                    int fnum, const ParallelEngineSpec& spec, Args... args) {
+                    int fnum, LoadStrategy load_strategy,
+                    const ParallelEngineSpec& spec, Args... args) {
   timer_next("load graph");
-  LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
+  LoadGraphSpec graph_spec = DefaultLoadGraphSpec(load_strategy);
   graph_spec.set_directed(FLAGS_directed);
   graph_spec.set_rebalance(FLAGS_rebalance, FLAGS_rebalance_vertex_factor);
   if (FLAGS_deserialize) {
@@ -135,8 +135,8 @@ void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
   if (FLAGS_segmented_partition) {
     using VertexMapType =
         GlobalVertexMap<OID_T, VID_T, SegmentedPartitioner<OID_T>>;
-    using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                            load_strategy, VertexMapType>;
+    using FRAG_T =
+        ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, VertexMapType>;
     std::shared_ptr<FRAG_T> fragment =
         LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
     using AppType = APP_T<FRAG_T>;
@@ -145,8 +145,7 @@ void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
                                       out_prefix, args...);
   } else {
     graph_spec.set_rebalance(false, 0);
-    using FRAG_T =
-        ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy>;
+    using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T>;
     std::shared_ptr<FRAG_T> fragment =
         LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
     using AppType = APP_T<FRAG_T>;
@@ -205,70 +204,71 @@ void Run() {
   std::string name = FLAGS_application;
   if (name.find("sssp") != std::string::npos) {
     if (name == "sssp_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, double, LoadStrategy::kOnlyOut,
-                     SSSPAuto, OID_T>(comm_spec, out_prefix, fnum, spec,
-                                      FLAGS_sssp_source);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, double, SSSPAuto, OID_T>(
+          comm_spec, out_prefix, fnum, LoadStrategy::kOnlyOut, spec,
+          FLAGS_sssp_source);
     } else if (name == "sssp") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, double, LoadStrategy::kOnlyOut,
-                     SSSP, OID_T>(comm_spec, out_prefix, fnum, spec,
-                                  FLAGS_sssp_source);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, double, SSSP, OID_T>(
+          comm_spec, out_prefix, fnum, LoadStrategy::kOnlyOut, spec,
+          FLAGS_sssp_source);
     } else {
       LOG(FATAL) << "No avaiable application named [" << name << "].";
     }
   } else {
     if (name == "bfs_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     BFSAuto, OID_T>(comm_spec, out_prefix, fnum, spec,
-                                     FLAGS_bfs_source);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, BFSAuto, OID_T>(
+          comm_spec, out_prefix, fnum, LoadStrategy::kOnlyOut, spec,
+          FLAGS_bfs_source);
     } else if (name == "bfs") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     BFS, OID_T>(comm_spec, out_prefix, fnum, spec,
-                                 FLAGS_bfs_source);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, BFS, OID_T>(
+          comm_spec, out_prefix, fnum, LoadStrategy::kOnlyOut, spec,
+          FLAGS_bfs_source);
     } else if (name == "pagerank_local") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     PageRankLocal, double, int>(comm_spec, out_prefix, fnum,
-                                                 spec, FLAGS_pr_d, FLAGS_pr_mr);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, PageRankLocal, double,
+                     int>(comm_spec, out_prefix, fnum, LoadStrategy::kOnlyOut,
+                          spec, FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "pagerank_local_parallel") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
-                     PageRankLocalParallel, double, int>(
-          comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, PageRankLocalParallel,
+                     double, int>(comm_spec, out_prefix, fnum,
+                                  LoadStrategy::kBothOutIn, spec, FLAGS_pr_d,
+                                  FLAGS_pr_mr);
     } else if (name == "pagerank_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
-                     PageRankAuto, double, int>(comm_spec, out_prefix, fnum,
-                                                spec, FLAGS_pr_d, FLAGS_pr_mr);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, PageRankAuto, double,
+                     int>(comm_spec, out_prefix, fnum, LoadStrategy::kBothOutIn,
+                          spec, FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "pagerank") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     PageRank, double, int>(comm_spec, out_prefix, fnum, spec,
-                                            FLAGS_pr_d, FLAGS_pr_mr);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, PageRank, double, int>(
+          comm_spec, out_prefix, fnum, LoadStrategy::kOnlyOut, spec, FLAGS_pr_d,
+          FLAGS_pr_mr);
     } else if (name == "pagerank_push") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     PageRankPush, double, int>(comm_spec, out_prefix, fnum,
-                                                spec, FLAGS_pr_d, FLAGS_pr_mr);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, PageRankPush, double,
+                     int>(comm_spec, out_prefix, fnum, LoadStrategy::kOnlyOut,
+                          spec, FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "pagerank_parallel") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
-                     PageRankParallel, double, int>(
-          comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, PageRankParallel, double,
+                     int>(comm_spec, out_prefix, fnum, LoadStrategy::kBothOutIn,
+                          spec, FLAGS_pr_d, FLAGS_pr_mr);
     } else if (name == "cdlp_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
-                     CDLPAuto, int>(comm_spec, out_prefix, fnum, spec,
-                                    FLAGS_cdlp_mr);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, CDLPAuto, int>(
+          comm_spec, out_prefix, fnum, LoadStrategy::kBothOutIn, spec,
+          FLAGS_cdlp_mr);
     } else if (name == "cdlp") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     CDLP, int>(comm_spec, out_prefix, fnum, spec,
-                                FLAGS_cdlp_mr);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, CDLP, int>(
+          comm_spec, out_prefix, fnum, LoadStrategy::kOnlyOut, spec,
+          FLAGS_cdlp_mr);
     } else if (name == "wcc_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     WCCAuto>(comm_spec, out_prefix, fnum, spec);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, WCCAuto>(
+          comm_spec, out_prefix, fnum, LoadStrategy::kOnlyOut, spec);
     } else if (name == "wcc") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     WCC>(comm_spec, out_prefix, fnum, spec);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, WCC>(
+          comm_spec, out_prefix, fnum, LoadStrategy::kOnlyOut, spec);
     } else if (name == "lcc_auto") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     LCCAuto>(comm_spec, out_prefix, fnum, spec);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LCCAuto>(
+          comm_spec, out_prefix, fnum, LoadStrategy::kOnlyOut, spec);
     } else if (name == "lcc") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     LCC>(comm_spec, out_prefix, fnum, spec,
-                          FLAGS_degree_threshold);
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LCC>(
+          comm_spec, out_prefix, fnum, LoadStrategy::kOnlyOut, spec,
+          FLAGS_degree_threshold);
     } else {
       LOG(FATAL) << "No avaiable application named [" << name << "].";
     }
