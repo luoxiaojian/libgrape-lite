@@ -64,13 +64,12 @@ void RunUndirectedPageRankOpt(const CommSpec& comm_spec,
   } else if (FLAGS_serialize) {
     graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
+  using FRAG_T =
+      ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType, EmptyType>;
   if (FLAGS_segmented_partition) {
-    using VertexMapType =
-        GlobalVertexMap<int64_t, uint32_t, SegmentedPartitioner<int64_t>>;
-    using FRAG_T = ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType,
-                                            EmptyType, VertexMapType>;
     std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+        LoadGraph<FRAG_T, SegmentedPartitioner<int64_t>>(
+            FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
     bool push;
     if (fragment->fnum() >= 8) {
       uint64_t local_ivnum = fragment->GetInnerVerticesNum();
@@ -112,8 +111,6 @@ void RunUndirectedPageRankOpt(const CommSpec& comm_spec,
     }
   } else {
     graph_spec.set_rebalance(false, 0);
-    using FRAG_T =
-        ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType, EmptyType>;
     std::shared_ptr<FRAG_T> fragment =
         LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
 
@@ -231,13 +228,12 @@ void RunUndirectedCDLP(const CommSpec& comm_spec, const std::string& out_prefix,
     graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
 
-  using VertexMapType =
-      GlobalVertexMap<int64_t, uint32_t, SegmentedPartitioner<int64_t>>;
-  using FRAG_T = ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType,
-                                          EmptyType, VertexMapType>;
+  using FRAG_T =
+      ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType, EmptyType>;
 
   std::shared_ptr<FRAG_T> fragment =
-      LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+      LoadGraph<FRAG_T, SegmentedPartitioner<int64_t>>(FLAGS_efile, FLAGS_vfile,
+                                                       comm_spec, graph_spec);
 
   double avg_degree = static_cast<double>(FLAGS_edge_num) /
                       static_cast<double>(FLAGS_vertex_num);
@@ -283,21 +279,18 @@ void CreateAndQueryOpt(const CommSpec& comm_spec, LoadStrategy load_strategy,
   } else if (FLAGS_serialize) {
     graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
+  using FRAG_T =
+      ImmutableEdgecutFragment<int64_t, uint32_t, grape::EmptyType, EDATA_T>;
   if (FLAGS_segmented_partition) {
-    using VertexMapType =
-        GlobalVertexMap<int64_t, uint32_t, SegmentedPartitioner<int64_t>>;
-    using FRAG_T = ImmutableEdgecutFragment<int64_t, uint32_t, grape::EmptyType,
-                                            EDATA_T, VertexMapType>;
     std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+        LoadGraph<FRAG_T, SegmentedPartitioner<int64_t>>(
+            FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
     using AppType = APP_T<FRAG_T>;
     auto app = std::make_shared<AppType>();
     DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
                                       out_prefix, args...);
   } else {
     graph_spec.set_rebalance(false, 0);
-    using FRAG_T =
-        ImmutableEdgecutFragment<int64_t, uint32_t, grape::EmptyType, EDATA_T>;
     std::shared_ptr<FRAG_T> fragment =
         LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
     using AppType = APP_T<FRAG_T>;

@@ -51,8 +51,7 @@ struct MutableEdgecutFragmentTraits {
 };
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
-          typename VERTEX_MAP_T =
-              GlobalVertexMap<OID_T, VID_T, HashPartitioner<OID_T>>>
+          typename VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T>>
 class MutableEdgecutFragment
     : public CSREdgecutFragmentBase<
           OID_T, VID_T, VDATA_T, EDATA_T,

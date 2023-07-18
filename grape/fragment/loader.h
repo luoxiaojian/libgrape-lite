@@ -38,18 +38,19 @@ namespace grape {
  * @param spec Specification to load graph.
  * @return std::shared_ptr<FRAG_T> Loadded Fragment.
  */
-template <typename FRAG_T>
+template <typename FRAG_T,
+          typename PARTITIONER_T = HashPartitioner<typename FRAG_T::oid_t>>
 static std::shared_ptr<FRAG_T> LoadGraph(
     const std::string& efile, const std::string& vfile,
     const CommSpec& comm_spec,
     const LoadGraphSpec& spec = DefaultLoadGraphSpec(LoadStrategy::kOnlyOut)) {
   if (spec.rebalance) {
-    std::unique_ptr<EVFragmentRebalanceLoader<FRAG_T>> loader(
-        new EVFragmentRebalanceLoader<FRAG_T>(comm_spec));
+    std::unique_ptr<EVFragmentRebalanceLoader<FRAG_T, PARTITIONER_T>> loader(
+        new EVFragmentRebalanceLoader<FRAG_T, PARTITIONER_T>(comm_spec));
     return loader->LoadFragment(efile, vfile, spec);
   } else {
-    std::unique_ptr<EVFragmentLoader<FRAG_T>> loader(
-        new EVFragmentLoader<FRAG_T>(comm_spec));
+    std::unique_ptr<EVFragmentLoader<FRAG_T, PARTITIONER_T>> loader(
+        new EVFragmentLoader<FRAG_T, PARTITIONER_T>(comm_spec));
     return loader->LoadFragment(efile, vfile, spec);
   }
 }
@@ -61,7 +62,8 @@ static std::shared_ptr<FRAG_T> LoadGraphAndMutate(
     const CommSpec& comm_spec,
     const LoadGraphSpec& spec = DefaultLoadGraphSpec(LoadStrategy::kOnlyOut)) {
   std::shared_ptr<FRAG_T> ret =
-      LoadGraph<FRAG_T>(efile, vfile, comm_spec, spec);
+      LoadGraph<FRAG_T, HashPartitioner<typename FRAG_T::oid_t>>(
+          efile, vfile, comm_spec, spec);
   EVFragmentMutator<FRAG_T> mutator(comm_spec);
   return mutator.MutateFragment(delta_efile, delta_vfile, ret, spec.directed);
 }

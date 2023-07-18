@@ -111,7 +111,8 @@ int main(int argc, char* argv[]) {
         grape::sync_comm::Bcast(query_vertices, grape::kCoordinatorRank,
                                 comm_spec.comm());
 
-        fragment->ExtendFragment(edge_msgs, comm_spec, graph_spec);
+        grape::HashPartitioner<oid_t> partitioner(comm_spec.fnum());
+        fragment->ExtendFragment(partitioner, edge_msgs, comm_spec, graph_spec);
         if (!query_vertices.empty()) {
           auto worker = app_t::CreateWorker(app, fragment);
           worker->Init(comm_spec, spec);

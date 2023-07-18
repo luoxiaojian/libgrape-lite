@@ -487,7 +487,9 @@ class AppendOnlyEdgecutFragment
     fragment_indices_->Init(this);
   }
 
-  void ExtendFragment(std::vector<std::string>& edge_messages,
+  template <typename PARTITIONER_T>
+  void ExtendFragment(const PARTITIONER_T& partitioner,
+                      std::vector<std::string>& edge_messages,
                       const CommSpec& comm_spec, const LoadGraphSpec& spec) {
     sync_comm::Bcast(edge_messages, kCoordinatorRank, comm_spec.comm());
 
@@ -498,7 +500,6 @@ class AppendOnlyEdgecutFragment
     std::vector<edge_t> edges;
     edges.reserve(edge_messages.size());
     std::vector<oid_t> empty_id_list;
-    auto& partitioner = vm_ptr_->GetPartitioner();
     {
       edata_t e_data;
       oid_t src, dst, src_gid, dst_gid;
@@ -517,8 +518,8 @@ class AppendOnlyEdgecutFragment
         }
         src_fid = partitioner.GetPartitionId(src);
         dst_fid = partitioner.GetPartitionId(dst);
-        vm_ptr_->AddVertex(src, src_gid);
-        vm_ptr_->AddVertex(dst, dst_gid);
+        vm_ptr_->AddVertex(src_fid, src, src_gid);
+        vm_ptr_->AddVertex(dst_fid, dst, dst_gid);
         if (src_fid == fid_ || dst_fid == fid_) {
           edges.emplace_back(src_gid, dst_gid, e_data);
         }

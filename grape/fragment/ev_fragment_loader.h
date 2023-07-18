@@ -37,7 +37,7 @@ namespace grape {
  *
  * @tparam FRAG_T Fragment type.
  */
-template <typename FRAG_T>
+template <typename FRAG_T, typename PARTITIONER_T>
 class EVFragmentLoader {
   using fragment_t = FRAG_T;
   using oid_t = typename fragment_t::oid_t;
@@ -46,7 +46,7 @@ class EVFragmentLoader {
   using edata_t = typename fragment_t::edata_t;
 
   using vertex_map_t = typename fragment_t::vertex_map_t;
-  using partitioner_t = typename vertex_map_t::partitioner_t;
+  using partitioner_t = PARTITIONER_T;
 
  public:
   explicit EVFragmentLoader(const CommSpec& comm_spec)
@@ -174,7 +174,7 @@ class EVFragmentLoader {
  private:
   CommSpec comm_spec_;
 
-  BasicFragmentLoader<fragment_t> basic_fragment_loader_;
+  BasicFragmentLoader<fragment_t, partitioner_t> basic_fragment_loader_;
   std::unique_ptr<LineParserBase<oid_t, vdata_t, edata_t>> line_parser_;
 };
 

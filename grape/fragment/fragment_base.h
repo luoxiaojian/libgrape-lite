@@ -160,8 +160,10 @@ class FragmentBase {
    */
   bool GetVertex(const OID_T& oid, Vertex<VID_T>& v) const {
     VID_T gid;
-    if (vm_ptr_->GetGid(oid, gid)) {
-      return Gid2Vertex(gid, v);
+    for (fid_t i = 0; i < fnum_; ++i) {
+      if (vm_ptr_->GetGid(i, oid, gid)) {
+        return Gid2Vertex(gid, v);
+      }
     }
     return false;
   }

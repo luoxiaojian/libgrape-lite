@@ -132,20 +132,18 @@ void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
   } else if (FLAGS_serialize) {
     graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
+  using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T>;
+
   if (FLAGS_segmented_partition) {
-    using VertexMapType =
-        GlobalVertexMap<OID_T, VID_T, SegmentedPartitioner<OID_T>>;
-    using FRAG_T =
-        ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, VertexMapType>;
     std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+        LoadGraph<FRAG_T, SegmentedPartitioner<OID_T>>(FLAGS_efile, FLAGS_vfile,
+                                                       comm_spec, graph_spec);
     using AppType = APP_T<FRAG_T>;
     auto app = std::make_shared<AppType>();
     DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
                                       out_prefix, args...);
   } else {
     graph_spec.set_rebalance(false, 0);
-    using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T>;
     std::shared_ptr<FRAG_T> fragment =
         LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
     using AppType = APP_T<FRAG_T>;

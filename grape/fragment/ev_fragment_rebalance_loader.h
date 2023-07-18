@@ -37,7 +37,7 @@ namespace grape {
  *
  * @tparam FRAG_T Fragment type.
  */
-template <typename FRAG_T>
+template <typename FRAG_T, typename PARTITIONER_T>
 class EVFragmentRebalanceLoader {
   using fragment_t = FRAG_T;
   using oid_t = typename fragment_t::oid_t;
@@ -46,7 +46,7 @@ class EVFragmentRebalanceLoader {
   using edata_t = typename fragment_t::edata_t;
 
   using vertex_map_t = typename fragment_t::vertex_map_t;
-  using partitioner_t = typename vertex_map_t::partitioner_t;
+  using partitioner_t = PARTITIONER_T;
 
  public:
   explicit EVFragmentRebalanceLoader(const CommSpec& comm_spec)
@@ -114,9 +114,8 @@ class EVFragmentRebalanceLoader {
 
     std::shared_ptr<vertex_map_t> vm_ptr =
         std::make_shared<vertex_map_t>(comm_spec_);
-    vm_ptr->SetPartitioner(partitioner);
     vm_ptr->Init();
-    auto builder = vm_ptr->GetLocalBuilder();
+    auto builder = vm_ptr->GetLocalBuilder(partitioner);
 
     for (auto id : id_list) {
       builder.add_vertex(id);
@@ -152,8 +151,8 @@ class EVFragmentRebalanceLoader {
           continue;
         }
 
-        CHECK(vm_ptr->GetGid(src, src_gid));
-        CHECK(vm_ptr->GetGid(dst, dst_gid));
+        CHECK(vm_ptr->GetGid(partitioner.GetPartitionId(src), src, src_gid));
+        CHECK(vm_ptr->GetGid(partitioner.GetPartitionId(dst), dst, dst_gid));
 
         src_list.push_back(src_gid);
         dst_list.push_back(dst_gid);
@@ -321,7 +320,8 @@ class EVFragmentRebalanceLoader {
     if (!std::is_same<vdata_t, EmptyType>::value) {
       for (size_t i = 0; i < vertex_num; ++i) {
         vid_t gid;
-        CHECK(vm_ptr->GetGid(id_list[i], gid));
+        CHECK(vm_ptr->GetGid(partitioner.GetPartitionId(id_list[i]), id_list[i],
+                             gid));
         fid_t fid = vm_ptr->GetFidFromGid(gid);
         if (fid == comm_spec_.fid()) {
           processed_vertices.emplace_back(gid, vdata_list[i]);

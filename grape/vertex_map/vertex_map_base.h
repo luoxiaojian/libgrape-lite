@@ -57,26 +57,16 @@ namespace grape {
  * @tparam OID_T
  * @tparam VID_T
  */
-template <typename OID_T, typename VID_T, typename PARTITIONER_T>
+template <typename OID_T, typename VID_T>
 class VertexMapBase {
  public:
-  using partitioner_t = PARTITIONER_T;
   using oid_t = OID_T;
   using vid_t = VID_T;
-  explicit VertexMapBase(const CommSpec& comm_spec)
-      : comm_spec_(comm_spec), partitioner_() {
+  explicit VertexMapBase(const CommSpec& comm_spec) : comm_spec_(comm_spec) {
     comm_spec_.Dup();
     id_parser_.init(comm_spec_.fnum());
   }
   virtual ~VertexMapBase() = default;
-
-  void SetPartitioner(const PARTITIONER_T& partitioner) {
-    partitioner_ = partitioner;
-  }
-
-  void SetPartitioner(PARTITIONER_T&& partitioner) {
-    partitioner_ = std::move(partitioner);
-  }
 
   fid_t GetFragmentNum() const { return comm_spec_.fnum(); }
 
@@ -96,26 +86,14 @@ class VertexMapBase {
 
   const CommSpec& GetCommSpec() const { return comm_spec_; }
 
-  void serialize(std::unique_ptr<IOAdaptorBase>& writer) {
-    partitioner_.serialize(writer);
-  }
+  void serialize(std::unique_ptr<IOAdaptorBase>& writer) {}
 
   void deserialize(std::unique_ptr<IOAdaptorBase>& reader) {
     id_parser_.init(comm_spec_.fnum());
-    partitioner_.deserialize(reader);
   }
-
-  fid_t GetFragmentId(const OID_T& oid) const {
-    return partitioner_.GetPartitionId(oid);
-  }
-
-  const PARTITIONER_T& GetPartitioner() const { return partitioner_; }
-
-  PARTITIONER_T& GetPartitioner() { return partitioner_; }
 
  protected:
   CommSpec comm_spec_;
-  PARTITIONER_T partitioner_;
   IdParser<VID_T> id_parser_;
 
  public:
@@ -124,8 +102,8 @@ class VertexMapBase {
   virtual size_t GetInnerVertexSize(fid_t fid) const = 0;
 
   // for constructing the vertexmap.
-  virtual void AddVertex(const OID_T& oid) = 0;
-  virtual bool AddVertex(const OID_T& oid, VID_T& gid) = 0;
+  virtual void AddVertex(fid_t fid, const OID_T& oid) = 0;
+  virtual bool AddVertex(fid_t fid, const OID_T& oid, VID_T& gid) = 0;
 
   virtual void UpdateToBalance(std::vector<VID_T>& vnum_list,
                                std::vector<std::vector<VID_T>>& gid_maps) = 0;
@@ -136,8 +114,6 @@ class VertexMapBase {
   virtual bool GetOid(fid_t fid, const VID_T& lid, OID_T& oid) const = 0;
 
   virtual bool GetGid(fid_t fid, const OID_T& oid, VID_T& gid) const = 0;
-
-  virtual bool GetGid(const OID_T& oid, VID_T& gid) const = 0;
 };
 
 }  // namespace grape

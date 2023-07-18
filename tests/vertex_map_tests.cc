@@ -152,25 +152,23 @@ void CreateAndQuery(const grape::CommSpec& comm_spec,
   } else {
     if (FLAGS_segmented_partition) {
       if (FLAGS_global_vertex_map) {
-        using VertexMapType =
-            grape::GlobalVertexMap<OID_T, VID_T,
-                                   grape::SegmentedPartitioner<OID_T>>;
+        using VertexMapType = grape::GlobalVertexMap<OID_T, VID_T>;
         using FRAG_T = grape::ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T,
                                                        EDATA_T, VertexMapType>;
-        std::shared_ptr<FRAG_T> fragment = grape::LoadGraph<FRAG_T>(
-            FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+        std::shared_ptr<FRAG_T> fragment =
+            grape::LoadGraph<FRAG_T, grape::SegmentedPartitioner<OID_T>>(
+                FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
         using AppType = APP_T<FRAG_T>;
         auto app = std::make_shared<AppType>();
         DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
                                           out_prefix, args...);
       } else {
-        using VertexMapType =
-            grape::LocalVertexMap<OID_T, VID_T,
-                                  grape::SegmentedPartitioner<OID_T>>;
+        using VertexMapType = grape::LocalVertexMap<OID_T, VID_T>;
         using FRAG_T = grape::ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T,
                                                        EDATA_T, VertexMapType>;
-        std::shared_ptr<FRAG_T> fragment = grape::LoadGraph<FRAG_T>(
-            FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+        std::shared_ptr<FRAG_T> fragment =
+            grape::LoadGraph<FRAG_T, grape::SegmentedPartitioner<OID_T>>(
+                FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
         using AppType = APP_T<FRAG_T>;
         auto app = std::make_shared<AppType>();
         DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,

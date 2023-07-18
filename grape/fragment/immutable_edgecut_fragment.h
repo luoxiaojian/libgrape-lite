@@ -185,14 +185,6 @@ class ImmutableEdgecutFragment
       LOG(FATAL) << "Invalid load strategy...";
     }
 
-    using partitioner_t = typename VERTEX_MAP_T::partitioner_t;
-    if (std::is_same<partitioner_t, HashPartitioner<OID_T>>::value) {
-      ret += "_hash";
-    } else if (std::is_same<partitioner_t,
-                            SegmentedPartitioner<OID_T>>::value) {
-      ret += "_seg";
-    }
-
     return ret;
   }
 
