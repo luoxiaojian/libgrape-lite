@@ -146,6 +146,7 @@ class MPIComm {
   }
 
   void recv(int& src, std::vector<char>& vec, int& tag) {
+    vec.clear();
     MPI_Status status;
     MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, comm_, &status);
     src = status.MPI_SOURCE;
@@ -165,6 +166,7 @@ class MPIComm {
   }
 
   void recv_from(int src, std::vector<char>& vec, int& tag) {
+    vec.clear();
     MPI_Status status;
     MPI_Probe(src, MPI_ANY_TAG, comm_, &status);
     tag = status.MPI_TAG;
@@ -183,6 +185,7 @@ class MPIComm {
   }
 
   void recv_tagged(int& src, std::vector<char>& vec, int tag) {
+    vec.clear();
     MPI_Status status;
     MPI_Probe(MPI_ANY_SOURCE, tag, comm_, &status);
     src = status.MPI_SOURCE;
@@ -202,8 +205,10 @@ class MPIComm {
   }
 
   void recv_from_tagged(int src, std::vector<char>& vec, int tag) {
+    vec.clear();
     MPI_Status status;
     MPI_Probe(src, tag, comm_, &status);
+
     while (true) {
       int count;
       MPI_Get_count(&status, MPI_CHAR, &count);
@@ -265,6 +270,7 @@ class MPIComm {
       }
     });
     std::thread recv_thread([&]() {
+      output.clear();
       output.resize(worker_num);
       output[worker_id] = input;
       for (int i = 1; i < worker_num; ++i) {
@@ -287,6 +293,7 @@ class MPIComm {
     int worker_id = rank();
 
     CHECK_EQ(input.size(), worker_num);
+    output.clear();
     output.resize(worker_num);
 
     std::thread send_thread([&]() {
