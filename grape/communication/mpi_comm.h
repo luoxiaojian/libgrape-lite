@@ -41,7 +41,14 @@ class MPIComm {
  public:
   MPIComm()
       : comm_(NULL_COMM), rank_(0), size_(1), local_rank_(0), local_size_(1) {}
-  MPIComm(MPIComm&& rhs) : comm_(rhs.comm_), rank_(rhs.rank_), size_(rhs.size_), reqs_(std::move(rhs.reqs_)), bufs_(std::move(rhs.bufs_)), local_rank_(rhs.local_rank_), local_size_(rhs.local_size_) {
+  MPIComm(MPIComm&& rhs)
+      : comm_(rhs.comm_),
+        rank_(rhs.rank_),
+        size_(rhs.size_),
+        reqs_(std::move(rhs.reqs_)),
+        bufs_(std::move(rhs.bufs_)),
+        local_rank_(rhs.local_rank_),
+        local_size_(rhs.local_size_) {
     rhs.comm_ = NULL_COMM;
   }
 
@@ -71,6 +78,8 @@ class MPIComm {
 
     return *this;
   }
+
+  MPIComm& operator=(const MPIComm& rhs) = delete;
 
  private:
   MPIComm(MPI_Comm comm, int rank, int size, int local_rank, int local_size)

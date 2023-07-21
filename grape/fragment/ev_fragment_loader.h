@@ -23,8 +23,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
-#include "grape/communication/mpi_comm.h"
-#include "grape/communication/tcp_comm.h"
+#include "grape/communication/comm.h"
 #include "grape/fragment/basic_fragment_loader.h"
 #include "grape/fragment/partitioner.h"
 #include "grape/io/line_parser_base.h"

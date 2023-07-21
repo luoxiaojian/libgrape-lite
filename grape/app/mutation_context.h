@@ -19,8 +19,7 @@ limitations under the License.
 #include <grape/config.h>
 #include <grape/fragment/basic_fragment_mutator.h>
 #include "grape/app/context_base.h"
-#include "grape/communication/mpi_comm.h"
-#include "grape/communication/tcp_comm.h"
+#include "grape/communication/comm.h"
 
 namespace grape {
 

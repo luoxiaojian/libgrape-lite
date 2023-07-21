@@ -58,9 +58,9 @@ int main(int argc, char* argv[]) {
   using app_t = grape::Sampler<graph_t>;
 
 #ifdef USE_MPI
-  grape::MPICommAllocator::get().init();
+  grape::CommAllocatorType::get().init();
 #else
-  grape::TCPComm::get().init(FLAGS_hostfile, FLAGS_worker_id);
+  grape::CommAllocatorType::get().init(FLAGS_hostfile, FLAGS_worker_id);
 #endif
 
   grape::CommType comm = grape::CommAllocatorType::get().allocate();

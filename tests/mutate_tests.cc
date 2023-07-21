@@ -62,9 +62,9 @@ void Init() {
   }
 
 #ifdef USE_MPI
-  grape::MPICommAllocator::get().init();
+  grape::CommAllocatorType::get().init();
 #else
-  grape::TCPComm::get().init(FLAGS_hostfile, FLAGS_worker_id);
+  grape::CommAllocatorType::get().init(FLAGS_hostfile, FLAGS_worker_id);
 #endif
   if (grape::CommAllocatorType::get().rank() == grape::kCoordinatorRank) {
     VLOG(1) << "Workers of libgrape-lite initialized.";

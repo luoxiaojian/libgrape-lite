@@ -29,8 +29,7 @@ limitations under the License.
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
-#include <grape/communication/mpi_comm.h>
-#include <grape/communication/tcp_comm.h>
+#include <grape/communication/comm.h>
 #include <grape/fragment/immutable_edgecut_fragment.h>
 #include <grape/fragment/loader.h>
 #include <grape/grape.h>
@@ -81,9 +80,9 @@ void Init() {
   }
 
 #ifdef USE_MPI
-  MPICommAllocator::get().init();
+  CommAllocatorType::get().init();
 #else
-  TCPComm::get().init(FLAGS_hostfile, FLAGS_worker_id);
+  CommAllocatorType::get().init(FLAGS_hostfile, FLAGS_worker_id);
 #endif
   if (CommAllocatorType::get().rank() == kCoordinatorRank) {
     VLOG(1) << "Workers of libgrape-lite initialized.";
