@@ -16,8 +16,6 @@ limitations under the License.
 #ifndef GRAPE_FRAGMENT_EV_FRAGMENT_LOADER_H_
 #define GRAPE_FRAGMENT_EV_FRAGMENT_LOADER_H_
 
-#include <mpi.h>
-
 #include <memory>
 #include <string>
 #include <utility>

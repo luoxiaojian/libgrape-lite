@@ -164,7 +164,7 @@ if (USE_MPI)
     include_directories(SYSTEM ${MPI_CXX_INCLUDE_PATH})
     add_definitions(-DUSE_MPI)
 else ()
-    find_package(boost REQUIRED system)
+    find_package(Boost REQUIRED system)
     include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 endif ()
 

@@ -52,7 +52,7 @@ class AsioMessagePool {
 
   int allocate_comm() {
     int cn = comm_num_.fetch_add(1);
-    int new_size = (cn + 1) * worker_num_;
+    size_t new_size = static_cast<size_t>((cn + 1) * worker_num_);
 
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -296,7 +296,7 @@ class AsioReader : public std::enable_shared_from_this<AsioReader> {
         boost::asio::buffer(buf_) + offset_,
         [this, self](boost::system::error_code ec, size_t length) {
           if (ec) {
-            std::cerr << ec.to_string() << std::endl;
+            std::cerr << ec.message() << std::endl;
             return;
           }
           offset_ += length;
@@ -481,7 +481,7 @@ class AsioComm {
         int src_worker_id;
         recv_tagged_reserved(src_worker_id, recv_buf, sum_tag);
         int64_t* recv_ptr = reinterpret_cast<int64_t*>(recv_buf.data());
-        for (int j = 0; j < count; ++j) {
+        for (size_t j = 0; j < count; ++j) {
           output[j] += recv_ptr[j];
         }
       }

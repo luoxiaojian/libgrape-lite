@@ -16,8 +16,6 @@ limitations under the License.
 #ifndef GRAPE_COMMUNICATION_SHUFFLE_H_
 #define GRAPE_COMMUNICATION_SHUFFLE_H_
 
-#include <mpi.h>
-
 #include <string>
 #include <type_traits>
 #include <vector>

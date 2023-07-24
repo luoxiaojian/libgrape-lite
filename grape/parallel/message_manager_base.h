@@ -16,8 +16,6 @@ limitations under the License.
 #ifndef GRAPE_PARALLEL_MESSAGE_MANAGER_BASE_H_
 #define GRAPE_PARALLEL_MESSAGE_MANAGER_BASE_H_
 
-#include <mpi.h>
-
 #include "grape/config.h"
 
 namespace grape {

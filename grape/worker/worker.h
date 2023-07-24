@@ -16,8 +16,6 @@ limitations under the License.
 #ifndef GRAPE_WORKER_WORKER_H_
 #define GRAPE_WORKER_WORKER_H_
 
-#include <mpi.h>
-
 #include <memory>
 #include <ostream>
 #include <type_traits>

@@ -18,7 +18,6 @@ limitations under the License.
 
 #include <assert.h>
 #include <glog/logging.h>
-#include <mpi.h>
 
 #include <limits>
 #include <string>

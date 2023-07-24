@@ -16,8 +16,6 @@ limitations under the License.
 #ifndef GRAPE_PARALLEL_PARALLEL_MESSAGE_MANAGER_H_
 #define GRAPE_PARALLEL_PARALLEL_MESSAGE_MANAGER_H_
 
-#include <mpi.h>
-
 #include <array>
 #include <atomic>
 #include <memory>

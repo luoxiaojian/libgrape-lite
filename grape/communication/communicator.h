@@ -16,8 +16,6 @@ limitations under the License.
 #ifndef GRAPE_COMMUNICATION_COMMUNICATOR_H_
 #define GRAPE_COMMUNICATION_COMMUNICATOR_H_
 
-#include <mpi.h>
-
 #include <algorithm>
 #include <memory>
 
