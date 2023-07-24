@@ -20,7 +20,22 @@
 #include "grape/serialization/out_archive.h"
 #include "grape/utils/concurrent_queue.h"
 
+#include "flat_hash_map/flat_hash_map.hpp"
+
 namespace grape {
+
+namespace asio_comm_constants {
+
+static constexpr int reserved_tag_num = 16;
+static constexpr int reserved_tag_base =
+    std::numeric_limits<int>::max() - reserved_tag_num;
+static constexpr int sum_tag = reserved_tag_base;
+static constexpr int sum_ack_tag = reserved_tag_base + 1;
+static constexpr int gather_tag = reserved_tag_base + 2;
+static constexpr int all_to_all_tag = reserved_tag_base + 3;
+static constexpr int bcast_tag = reserved_tag_base + 4;
+
+}  // namespace asio_comm_constants
 
 class AsioMessagePool {
  public:
@@ -46,6 +61,12 @@ class AsioMessagePool {
       }
     }
     {
+      std::lock_guard<std::mutex> lock(reserved_mutex_);
+      if (reserved_pool_.size() < new_size) {
+        reserved_pool_.resize(new_size);
+      }
+    }
+    {
       std::lock_guard<std::mutex> lock(barrier_mutex_);
       if (barrier_count_.size() < new_size) {
         barrier_count_.resize(new_size, 0);
@@ -57,9 +78,16 @@ class AsioMessagePool {
 
   void put(int comm_id, int src, int tag, std::vector<char>&& buf) {
     int idx = comm_id * worker_num_ + src;
-    std::lock_guard<std::mutex> lock(mutex_);
-    pool_[idx][tag].emplace_back(std::move(buf));
-    cond_.notify_all();
+    if (tag < asio_comm_constants::reserved_tag_base) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      pool_[idx][tag].emplace_back(std::move(buf));
+      cond_.notify_all();
+    } else {
+      std::lock_guard<std::mutex> lock(reserved_mutex_);
+      reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base]
+          .emplace_back(std::move(buf));
+      reserved_cond_.notify_all();
+    }
   }
 
   void take(int comm_id, int& src, int& tag, std::vector<char>& buf) {
@@ -102,42 +130,77 @@ class AsioMessagePool {
   }
 
   void take_tagged(int comm_id, int& src, int tag, std::vector<char>& buf) {
-    std::unique_lock<std::mutex> lock(mutex_);
-    cond_.wait(lock, [this, tag, comm_id] {
-      for (int i = 0; i != worker_num_; ++i) {
+    if (tag < asio_comm_constants::reserved_tag_base) {
+      std::unique_lock<std::mutex> lock(mutex_);
+      cond_.wait(lock, [this, tag, comm_id] {
+        for (int i = 0; i != worker_num_; ++i) {
+          int idx = comm_id * worker_num_ + i;
+          if (pool_[idx].find(tag) != pool_[idx].end()) {
+            return true;
+          }
+        }
+        return false;
+      });
+      for (int i = 0; i < worker_num_; ++i) {
         int idx = comm_id * worker_num_ + i;
         if (pool_[idx].find(tag) != pool_[idx].end()) {
-          return true;
+          src = i;
+          auto it = pool_[idx].find(tag);
+          buf = std::move(it->second.front());
+          it->second.pop_front();
+          if (it->second.empty()) {
+            pool_[idx].erase(it);
+          }
+          return;
         }
       }
-      return false;
-    });
-    for (int i = 0; i < worker_num_; ++i) {
-      int idx = comm_id * worker_num_ + i;
-      if (pool_[idx].find(tag) != pool_[idx].end()) {
-        src = i;
-        auto it = pool_[idx].find(tag);
-        buf = std::move(it->second.front());
-        it->second.pop_front();
-        if (it->second.empty()) {
-          pool_[idx].erase(it);
+    } else {
+      std::unique_lock<std::mutex> lock(reserved_mutex_);
+      reserved_cond_.wait(lock, [this, tag, comm_id] {
+        for (int i = 0; i != worker_num_; ++i) {
+          int idx = comm_id * worker_num_ + i;
+          auto& deq =
+              reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base];
+          if (!deq.empty()) {
+            return true;
+          }
         }
-        return;
+        return false;
+      });
+      for (int i = 0; i != worker_num_; ++i) {
+        int idx = comm_id * worker_num_ + i;
+        auto& deq =
+            reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base];
+        if (!deq.empty()) {
+          src = i;
+          buf = std::move(deq.front());
+          deq.pop_front();
+          return;
+        }
       }
     }
   }
 
   void take_from_tagged(int comm_id, int src, int tag, std::vector<char>& buf) {
     int idx = comm_id * worker_num_ + src;
-    std::unique_lock<std::mutex> lock(mutex_);
-    cond_.wait(lock, [this, idx, tag] {
-      return pool_[idx].find(tag) != pool_[idx].end();
-    });
-    auto it = pool_[idx].find(tag);
-    buf = std::move(it->second.front());
-    it->second.pop_front();
-    if (it->second.empty()) {
-      pool_[idx].erase(it);
+    if (tag < asio_comm_constants::reserved_tag_base) {
+      std::unique_lock<std::mutex> lock(mutex_);
+      cond_.wait(lock, [this, idx, tag] {
+        return pool_[idx].find(tag) != pool_[idx].end();
+      });
+      auto it = pool_[idx].find(tag);
+      buf = std::move(it->second.front());
+      it->second.pop_front();
+      if (it->second.empty()) {
+        pool_[idx].erase(it);
+      }
+    } else {
+      auto& deq =
+          reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base];
+      std::unique_lock<std::mutex> lock(reserved_mutex_);
+      reserved_cond_.wait(lock, [&deq] { return !deq.empty(); });
+      buf = std::move(deq.front());
+      deq.pop_front();
     }
   }
 
@@ -172,7 +235,13 @@ class AsioMessagePool {
  private:
   std::mutex mutex_;
   std::condition_variable cond_;
-  std::vector<std::map<int, std::deque<std::vector<char>>>> pool_;
+  std::vector<ska::flat_hash_map<int, std::deque<std::vector<char>>>> pool_;
+
+  std::mutex reserved_mutex_;
+  std::condition_variable reserved_cond_;
+  std::vector<std::array<std::deque<std::vector<char>>,
+                         asio_comm_constants::reserved_tag_num>>
+      reserved_pool_;
 
   std::mutex barrier_mutex_;
   std::condition_variable barrier_cond_;
@@ -210,7 +279,7 @@ class AsioReader : public std::enable_shared_from_this<AsioReader> {
         boost::asio::buffer(&header_, sizeof(header_)),
         [self, this](boost::system::error_code ec, size_t length) {
           if (ec) {
-            LOG(INFO) << "recv crash, " << ec.message();
+            LOG(ERROR) << "recv crash, " << ec.message();
             return;
           }
           CHECK_EQ(length, sizeof(AsioHeader));
@@ -220,9 +289,15 @@ class AsioReader : public std::enable_shared_from_this<AsioReader> {
           } else if (header_.type == kExit) {
             return;
           } else {
-            buf_.resize(header_.length);
-            offset_ = 0;
-            read_content();
+            if (header_.length > 0) {
+              buf_.resize(header_.length);
+              offset_ = 0;
+              read_content();
+            } else {
+              pool_.put(header_.comm_id, src_, header_.tag,
+                        std::vector<char>());
+              read();
+            }
           }
         });
   }
@@ -547,7 +622,7 @@ static inline std::shared_ptr<boost::asio::ip::tcp::socket> loop_connect(
       if (!ec) {
         return socket;
       }
-      LOG(INFO) << "connect failed: " << ec.message();
+      LOG(ERROR) << "connect failed: " << ec.message();
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   }
@@ -628,6 +703,7 @@ class AsioCommAllocator {
         std::vector<char>& buf = std::get<4>(item);
         if (type == kBarrier) {
           // barrier
+          header.comm_id = comm_id;
           header.type = kBarrier;
           boost::asio::write(*sockets_[dst],
                              boost::asio::buffer(&header, sizeof(header)));
@@ -659,7 +735,7 @@ class AsioCommAllocator {
           }
         } else {
           // unexpected
-          LOG(INFO) << "Unexpected message type - " << type;
+          LOG(ERROR) << "Unexpected message type - " << type;
         }
       }
       // exit

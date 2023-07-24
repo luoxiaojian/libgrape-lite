@@ -63,6 +63,8 @@ class Worker {
 #ifdef USE_MPI
     prepare_conf_.need_mirror_info =
         std::is_same<message_manager_t, BatchShuffleMessageManager>::value;
+#else
+    prepare_conf_.need_mirror_info = false;
 #endif
   }
 
