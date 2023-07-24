@@ -200,17 +200,17 @@ struct AsioHeader {
 
 class AsioReader : public std::enable_shared_from_this<AsioReader> {
  public:
-  AsioReader(int src, boost::asio::ip::tcp::socket&& socket,
+  AsioReader(int src, std::shared_ptr<boost::asio::ip::tcp::socket> socket,
              AsioMessagePool& pool)
-      : socket_(std::move(socket)), pool_(pool), src_(src) {}
+      : socket_(socket), pool_(pool), src_(src) {}
 
   void read() {
     auto self = shared_from_this();
-    socket_.async_read_some(
+    socket_->async_read_some(
         boost::asio::buffer(&header_, sizeof(header_)),
         [self, this](boost::system::error_code ec, size_t length) {
           if (ec) {
-            std::cerr << ec.to_string() << std::endl;
+            LOG(INFO) << "recv crash, " << ec.message();
             return;
           }
           CHECK_EQ(length, sizeof(AsioHeader));
@@ -229,7 +229,7 @@ class AsioReader : public std::enable_shared_from_this<AsioReader> {
 
   void read_content() {
     auto self = shared_from_this();
-    socket_.async_read_some(
+    socket_->async_read_some(
         boost::asio::buffer(buf_) + offset_,
         [this, self](boost::system::error_code ec, size_t length) {
           if (ec) {
@@ -247,7 +247,7 @@ class AsioReader : public std::enable_shared_from_this<AsioReader> {
   }
 
  private:
-  boost::asio::ip::tcp::socket socket_;
+  std::shared_ptr<boost::asio::ip::tcp::socket> socket_;
   AsioMessagePool& pool_;
   AsioHeader header_;
   std::vector<char> buf_;
@@ -535,15 +535,38 @@ static inline void trim(std::string& str) {
   str.erase(str.find_last_not_of(" \t\r\n") + 1);
 }
 
+static inline std::shared_ptr<boost::asio::ip::tcp::socket> loop_connect(
+    boost::asio::io_context& ioc,
+    const boost::asio::ip::basic_resolver_results<boost::asio::ip::tcp>&
+        endpoints) {
+  boost::system::error_code ec;
+  while (true) {
+    for (auto& endpoint : endpoints) {
+      auto socket = std::make_shared<boost::asio::ip::tcp::socket>(ioc);
+      socket->connect(endpoint, ec);
+      if (!ec) {
+        return socket;
+      }
+      LOG(INFO) << "connect failed: " << ec.message();
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+  }
+  return nullptr;
+}
+
 class AsioCommAllocator {
  public:
   AsioCommAllocator() {}
-  ~AsioCommAllocator() {}
+  ~AsioCommAllocator() {
+    send_queue_.DecProducerNum();
+    send_thread_.join();
+    recv_thread_.join();
+  }
 
   void init(const std::string& hostfile, int self_id) {
     if (hostfile.empty()) {
       CHECK_EQ(self_id, 0) << "self_id must be 0 if hostfile is empty";
-      init({}, {}, 0);
+      init({"localhost"}, {"10000"}, 0);
       return;
     }
     std::ifstream fin(hostfile);
@@ -588,30 +611,13 @@ class AsioCommAllocator {
     send_queue_.SetProducerNum(1);
     pool_.init(size_);
 
-    std::string self_port = ports[self_id];
-    std::mutex send_mutex, recv_mutex;
-    std::condition_variable send_cond, recv_cond;
+    sockets_.clear();
+    sockets_.resize(size_, nullptr);
+    if (size_ > 1) {
+      init_sockets(addresses, ports);
+    }
 
     send_thread_ = std::thread([&, this]() {
-      std::vector<std::shared_ptr<boost::asio::ip::tcp::socket>> writers;
-      boost::asio::ip::tcp::resolver resolver(ioc_);
-      for (int i = 0; i < size_; ++i) {
-        if (i == rank_) {
-          writers.emplace_back(nullptr);
-          continue;
-        }
-        auto endpoints = resolver.resolve(addresses[i], ports[i]);
-        boost::asio::ip::tcp::socket socket(ioc_);
-        boost::asio::connect(socket, endpoints);
-        boost::asio::write(socket, boost::asio::buffer(&rank_, sizeof(rank_)));
-        writers.emplace_back(
-            std::make_shared<boost::asio::ip::tcp::socket>(std::move(socket)));
-      }
-      {
-        std::lock_guard<std::mutex> lock(send_mutex);
-        send_cond.notify_all();
-      }
-
       AsioHeader header;
       std::tuple<AsioMsgType, int, int, int, std::vector<char>> item;
       while (send_queue_.Get(item)) {
@@ -623,7 +629,7 @@ class AsioCommAllocator {
         if (type == kBarrier) {
           // barrier
           header.type = kBarrier;
-          boost::asio::write(*writers[dst],
+          boost::asio::write(*sockets_[dst],
                              boost::asio::buffer(&header, sizeof(header)));
         } else if (type == kBcast) {
           // bcast
@@ -633,10 +639,10 @@ class AsioCommAllocator {
           header.comm_id = comm_id;
           for (int i = 1; i < size_; ++i) {
             int dst_worker_id = (rank_ + i) % size_;
-            boost::asio::write(*writers[dst_worker_id],
+            boost::asio::write(*sockets_[dst_worker_id],
                                boost::asio::buffer(&header, sizeof(header)));
             if (header.length > 0) {
-              boost::asio::write(*writers[dst_worker_id],
+              boost::asio::write(*sockets_[dst_worker_id],
                                  boost::asio::buffer(buf));
             }
           }
@@ -646,10 +652,10 @@ class AsioCommAllocator {
           header.tag = tag;
           header.comm_id = comm_id;
           header.length = buf.size();
-          boost::asio::write(*writers[dst],
+          boost::asio::write(*sockets_[dst],
                              boost::asio::buffer(&header, sizeof(header)));
           if (header.length > 0) {
-            boost::asio::write(*writers[dst], boost::asio::buffer(buf));
+            boost::asio::write(*sockets_[dst], boost::asio::buffer(buf));
           }
         } else {
           // unexpected
@@ -662,40 +668,23 @@ class AsioCommAllocator {
         if (i == rank_) {
           continue;
         }
-        boost::asio::write(*writers[i],
+        boost::asio::write(*sockets_[i],
                            boost::asio::buffer(&header, sizeof(header)));
       }
+      LOG(INFO) << "send thread returned..";
     });
 
     recv_thread_ = std::thread([&, this]() {
       std::vector<std::shared_ptr<AsioReader>> readers;
-      boost::asio::ip::tcp::acceptor acceptor(
-          ioc_, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(),
-                                               std::stoi(self_port)));
-      for (int i = 0; i < size_ - 1; ++i) {
-        boost::asio::ip::tcp::socket socket(ioc_);
-        acceptor.accept(socket);
-        int src;
-        socket.read_some(boost::asio::buffer(&src, sizeof(src)));
-        readers.emplace_back(
-            std::make_shared<AsioReader>(src, std::move(socket), pool_));
+      for (int i = 1; i < size_; ++i) {
+        int src_worker_id = (rank_ + i) % size_;
+        readers.emplace_back(std::make_shared<AsioReader>(
+            src_worker_id, sockets_[src_worker_id], pool_));
         readers.back()->read();
       }
-      {
-        std::lock_guard<std::mutex> lock(recv_mutex);
-        recv_cond.notify_all();
-      }
       ioc_.run();
+      LOG(INFO) << "recv thread returned..";
     });
-
-    {
-      std::unique_lock<std::mutex> lk(send_mutex);
-      send_cond.wait(lk);
-    }
-    {
-      std::unique_lock<std::mutex> lk(recv_mutex);
-      recv_cond.wait(lk);
-    }
   }
 
   static AsioCommAllocator& get() {
@@ -715,6 +704,42 @@ class AsioCommAllocator {
   int local_size() const { return local_size_; }
 
  private:
+  void init_sockets(const std::vector<std::string>& addresses,
+                    const std::vector<std::string>& ports) {
+    std::thread connect_thread([&, this]() {
+      boost::asio::ip::tcp::resolver resolver(ioc_);
+      for (int dst_worker_id = 0; dst_worker_id != rank_; ++dst_worker_id) {
+        auto endpoints =
+            resolver.resolve(boost::asio::ip::tcp::v4(),
+                             addresses[dst_worker_id], ports[dst_worker_id]);
+        auto socket = loop_connect(ioc_, endpoints);
+        VLOG(2) << "[worker-" << rank_ << "] connected to [worker-"
+                << dst_worker_id << "]";
+        socket->write_some(boost::asio::buffer(&rank_, sizeof(int)));
+        sockets_[dst_worker_id] = socket;
+      }
+    });
+    std::thread accept_thread([&, this]() {
+      boost::asio::ip::tcp::acceptor acceptor(
+          ioc_, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(),
+                                               std::stoi(ports[rank_])));
+      acceptor.set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
+      for (int src_worker_id = rank_ + 1; src_worker_id != size_;
+           ++src_worker_id) {
+        auto socket = std::make_shared<boost::asio::ip::tcp::socket>(ioc_);
+        acceptor.accept(*socket);
+        int src;
+        socket->read_some(boost::asio::buffer(&src, sizeof(int)));
+        VLOG(2) << "[worker-" << rank_ << "] accepted from [worker-" << src
+                << "]";
+        sockets_[src] = socket;
+      }
+    });
+
+    connect_thread.join();
+    accept_thread.join();
+  }
+
   int rank_;
   int size_;
   int local_rank_;
@@ -724,6 +749,8 @@ class AsioCommAllocator {
   // type, comm_id, dst, tag, data
   BlockingQueue<std::tuple<AsioMsgType, int, int, int, std::vector<char>>>
       send_queue_;
+
+  std::vector<std::shared_ptr<boost::asio::ip::tcp::socket>> sockets_;
 
   std::thread send_thread_;
   std::thread recv_thread_;
