@@ -92,27 +92,22 @@ class AsioMessagePool {
 
   void take(int comm_id, int& src, int& tag, std::vector<char>& buf) {
     std::unique_lock<std::mutex> lock(mutex_);
-    cond_.wait(lock, [this, comm_id] {
+    cond_.wait(lock, [this, comm_id, &src] {
       for (int i = 0; i < worker_num_; ++i) {
         if (!pool_[comm_id * worker_num_ + i].empty()) {
+          src = i;
           return true;
         }
       }
       return false;
     });
-    for (int i = 0; i < worker_num_; ++i) {
-      int idx = i + comm_id * worker_num_;
-      if (!pool_[idx].empty()) {
-        src = i;
-        auto it = pool_[idx].begin();
-        tag = it->first;
-        buf = std::move(it->second.front());
-        it->second.pop_front();
-        if (it->second.empty()) {
-          pool_[idx].erase(it);
-        }
-        return;
-      }
+    int idx = comm_id * worker_num_ + src;
+    auto it = pool_[idx].begin();
+    tag = it->first;
+    buf = std::move(it->second.front());
+    it->second.pop_front();
+    if (it->second.empty()) {
+      pool_[idx].erase(it);
     }
   }
 
@@ -130,78 +125,71 @@ class AsioMessagePool {
   }
 
   void take_tagged(int comm_id, int& src, int tag, std::vector<char>& buf) {
-    if (tag < asio_comm_constants::reserved_tag_base) {
-      std::unique_lock<std::mutex> lock(mutex_);
-      cond_.wait(lock, [this, tag, comm_id] {
-        for (int i = 0; i != worker_num_; ++i) {
-          int idx = comm_id * worker_num_ + i;
-          if (pool_[idx].find(tag) != pool_[idx].end()) {
-            return true;
-          }
-        }
-        return false;
-      });
-      for (int i = 0; i < worker_num_; ++i) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    cond_.wait(lock, [this, tag, comm_id, &src] {
+      for (int i = 0; i != worker_num_; ++i) {
         int idx = comm_id * worker_num_ + i;
         if (pool_[idx].find(tag) != pool_[idx].end()) {
           src = i;
-          auto it = pool_[idx].find(tag);
-          buf = std::move(it->second.front());
-          it->second.pop_front();
-          if (it->second.empty()) {
-            pool_[idx].erase(it);
-          }
-          return;
+          return true;
         }
       }
-    } else {
-      std::unique_lock<std::mutex> lock(reserved_mutex_);
-      reserved_cond_.wait(lock, [this, tag, comm_id] {
-        for (int i = 0; i != worker_num_; ++i) {
-          int idx = comm_id * worker_num_ + i;
-          auto& deq =
-              reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base];
-          if (!deq.empty()) {
-            return true;
-          }
-        }
-        return false;
-      });
+      return false;
+    });
+    int idx = comm_id * worker_num_ + src;
+    auto it = pool_[idx].find(tag);
+    buf = std::move(it->second.front());
+    it->second.pop_front();
+    if (it->second.empty()) {
+      pool_[idx].erase(it);
+    }
+  }
+
+  void take_tagged_reserved(int comm_id, int& src, int tag,
+                            std::vector<char>& buf) {
+    std::unique_lock<std::mutex> lock(reserved_mutex_);
+    reserved_cond_.wait(lock, [this, tag, comm_id, &src] {
       for (int i = 0; i != worker_num_; ++i) {
         int idx = comm_id * worker_num_ + i;
         auto& deq =
             reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base];
         if (!deq.empty()) {
           src = i;
-          buf = std::move(deq.front());
-          deq.pop_front();
-          return;
+          return true;
         }
       }
-    }
+      return false;
+    });
+    int idx = comm_id * worker_num_ + src;
+    auto& deq =
+        reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base];
+    buf = std::move(deq.front());
+    deq.pop_front();
   }
 
   void take_from_tagged(int comm_id, int src, int tag, std::vector<char>& buf) {
     int idx = comm_id * worker_num_ + src;
-    if (tag < asio_comm_constants::reserved_tag_base) {
-      std::unique_lock<std::mutex> lock(mutex_);
-      cond_.wait(lock, [this, idx, tag] {
-        return pool_[idx].find(tag) != pool_[idx].end();
-      });
-      auto it = pool_[idx].find(tag);
-      buf = std::move(it->second.front());
-      it->second.pop_front();
-      if (it->second.empty()) {
-        pool_[idx].erase(it);
-      }
-    } else {
-      auto& deq =
-          reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base];
-      std::unique_lock<std::mutex> lock(reserved_mutex_);
-      reserved_cond_.wait(lock, [&deq] { return !deq.empty(); });
-      buf = std::move(deq.front());
-      deq.pop_front();
+    std::unique_lock<std::mutex> lock(mutex_);
+    cond_.wait(lock, [this, idx, tag] {
+      return pool_[idx].find(tag) != pool_[idx].end();
+    });
+    auto it = pool_[idx].find(tag);
+    buf = std::move(it->second.front());
+    it->second.pop_front();
+    if (it->second.empty()) {
+      pool_[idx].erase(it);
     }
+  }
+
+  void take_from_tagged_reserved(int comm_id, int src, int tag,
+                                 std::vector<char>& buf) {
+    int idx = comm_id * worker_num_ + src;
+    auto& deq =
+        reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base];
+    std::unique_lock<std::mutex> lock(reserved_mutex_);
+    reserved_cond_.wait(lock, [&deq] { return !deq.empty(); });
+    buf = std::move(deq.front());
+    deq.pop_front();
   }
 
   void barrier(int comm_id, int src) {
@@ -426,6 +414,7 @@ class AsioComm {
   }
 
   void send(int dst, std::vector<char>&& buf, int tag) {
+    CHECK_LT(tag, asio_comm_constants::reserved_tag_base);
     if (dst == rank_) {
       pool_->put(comm_id_, rank_, tag, std::move(buf));
     } else {
@@ -444,6 +433,7 @@ class AsioComm {
   }
 
   void send_empty(int dst, int tag) {
+    CHECK_LT(tag, asio_comm_constants::reserved_tag_base);
     if (dst == rank_) {
       pool_->put(comm_id_, rank_, tag, std::vector<char>());
     } else {
@@ -455,17 +445,21 @@ class AsioComm {
 
   void recv(int& src, std::vector<char>& buf, int& tag) {
     pool_->take(comm_id_, src, tag, buf);
+    CHECK_LT(tag, asio_comm_constants::reserved_tag_base);
   }
 
   void recv_from(int src, std::vector<char>& buf, int& tag) {
     pool_->take_from(comm_id_, src, tag, buf);
+    CHECK_LT(tag, asio_comm_constants::reserved_tag_base);
   }
 
   void recv_tagged(int& src, std::vector<char>& buf, int tag) {
+    CHECK_LT(tag, asio_comm_constants::reserved_tag_base);
     pool_->take_tagged(comm_id_, src, tag, buf);
   }
 
   void recv_from_tagged(int src, std::vector<char>& buf, int tag) {
+    CHECK_LT(tag, asio_comm_constants::reserved_tag_base);
     pool_->take_from_tagged(comm_id_, src, tag, buf);
   }
 
@@ -484,7 +478,8 @@ class AsioComm {
       }
       for (int i = 1; i < size_; ++i) {
         std::vector<char> recv_buf;
-        recv_from_tagged(i, recv_buf, sum_tag);
+        int src_worker_id;
+        recv_tagged_reserved(src_worker_id, recv_buf, sum_tag);
         int64_t* recv_ptr = reinterpret_cast<int64_t*>(recv_buf.data());
         for (int j = 0; j < count; ++j) {
           output[j] += recv_ptr[j];
@@ -494,9 +489,10 @@ class AsioComm {
       memcpy(send_buf.data(), output, count * sizeof(int64_t));
       push_bcast(sum_ack_tag, std::move(send_buf));
     } else {
-      send(0, reinterpret_cast<char*>(input), count * sizeof(int64_t), sum_tag);
+      send_reserved(0, reinterpret_cast<char*>(input), count * sizeof(int64_t),
+                    sum_tag);
       std::vector<char> recv_buf;
-      recv_from_tagged(0, recv_buf, sum_ack_tag);
+      recv_from_tagged_reserved(0, recv_buf, sum_ack_tag);
       memcpy(output, recv_buf.data(), count * sizeof(int64_t));
     }
   }
@@ -511,9 +507,9 @@ class AsioComm {
     }
     output[rank_] = input;
     for (int i = 1; i < size_; ++i) {
-      int src_worker_id = (rank_ + size_ - 1) % size_;
+      int src_worker_id;
       std::vector<char> recv_buf;
-      recv_from_tagged(src_worker_id, recv_buf, gather_tag);
+      recv_tagged_reserved(src_worker_id, recv_buf, gather_tag);
       OutArchive arc;
       arc.SetSlice(recv_buf.data(), recv_buf.size());
       arc >> output[src_worker_id];
@@ -533,13 +529,14 @@ class AsioComm {
       int dst_worker_id = (worker_id + i) % worker_num;
       InArchive arc;
       arc << input[dst_worker_id];
-      send(dst_worker_id, std::move(arc.GetBufferVector()), all_to_all_tag);
+      send_reserved(dst_worker_id, std::move(arc.GetBufferVector()),
+                    all_to_all_tag);
     }
     output[worker_id] = input[worker_id];
     for (int i = 1; i < worker_num; ++i) {
-      int src_worker_id = (worker_id + worker_num - i) % worker_num;
+      int src_worker_id;
       std::vector<char> buf;
-      recv_from_tagged(src_worker_id, buf, all_to_all_tag);
+      recv_tagged_reserved(src_worker_id, buf, all_to_all_tag);
       OutArchive arc;
       arc.SetSlice(buf.data(), buf.size());
       arc >> output[src_worker_id];
@@ -556,7 +553,7 @@ class AsioComm {
       push_bcast(bcast_tag, std::move(arc.GetBufferVector()));
     } else {
       std::vector<char> buf;
-      recv_from_tagged(root, buf, bcast_tag);
+      recv_from_tagged_reserved(root, buf, bcast_tag);
       OutArchive arc;
       arc.SetSlice(buf.data(), buf.size());
       arc >> val;
@@ -564,6 +561,28 @@ class AsioComm {
   }
 
  private:
+  void send_reserved(int dst, std::vector<char>&& buf, int tag) {
+    CHECK_NE(dst, rank_);
+    CHECK_GE(tag, asio_comm_constants::reserved_tag_base);
+    push_data(dst, tag, std::move(buf));
+  }
+
+  void send_reserved(int dst, const char* buf, size_t count, int tag) {
+    std::vector<char> vec(count);
+    memcpy(vec.data(), buf, count);
+    send_reserved(dst, std::move(vec), tag);
+  }
+
+  void recv_tagged_reserved(int& src, std::vector<char>& buf, int tag) {
+    CHECK_GE(tag, asio_comm_constants::reserved_tag_base);
+    pool_->take_tagged_reserved(comm_id_, src, tag, buf);
+  }
+
+  void recv_from_tagged_reserved(int src, std::vector<char>& buf, int tag) {
+    CHECK_GE(tag, asio_comm_constants::reserved_tag_base);
+    pool_->take_from_tagged_reserved(comm_id_, src, tag, buf);
+  }
+
   void push_exit() {
     queue_->Put(std::make_tuple(kExit, -1, -1, -1, std::vector<char>()));
   }
