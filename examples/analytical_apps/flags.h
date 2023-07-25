@@ -21,6 +21,7 @@ limitations under the License.
 #ifndef USE_MPI
 DECLARE_string(hostfile);
 DECLARE_int32(worker_id);
+DECLARE_int32(worker_num);
 #endif
 
 DECLARE_bool(directed);

@@ -60,7 +60,8 @@ int main(int argc, char* argv[]) {
 #ifdef USE_MPI
   grape::CommAllocatorType::get().init();
 #else
-  grape::CommAllocatorType::get().init(FLAGS_hostfile, FLAGS_worker_id);
+  grape::CommAllocatorType::get().init(FLAGS_hostfile, FLAGS_worker_id,
+                                       FLAGS_worker_num);
 #endif
 
   grape::CommType comm = grape::CommAllocatorType::get().allocate();

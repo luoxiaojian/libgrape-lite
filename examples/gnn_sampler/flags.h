@@ -43,6 +43,7 @@ DEFINE_string(serialization_prefix, "",
 #ifndef USE_MPI
 DEFINE_string(hostfile, "", "path to hostfile");
 DEFINE_int32(worker_id, 0, "worker id");
+DEFINE_int32(worker_num, 1, "worker num");
 #endif
 
 #endif  // EXAMPLES_GNN_SAMPLER_FLAGS_H_

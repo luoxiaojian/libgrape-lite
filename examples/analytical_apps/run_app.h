@@ -82,7 +82,8 @@ void Init() {
 #ifdef USE_MPI
   CommAllocatorType::get().init();
 #else
-  CommAllocatorType::get().init(FLAGS_hostfile, FLAGS_worker_id);
+  CommAllocatorType::get().init(FLAGS_hostfile, FLAGS_worker_id,
+                                FLAGS_worker_num);
 #endif
   if (CommAllocatorType::get().rank() == kCoordinatorRank) {
     VLOG(1) << "Workers of libgrape-lite initialized.";

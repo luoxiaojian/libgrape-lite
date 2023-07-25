@@ -57,6 +57,7 @@ DEFINE_bool(global_vertex_map, true, "whether to use global vertex map.");
 #ifndef USE_MPI
 DEFINE_string(hostfile, "", "path to hostfile");
 DEFINE_int32(worker_id, 0, "worker id");
+DEFINE_int32(worker_num, 1, "worker num");
 #endif
 
 void Init() {
@@ -73,7 +74,8 @@ void Init() {
 #ifdef USE_MPI
   grape::CommAllocatorType::get().init();
 #else
-  grape::CommAllocatorType::get().init(FLAGS_hostfile, FLAGS_worker_id);
+  grape::CommAllocatorType::get().init(FLAGS_hostfile, FLAGS_worker_id,
+                                       FLAGS_worker_num);
 #endif
   if (grape::CommAllocatorType::get().rank() == grape::kCoordinatorRank) {
     VLOG(1) << "Workers of libgrape-lite initialized.";

@@ -22,6 +22,7 @@ limitations under the License.
 #ifndef USE_MPI
 DEFINE_string(hostfile, "", "path to hostfile");
 DEFINE_int32(worker_id, 0, "worker id");
+DEFINE_int32(worker_num, 1, "worker num");
 #endif
 
 /* flags related to the job. */

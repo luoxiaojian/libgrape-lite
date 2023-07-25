@@ -82,7 +82,7 @@ class AsioMessagePool {
     if (tag < asio_comm_constants::reserved_tag_base) {
       std::lock_guard<std::mutex> lock(mutex_);
       if (pool_.size() <= idx) {
-	pool_.resize((comm_id + 1) * worker_num_);
+        pool_.resize((comm_id + 1) * worker_num_);
       }
       pool_[idx][tag].emplace_back(std::move(buf));
       cond_.notify_all();
@@ -125,8 +125,8 @@ class AsioMessagePool {
   void take_from(int comm_id, int src, int& tag, std::vector<char>& buf) {
     size_t idx = comm_id * worker_num_ + src;
     std::unique_lock<std::mutex> lock(mutex_);
-    cond_.wait(lock, [this, idx] { 
-      return pool_.size() > idx && !pool_[idx].empty(); 
+    cond_.wait(lock, [this, idx] {
+      return pool_.size() > idx && !pool_[idx].empty();
     });
     auto it = pool_[idx].begin();
     tag = it->first;
@@ -206,8 +206,10 @@ class AsioMessagePool {
                                  std::vector<char>& buf) {
     size_t idx = comm_id * worker_num_ + src;
     std::unique_lock<std::mutex> lock(reserved_mutex_);
-    reserved_cond_.wait(lock, [this, idx, tag] { 
-      return reserved_pool_.size() > idx && !reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base].empty();
+    reserved_cond_.wait(lock, [this, idx, tag] {
+      return reserved_pool_.size() > idx &&
+             !reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base]
+                  .empty();
     });
     auto& deq =
         reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base];
@@ -686,14 +688,20 @@ class AsioCommAllocator {
     recv_thread_.join();
   }
 
-  void init(const std::string& hostfile, int self_id) {
+  void init(const std::string& hostfile, int self_id, int worker_num) {
     if (hostfile.empty()) {
       CHECK_EQ(self_id, 0) << "self_id must be 0 if hostfile is empty";
-      init({"localhost"}, {"10000"}, 0);
+      std::vector<std::string> addresses, ports;
+      for (int i = 0; i < worker_num; ++i) {
+        addresses.emplace_back("localhost");
+        ports.emplace_back(std::to_string(10000 + i));
+      }
+      init(addresses, ports, self_id);
       return;
     }
     std::ifstream fin(hostfile);
     std::vector<std::string> addresses, ports;
+    std::map<std::string, int> address_to_port;
     for (std::string line; std::getline(fin, line);) {
       trim(line);
       if (line.empty()) {
@@ -702,6 +710,13 @@ class AsioCommAllocator {
       const char* colon = std::strrchr(line.c_str(), ':');
       if (colon == nullptr) {
         addresses.push_back(line);
+        auto iter = address_to_port.find(addresses.back());
+        if (iter == address_to_port.end()) {
+          address_to_port.emplace(addresses.back(), 10000);
+          ports.push_back("10000");
+        } else {
+          ports.emplace_back(std::to_string(++iter->second));
+        }
         ports.push_back("10000");
       } else {
         std::string addr = std::string(line.c_str(), colon);
@@ -710,6 +725,19 @@ class AsioCommAllocator {
         trim(port);
         addresses.push_back(addr);
         ports.push_back(port);
+      }
+    }
+    int cur_size = addresses.size();
+    if (cur_size > worker_num) {
+      addresses.resize(worker_num);
+      ports.resize(worker_num);
+    } else {
+      int remaining = worker_num - cur_size;
+      for (int i = 0; i < remaining; ++i) {
+        std::string cur_addr = addresses[i % worker_num];
+        int cur_port = std::stoi(ports[i % worker_num]) + (i / worker_num) + 1;
+        addresses.push_back(cur_addr);
+        ports.push_back(std::to_string(cur_port));
       }
     }
     init(addresses, ports, self_id);
