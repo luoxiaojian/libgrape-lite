@@ -672,7 +672,7 @@ static inline std::shared_ptr<boost::asio::ip::tcp::socket> loop_connect(
       if (!ec) {
         return socket;
       }
-      LOG(ERROR) << "connect failed: " << ec.message();
+      VLOG(2) << "connect failed: " << ec.message();
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   }
@@ -690,7 +690,6 @@ class AsioCommAllocator {
 
   void init(const std::string& hostfile, int self_id, int worker_num) {
     if (hostfile.empty()) {
-      CHECK_EQ(self_id, 0) << "self_id must be 0 if hostfile is empty";
       std::vector<std::string> addresses, ports;
       for (int i = 0; i < worker_num; ++i) {
         addresses.emplace_back("localhost");
@@ -823,7 +822,7 @@ class AsioCommAllocator {
         boost::asio::write(*sockets_[i],
                            boost::asio::buffer(&header, sizeof(header)));
       }
-      LOG(INFO) << "send thread returned..";
+      VLOG(2) << "send thread returned..";
     });
 
     recv_thread_ = std::thread([&, this]() {
@@ -835,7 +834,7 @@ class AsioCommAllocator {
         readers.back()->read();
       }
       ioc_.run();
-      LOG(INFO) << "recv thread returned..";
+      VLOG(2) << "recv thread returned..";
     });
   }
 
