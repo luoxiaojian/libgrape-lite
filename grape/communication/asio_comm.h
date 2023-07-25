@@ -42,13 +42,30 @@ class AsioMessagePool {
   AsioMessagePool() : worker_num_(0), comm_num_(0) {}
   ~AsioMessagePool() {}
 
-  void init(int n) {
-    worker_num_ = n;
+  void init(int worker_num) {
+    worker_num_ = worker_num;
     comm_num_ = 1;
 
-    pool_.resize(n);
-    reserved_pool_.resize(n);
-    barrier_count_.resize(n, 0);
+    size_t n = worker_num;
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (pool_.size() < n) {
+        pool_.resize(n);
+      }
+    }
+    {
+      std::lock_guard<std::mutex> lock(reserved_mutex_);
+      if (reserved_pool_.size() < n) {
+        reserved_pool_.resize(n);
+      }
+    }
+    {
+      std::lock_guard<std::mutex> lock(barrier_mutex_);
+      if (barrier_count_.size() < n) {
+        barrier_count_.resize(n, 0);
+      }
+    }
   }
 
   int allocate_comm() {
@@ -896,17 +913,17 @@ class AsioCommAllocator {
   int local_rank_;
   int local_size_;
 
+  std::thread send_thread_;
+  std::thread recv_thread_;
+
+  boost::asio::io_context ioc_;
+
   AsioMessagePool pool_;
   // type, comm_id, dst, tag, data
   BlockingQueue<std::tuple<AsioMsgType, int, int, int, std::vector<char>>>
       send_queue_;
 
   std::vector<std::shared_ptr<boost::asio::ip::tcp::socket>> sockets_;
-
-  std::thread send_thread_;
-  std::thread recv_thread_;
-
-  boost::asio::io_context ioc_;
 };
 
 using CommAllocatorType = AsioCommAllocator;
