@@ -47,6 +47,7 @@ class AsioMessagePool {
     comm_num_ = 1;
 
     pool_.resize(n);
+    reserved_pool_.resize(n);
     barrier_count_.resize(n, 0);
   }
 
@@ -77,13 +78,19 @@ class AsioMessagePool {
   }
 
   void put(int comm_id, int src, int tag, std::vector<char>&& buf) {
-    int idx = comm_id * worker_num_ + src;
+    size_t idx = comm_id * worker_num_ + src;
     if (tag < asio_comm_constants::reserved_tag_base) {
       std::lock_guard<std::mutex> lock(mutex_);
+      if (pool_.size() <= idx) {
+	pool_.resize((comm_id + 1) * worker_num_);
+      }
       pool_[idx][tag].emplace_back(std::move(buf));
       cond_.notify_all();
     } else {
       std::lock_guard<std::mutex> lock(reserved_mutex_);
+      if (reserved_pool_.size() <= idx) {
+        reserved_pool_.resize((comm_id + 1) * worker_num_);
+      }
       reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base]
           .emplace_back(std::move(buf));
       reserved_cond_.notify_all();
@@ -91,8 +98,12 @@ class AsioMessagePool {
   }
 
   void take(int comm_id, int& src, int& tag, std::vector<char>& buf) {
+    size_t min_size = (comm_id + 1) * worker_num_;
     std::unique_lock<std::mutex> lock(mutex_);
-    cond_.wait(lock, [this, comm_id, &src] {
+    cond_.wait(lock, [this, comm_id, &src, min_size] {
+      if (pool_.size() < min_size) {
+        return false;
+      }
       for (int i = 0; i < worker_num_; ++i) {
         if (!pool_[comm_id * worker_num_ + i].empty()) {
           src = i;
@@ -112,9 +123,11 @@ class AsioMessagePool {
   }
 
   void take_from(int comm_id, int src, int& tag, std::vector<char>& buf) {
+    size_t idx = comm_id * worker_num_ + src;
     std::unique_lock<std::mutex> lock(mutex_);
-    int idx = comm_id * worker_num_ + src;
-    cond_.wait(lock, [this, idx] { return !pool_[idx].empty(); });
+    cond_.wait(lock, [this, idx] { 
+      return pool_.size() > idx && !pool_[idx].empty(); 
+    });
     auto it = pool_[idx].begin();
     tag = it->first;
     buf = std::move(it->second.front());
@@ -125,8 +138,12 @@ class AsioMessagePool {
   }
 
   void take_tagged(int comm_id, int& src, int tag, std::vector<char>& buf) {
+    size_t min_size = (comm_id + 1) * worker_num_;
     std::unique_lock<std::mutex> lock(mutex_);
-    cond_.wait(lock, [this, tag, comm_id, &src] {
+    cond_.wait(lock, [this, tag, comm_id, &src, min_size] {
+      if (pool_.size() < min_size) {
+        return false;
+      }
       for (int i = 0; i != worker_num_; ++i) {
         int idx = comm_id * worker_num_ + i;
         if (pool_[idx].find(tag) != pool_[idx].end()) {
@@ -147,8 +164,12 @@ class AsioMessagePool {
 
   void take_tagged_reserved(int comm_id, int& src, int tag,
                             std::vector<char>& buf) {
+    size_t min_size = (comm_id + 1) * worker_num_;
     std::unique_lock<std::mutex> lock(reserved_mutex_);
-    reserved_cond_.wait(lock, [this, tag, comm_id, &src] {
+    reserved_cond_.wait(lock, [this, tag, comm_id, &src, min_size] {
+      if (reserved_pool_.size() < min_size) {
+        return false;
+      }
       for (int i = 0; i != worker_num_; ++i) {
         int idx = comm_id * worker_num_ + i;
         auto& deq =
@@ -168,10 +189,10 @@ class AsioMessagePool {
   }
 
   void take_from_tagged(int comm_id, int src, int tag, std::vector<char>& buf) {
-    int idx = comm_id * worker_num_ + src;
+    size_t idx = comm_id * worker_num_ + src;
     std::unique_lock<std::mutex> lock(mutex_);
     cond_.wait(lock, [this, idx, tag] {
-      return pool_[idx].find(tag) != pool_[idx].end();
+      return pool_.size() > idx && pool_[idx].find(tag) != pool_[idx].end();
     });
     auto it = pool_[idx].find(tag);
     buf = std::move(it->second.front());
@@ -183,36 +204,44 @@ class AsioMessagePool {
 
   void take_from_tagged_reserved(int comm_id, int src, int tag,
                                  std::vector<char>& buf) {
-    int idx = comm_id * worker_num_ + src;
+    size_t idx = comm_id * worker_num_ + src;
+    std::unique_lock<std::mutex> lock(reserved_mutex_);
+    reserved_cond_.wait(lock, [this, idx, tag] { 
+      return reserved_pool_.size() > idx && !reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base].empty();
+    });
     auto& deq =
         reserved_pool_[idx][tag - asio_comm_constants::reserved_tag_base];
-    std::unique_lock<std::mutex> lock(reserved_mutex_);
-    reserved_cond_.wait(lock, [&deq] { return !deq.empty(); });
     buf = std::move(deq.front());
     deq.pop_front();
   }
 
   void barrier(int comm_id, int src) {
-    int idx = comm_id * worker_num_ + src;
+    size_t min_size = (comm_id + 1) * worker_num_;
     std::lock_guard<std::mutex> lock(barrier_mutex_);
-    barrier_count_[idx]++;
+    if (barrier_count_.size() < min_size) {
+      barrier_count_.resize(min_size, 0);
+    }
+    ++barrier_count_[comm_id * worker_num_ + src];
     barrier_cond_.notify_all();
   }
 
   void wait_barrier_slave(int comm_id, int expected) {
-    int idx = comm_id * worker_num_;
+    size_t idx = comm_id * worker_num_;
     std::unique_lock<std::mutex> lock(barrier_mutex_);
     barrier_cond_.wait(lock, [this, expected, idx] {
-      return barrier_count_[idx] >= expected;
+      return barrier_count_.size() > idx && barrier_count_[idx] >= expected;
     });
   }
 
   void wait_barrier_master(int comm_id, int expected) {
+    size_t min_size = (comm_id + 1) * worker_num_;
     std::unique_lock<std::mutex> lock(barrier_mutex_);
-    barrier_cond_.wait(lock, [this, expected, comm_id] {
+    barrier_cond_.wait(lock, [this, expected, comm_id, min_size] {
+      if (barrier_count_.size() < min_size) {
+        return false;
+      }
       for (int i = 1; i < worker_num_; ++i) {
-        int idx = comm_id * worker_num_ + i;
-        if (barrier_count_[idx] < expected) {
+        if (barrier_count_[comm_id * worker_num_ + i] < expected) {
           return false;
         }
       }
@@ -223,7 +252,7 @@ class AsioMessagePool {
  private:
   std::mutex mutex_;
   std::condition_variable cond_;
-  std::vector<ska::flat_hash_map<int, std::deque<std::vector<char>>>> pool_;
+  std::vector<std::map<int, std::deque<std::vector<char>>>> pool_;
 
   std::mutex reserved_mutex_;
   std::condition_variable reserved_cond_;
