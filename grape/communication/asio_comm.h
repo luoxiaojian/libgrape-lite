@@ -310,32 +310,43 @@ class AsioReader : public std::enable_shared_from_this<AsioReader> {
       : socket_(socket), pool_(pool), src_(src) {}
 
   void read() {
+    offset_ = 0;
+    read_header();
+  }
+
+  void read_header() {
     auto self = shared_from_this();
-    socket_->async_read_some(
-        boost::asio::buffer(&header_, sizeof(header_)),
-        [self, this](boost::system::error_code ec, size_t length) {
-          if (ec) {
-            LOG(ERROR) << "recv crash, " << ec.message();
-            return;
-          }
-          CHECK_EQ(length, sizeof(AsioHeader));
-          if (header_.type == kBarrier) {
-            pool_.barrier(header_.comm_id, src_);
-            read();
-          } else if (header_.type == kExit) {
-            return;
-          } else {
-            if (header_.length > 0) {
-              buf_.resize(header_.length);
-              offset_ = 0;
-              read_content();
-            } else {
-              pool_.put(header_.comm_id, src_, header_.tag,
-                        std::vector<char>());
-              read();
-            }
-          }
-        });
+    socket_->async_read_some(boost::asio::buffer(reinterpret_cast<char*>(&header_) + offset_, sizeof(header_) - offset_), [self, this](boost::system::error_code ec, size_t length) {
+      if (ec) {
+        LOG(ERROR) << "recv crash, " << ec.message();
+      }
+      offset_ += length;
+      if (offset_ < sizeof(AsioHeader)) {
+        read_header();
+      } else {
+        CHECK_EQ(offset_, sizeof(AsioHeader));
+	process_header();
+      }
+    });
+  }
+
+  void process_header() {
+    if (header_.type == kBarrier) {
+      pool_.barrier(header_.comm_id, src_);
+      read();
+    } else if (header_.type == kExit) {
+      return;
+    } else {
+      if (header_.length > 0) {
+        buf_.resize(header_.length);
+        offset_ = 0;
+        read_content();
+      } else {
+        pool_.put(header_.comm_id, src_, header_.tag,
+                  std::vector<char>());
+        read();
+      }
+    }
   }
 
   void read_content() {
