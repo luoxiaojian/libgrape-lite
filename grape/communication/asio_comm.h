@@ -913,6 +913,7 @@ class AsioCommAllocator {
             auto& socket = *sockets_[target];
             auto writer = std::make_shared<AsioWriter>(socket, que);
             writer->write();
+	    ioc_.run();
             VLOG(2) << "send thread returned..";
           },
           dst_worker_id);
