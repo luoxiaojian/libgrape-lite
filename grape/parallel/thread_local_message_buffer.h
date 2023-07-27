@@ -36,7 +36,8 @@ class ThreadLocalMessageBuffer {
    * @param block_size Size of thread local message buffer.
    * @param block_cap Capacity of thread local message buffer.
    */
-  void Init(fid_t fnum, MM_T* mm, size_t block_size, size_t block_cap) {
+  void Init(fid_t fnum, MM_T* mm, size_t block_size, size_t block_cap,
+            int channel_id = 0) {
     fnum_ = fnum;
     mm_ = mm;
 
@@ -51,6 +52,7 @@ class ThreadLocalMessageBuffer {
     }
 
     sent_size_ = 0;
+    channel_id_ = channel_id;
   }
 
   /**
@@ -199,7 +201,7 @@ class ThreadLocalMessageBuffer {
  private:
   inline void flushLocalBuffer(fid_t fid) {
     sent_size_ += to_send_[fid].GetSize();
-    mm_->SendRawMsgByFid(fid, std::move(to_send_[fid]));
+    mm_->SendRawMsgByFid(fid, std::move(to_send_[fid]), channel_id_);
     to_send_[fid].Reserve(block_cap_);
   }
 
@@ -211,6 +213,7 @@ class ThreadLocalMessageBuffer {
   size_t block_cap_;
 
   size_t sent_size_;
+  int channel_id_;
 };
 
 }  // namespace grape

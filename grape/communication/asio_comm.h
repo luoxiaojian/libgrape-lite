@@ -817,7 +817,9 @@ class AsioCommAllocator {
     for (auto& thrd : send_threads_) {
       thrd.join();
     }
-    recv_thread_.join();
+    for (auto& thrd : recv_threads_) {
+      thrd.join();
+    }
 
     delete[] send_queue_;
   }
@@ -913,23 +915,24 @@ class AsioCommAllocator {
             auto& socket = *sockets_[target];
             auto writer = std::make_shared<AsioWriter>(socket, que);
             writer->write();
-	    ioc_.run();
+            ioc_.run();
             VLOG(2) << "send thread returned..";
           },
           dst_worker_id);
     }
 
-    recv_thread_ = std::thread([&, this]() {
-      std::vector<std::shared_ptr<AsioReader>> readers;
-      for (int i = 1; i < size_; ++i) {
-        int src_worker_id = (rank_ + i) % size_;
-        readers.emplace_back(std::make_shared<AsioReader>(
-            src_worker_id, *sockets_[src_worker_id], pool_));
-        readers.back()->read();
-      }
-      ioc_.run();
-      VLOG(2) << "recv thread returned..";
-    });
+    for (int i = 1; i < size_; ++i) {
+      int src_worker_id = (i + rank_) % size_;
+      recv_threads_.emplace_back(
+          [&, this](int source) {
+            auto& socket = *sockets_[source];
+            auto reader = std::make_shared<AsioReader>(source, socket, pool_);
+            reader->read();
+            ioc_.run();
+            VLOG(2) << "recv thread returned..";
+          },
+          src_worker_id);
+    }
   }
 
   static AsioCommAllocator& get() {
@@ -991,7 +994,7 @@ class AsioCommAllocator {
   int local_size_;
 
   std::vector<std::thread> send_threads_;
-  std::thread recv_thread_;
+  std::vector<std::thread> recv_threads_;
 
   boost::asio::io_context ioc_;
 
