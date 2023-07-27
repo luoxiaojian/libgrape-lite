@@ -305,7 +305,7 @@ struct AsioHeader {
 
 class AsioReader : public std::enable_shared_from_this<AsioReader> {
  public:
-  AsioReader(int src, std::shared_ptr<boost::asio::ip::tcp::socket> socket,
+  AsioReader(int src, boost::asio::ip::tcp::socket& socket,
              AsioMessagePool& pool)
       : socket_(socket), pool_(pool), src_(src) {}
 
@@ -316,7 +316,7 @@ class AsioReader : public std::enable_shared_from_this<AsioReader> {
 
   void read_header() {
     auto self = shared_from_this();
-    socket_->async_read_some(
+    socket_.async_read_some(
         boost::asio::buffer(reinterpret_cast<char*>(&header_) + offset_,
                             sizeof(header_) - offset_),
         [self, this](boost::system::error_code ec, size_t length) {
@@ -353,7 +353,7 @@ class AsioReader : public std::enable_shared_from_this<AsioReader> {
 
   void read_content() {
     auto self = shared_from_this();
-    socket_->async_read_some(
+    socket_.async_read_some(
         boost::asio::buffer(buf_) + offset_,
         [this, self](boost::system::error_code ec, size_t length) {
           if (ec) {
@@ -371,11 +371,102 @@ class AsioReader : public std::enable_shared_from_this<AsioReader> {
   }
 
  private:
-  std::shared_ptr<boost::asio::ip::tcp::socket> socket_;
+  boost::asio::ip::tcp::socket& socket_;
   AsioMessagePool& pool_;
   AsioHeader header_;
   std::vector<char> buf_;
   int src_;
+  size_t offset_;
+};
+
+class AsioWriter : public std::enable_shared_from_this<AsioWriter> {
+ public:
+  AsioWriter(
+      boost::asio::ip::tcp::socket& socket,
+      BlockingQueue<std::tuple<AsioMsgType, int, int, std::vector<char>>>& que)
+      : socket_(socket), que_(que) {}
+
+  void write() {
+    std::tuple<AsioMsgType, int, int, std::vector<char>> item;
+    if (que_.Get(item)) {
+      AsioMsgType type = std::get<0>(item);
+      int comm_id = std::get<1>(item);
+      int tag = std::get<2>(item);
+      buf_ = std::move(std::get<3>(item));
+
+      if (type == kBarrier) {
+        header_.type = kBarrier;
+        header_.comm_id = comm_id;
+      } else if (type == kBcast) {
+        header_.type = kBcast;
+        header_.comm_id = comm_id;
+        header_.tag = tag;
+        header_.length = buf_.size();
+      } else if (type == kData) {
+        header_.type = kData;
+        header_.comm_id = comm_id;
+        header_.tag = tag;
+        header_.length = buf_.size();
+      } else {
+        LOG(ERROR) << "Unexpected message type - " << type;
+      }
+    } else {
+      header_.type = kExit;
+    }
+    offset_ = 0;
+    write_header();
+  }
+
+  void write_header() {
+    auto self = shared_from_this();
+    socket_.async_write_some(
+        boost::asio::buffer(reinterpret_cast<char*>(&header_) + offset_,
+                            sizeof(header_) - offset_),
+        [self, this](boost::system::error_code ec, size_t length) {
+          if (ec) {
+            LOG(ERROR) << "send crash, " << ec.message();
+            return;
+          }
+          offset_ += length;
+          if (offset_ < sizeof(AsioHeader)) {
+            write_header();
+          } else {
+            CHECK_EQ(offset_, sizeof(AsioHeader));
+            if ((header_.type == kData || header_.type == kBcast) &&
+                header_.length != 0) {
+              offset_ = 0;
+              write_content();
+            } else if (header_.type != kExit) {
+              write();
+            }
+          }
+        });
+  }
+
+  void write_content() {
+    auto self = shared_from_this();
+    socket_.async_write_some(
+        boost::asio::buffer(buf_) + offset_,
+        [this, self](boost::system::error_code ec, size_t length) {
+          if (ec) {
+            LOG(ERROR) << "send crash, " << ec.message();
+            return;
+          }
+          offset_ += length;
+          if (offset_ < header_.length) {
+            write_content();
+          } else {
+            write();
+          }
+        });
+  }
+
+ private:
+  boost::asio::ip::tcp::socket& socket_;
+  BlockingQueue<std::tuple<AsioMsgType, int, int, std::vector<char>>>& que_;
+
+  std::vector<char> buf_;
+  AsioHeader header_;
   size_t offset_;
 };
 
@@ -436,11 +527,10 @@ class AsioComm {
   ~AsioComm() {}
 
  private:
-  AsioComm(
-      AsioMessagePool* pool,
-      BlockingQueue<std::tuple<AsioMsgType, int, int, std::vector<char>>>*
-          queue,
-      int comm_id, int rank, int size, int local_rank, int local_size)
+  AsioComm(AsioMessagePool* pool,
+           BlockingQueue<std::tuple<AsioMsgType, int, int, std::vector<char>>>*
+               queue,
+           int comm_id, int rank, int size, int local_rank, int local_size)
       : pool_(pool),
         queue_(queue),
         comm_id_(comm_id),
@@ -821,50 +911,8 @@ class AsioCommAllocator {
           [&, this](int target) {
             auto& que = send_queue_[target];
             auto& socket = *sockets_[target];
-            AsioHeader header;
-            std::tuple<AsioMsgType, int, int, std::vector<char>> item;
-            while (que.Get(item)) {
-              AsioMsgType type = std::get<0>(item);
-              int comm_id = std::get<1>(item);
-              int tag = std::get<2>(item);
-              std::vector<char>& buf = std::get<3>(item);
-              if (type == kBarrier) {
-                // barrier
-                header.comm_id = comm_id;
-                header.type = kBarrier;
-                boost::asio::write(
-                    socket, boost::asio::buffer(&header, sizeof(header)));
-              } else if (type == kBcast) {
-                // bcast
-                header.type = kBcast;
-                header.tag = tag;
-                header.length = buf.size();
-                header.comm_id = comm_id;
-                boost::asio::write(
-                    socket, boost::asio::buffer(&header, sizeof(header)));
-                if (header.length > 0) {
-                  boost::asio::write(socket, boost::asio::buffer(buf));
-                }
-              } else if (type == kData) {
-                // normal
-                header.type = kData;
-                header.tag = tag;
-                header.comm_id = comm_id;
-                header.length = buf.size();
-                boost::asio::write(
-                    socket, boost::asio::buffer(&header, sizeof(header)));
-                if (header.length > 0) {
-                  boost::asio::write(socket, boost::asio::buffer(buf));
-                }
-              } else {
-                // unexpected
-                LOG(ERROR) << "Unexpected message type - " << type;
-              }
-            }
-            // exit
-            header.type = kExit;
-            boost::asio::write(socket,
-                               boost::asio::buffer(&header, sizeof(header)));
+            auto writer = std::make_shared<AsioWriter>(socket, que);
+            writer->write();
             VLOG(2) << "send thread returned..";
           },
           dst_worker_id);
@@ -875,7 +923,7 @@ class AsioCommAllocator {
       for (int i = 1; i < size_; ++i) {
         int src_worker_id = (rank_ + i) % size_;
         readers.emplace_back(std::make_shared<AsioReader>(
-            src_worker_id, sockets_[src_worker_id], pool_));
+            src_worker_id, *sockets_[src_worker_id], pool_));
         readers.back()->read();
       }
       ioc_.run();
