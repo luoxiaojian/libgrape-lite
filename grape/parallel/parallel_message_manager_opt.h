@@ -48,7 +48,7 @@ namespace grape {
  *
  */
 
-#if 1
+#if 0
 
 class ParallelMessageManagerOpt : public MessageManagerBase {
   static constexpr size_t default_msg_send_block_size = 2 * 1023 * 1024;
@@ -535,7 +535,9 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
 
  public:
   ParallelMessageManagerOpt() {}
-  ~ParallelMessageManagerOpt() override {}
+  ~ParallelMessageManagerOpt() override {
+    LOG(INFO) << "[worker-" << fid_ << "] sum: " << sum_duration_;
+  }
 
   /**
    * @brief Inherit
@@ -556,6 +558,8 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
 
     sent_size_ = 0;
     total_sent_size_ = 0;
+
+    sum_duration_ = 0;
   }
 
   /**
@@ -603,7 +607,9 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
     }
     flag[1] = force_terminate_ ? 1 : 0;
     int64_t ret[2];
+    sum_duration_ -= GetCurrentTime();
     comm_.sum(flag, ret, 2);
+    sum_duration_ += GetCurrentTime();
     if (ret[1] > 0) {
       terminate_info_.success = false;
       std::string info = terminate_info_.info[fid_];
@@ -936,7 +942,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
       ret += channel.SentMsgSize();
       channel.Reset();
     }
-    for (int i = 1; i < fnum_; ++i) {
+    for (fid_t i = 1; i < fnum_; ++i) {
       int dst_fid = (fid_ + i) % fnum_;
       comm_.send_empty(dst_fid, round_ + 1);
     }
@@ -971,6 +977,8 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
   bool force_terminate_;
   TerminateInfo terminate_info_;
   CommType comm_;
+
+  double sum_duration_;
 };
 
 #endif
