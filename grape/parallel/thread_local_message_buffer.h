@@ -37,7 +37,7 @@ class ThreadLocalMessageBuffer {
    * @param block_cap Capacity of thread local message buffer.
    */
   void Init(fid_t fnum, MM_T* mm, size_t block_size, size_t block_cap,
-            int channel_id = 0) {
+            int channel_id) {
     fnum_ = fnum;
     mm_ = mm;
 

@@ -48,7 +48,7 @@ namespace grape {
  *
  */
 
-#if 0
+#if 1
 
 class ParallelMessageManagerOpt : public MessageManagerBase {
   static constexpr size_t default_msg_send_block_size = 2 * 1023 * 1024;
@@ -181,8 +181,9 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
                     size_t block_size = default_msg_send_block_size,
                     size_t block_cap = default_msg_send_block_capacity) {
     channels_.resize(channel_num);
+    int channel_id = 0;
     for (auto& channel : channels_) {
-      channel.Init(fnum_, this, block_size, block_cap);
+      channel.Init(fnum_, this, block_size, block_cap, channel_id++);
     }
   }
 
@@ -196,7 +197,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
    * @param fid Destination fragment id.
    * @param arc Message buffer.
    */
-  inline void SendRawMsgByFid(fid_t fid, InArchive&& arc) {
+  inline void SendRawMsgByFid(fid_t fid, InArchive&& arc, int channel_id) {
     std::pair<fid_t, InArchive> item;
     item.first = fid;
     item.second = std::move(arc);
@@ -674,7 +675,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
    * @param fid Destination fragment id.
    * @param arc Message buffer.
    */
-  inline void SendRawMsgByFid(fid_t fid, InArchive&& arc, int channel_id = 0) {
+  inline void SendRawMsgByFid(fid_t fid, InArchive&& arc, int channel_id) {
     if (fid == fid_) {
       to_self_[channel_id].emplace_back(std::move(arc));
     } else {
