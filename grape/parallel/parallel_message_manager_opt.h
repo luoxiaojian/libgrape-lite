@@ -535,9 +535,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
 
  public:
   ParallelMessageManagerOpt() {}
-  ~ParallelMessageManagerOpt() override {
-    LOG(INFO) << "[worker-" << fid_ << "] sum: " << sum_duration_;
-  }
+  ~ParallelMessageManagerOpt() override {}
 
   /**
    * @brief Inherit
@@ -548,9 +546,6 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
     fid_ = comm_.rank();
     fnum_ = comm_.size();
 
-    force_terminate_ = false;
-    terminate_info_.Init(fnum_);
-
     recv_queues_[0].SetProducerNum(fnum_);
     recv_queues_[1].SetProducerNum(fnum_);
 
@@ -558,8 +553,6 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
 
     sent_size_ = 0;
     total_sent_size_ = 0;
-
-    sum_duration_ = 0;
   }
 
   /**
@@ -600,23 +593,18 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
    * @brief Inherit
    */
   bool ToTerminate() override {
-    int64_t flag[2];
-    flag[0] = 1;
-    if (sent_size_ == 0 && !force_continue_) {
-      flag[0] = 0;
+    for (auto& vec : to_self_) {
+      if (!vec.empty()) {
+        return false;
+      }
     }
-    flag[1] = force_terminate_ ? 1 : 0;
-    int64_t ret[2];
-    sum_duration_ -= GetCurrentTime();
-    comm_.sum(flag, ret, 2);
-    sum_duration_ += GetCurrentTime();
-    if (ret[1] > 0) {
-      terminate_info_.success = false;
-      std::string info = terminate_info_.info[fid_];
-      comm_.gather(info, terminate_info_.info);
-      return true;
+    auto& que = recv_queues_[round_ % 2];
+    OutArchive arc;
+    if (que.Get(arc)) {
+      que.Put(std::move(arc));
+      return false;
     }
-    return (ret[0] == 0);
+    return true;
   }
 
   /**
@@ -636,15 +624,14 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
    * @brief Inherit
    */
   void ForceTerminate(const std::string& terminate_info) override {
-    force_terminate_ = true;
-    terminate_info_.info[fid_] = terminate_info;
+    LOG(FATAL) << "not supported...";
   }
 
   /**
    * @brief Inherit
    */
   const TerminateInfo& GetTerminateInfo() const override {
-    return terminate_info_;
+    LOG(FATAL) << "not supported...";
   }
 
   /**
@@ -917,9 +904,16 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
       if (src_worker_id == self_worker_id) {
         break;
       }
-      if (buf.empty()) {
+      if (buf.size() == 1) {
+        uint8_t flag = buf[0];
+        if (flag) {
+          buf.clear();
+          OutArchive arc(std::move(buf));
+          recv_queues_[tag % 2].Put(std::move(arc));
+        }
         recv_queues_[tag % 2].DecProducerNum();
       } else {
+        CHECK(!buf.empty());
         OutArchive arc(std::move(buf));
         recv_queues_[tag % 2].Put(std::move(arc));
       }
@@ -942,9 +936,14 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
       ret += channel.SentMsgSize();
       channel.Reset();
     }
+    uint8_t flag = 0;
+    if (ret > 0 || force_continue_) {
+      flag = 1;
+    }
     for (fid_t i = 1; i < fnum_; ++i) {
       int dst_fid = (fid_ + i) % fnum_;
-      comm_.send_empty(dst_fid, round_ + 1);
+      comm_.send(dst_fid, reinterpret_cast<const char*>(&flag), 1, round_ + 1);
+      // comm_.send_empty(dst_fid, round_ + 1);
     }
     return ret;
   }
@@ -974,11 +973,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
   size_t sent_size_;
   size_t total_sent_size_;
 
-  bool force_terminate_;
-  TerminateInfo terminate_info_;
   CommType comm_;
-
-  double sum_duration_;
 };
 
 #endif
