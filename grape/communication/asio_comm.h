@@ -438,7 +438,7 @@ class AsioComm {
  private:
   AsioComm(
       AsioMessagePool* pool,
-      BlockingQueue<std::tuple<AsioMsgType, int, int, int, std::vector<char>>>*
+      BlockingQueue<std::tuple<AsioMsgType, int, int, std::vector<char>>>*
           queue,
       int comm_id, int rank, int size, int local_rank, int local_size)
       : pool_(pool),
@@ -817,7 +817,7 @@ class AsioCommAllocator {
 
     for (int i = 1; i < size_; ++i) {
       int dst_worker_id = (i + rank_) % size_;
-      send_threads_.emplace(
+      send_threads_.emplace_back(
           [&, this](int target) {
             auto& que = send_queue_[target];
             auto& socket = *sockets_[target];
