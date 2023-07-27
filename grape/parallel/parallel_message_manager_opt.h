@@ -65,9 +65,6 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
     fid_ = comm_.rank();
     fnum_ = comm_.size();
 
-    recv_queues_[0].SetProducerNum(fnum_);
-    recv_queues_[1].SetProducerNum(fnum_);
-
     round_ = 0;
 
     sent_size_ = 0;
@@ -77,7 +74,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
   /**
    * @brief Inherit
    */
-  void Start() override { startRecvThread(); }
+  void Start() override {}
 
   /**
    * @brief Inherit
@@ -101,26 +98,48 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
    * @brief Inherit
    */
   bool ToTerminate() override {
-    auto& que = recv_queues_[round_ % 2];
-    for (auto& vec : to_self_) {
-      for (auto& iarc : vec) {
-        OutArchive oarc(std::move(iarc));
-        que.Put(std::move(oarc));
+    recv_thread_ = std::thread([&]() {
+      bool flag = false;
+      for (auto& vec : to_self_) {
+        if (!vec.empty()) {
+          flag = true;
+          for (auto& iarc : vec) {
+            OutArchive oarc(std::move(iarc));
+            recv_queue_.Put(std::move(oarc));
+          }
+          vec.clear();
+        }
       }
-      vec.clear();
+      for (fid_t i = 1; i < fnum_; ++i) {
+        std::vector<char> buf;
+        int src_worker_id;
+        comm_.recv_tagged(src_worker_id, buf, round_);
+        if (buf.size() == 1) {
+          uint8_t cur_flag = buf[0];
+          recv_queue_.DecProducerNum();
+          if (!flag && cur_flag) {
+            flag = true;
+            recv_queue_.Put(OutArchive());
+          }
+        } else {
+          flag = true;
+          OutArchive arc(std::move(buf));
+          recv_queue_.Put(std::move(arc));
+        }
+      }
+    });
+    if (!recv_queue_.Wait()) {
+      recv_thread_.join();
+      return true;
+    } else {
+      return false;
     }
-    que.DecProducerNum();
-    bool to_terminate = !que.Wait();
-    return to_terminate;
   }
 
   /**
    * @brief Inherit
    */
-  void Finalize() override {
-    comm_.barrier();
-    stopRecvThread();
-  }
+  void Finalize() override { comm_.barrier(); }
 
   /**
    * @brief Inherit
@@ -282,7 +301,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
    */
   inline bool GetMessageInBuffer(MessageInBuffer& buf) {
     grape::OutArchive arc;
-    auto& que = recv_queues_[round_ % 2];
+    auto& que = recv_queue_;
     if (que.Get(arc)) {
       buf.Init(std::move(arc));
       return true;
@@ -313,7 +332,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
             typename GRAPH_T::vid_t id;
             typename GRAPH_T::vertex_t vertex(0);
             MESSAGE_T msg;
-            auto& que = recv_queues_[round_ % 2];
+            auto& que = recv_queue_;
             OutArchive arc;
             while (que.Get(arc)) {
               while (!arc.Empty()) {
@@ -329,40 +348,6 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
     for (auto& thrd : threads) {
       thrd.join();
     }
-  }
-
-  template <typename GRAPH_T, typename MESSAGE_T, typename FUNC_T>
-  inline size_t ParallelProcessCount(int thread_num, const GRAPH_T& frag,
-                                     const FUNC_T& func) {
-    std::vector<std::thread> threads(thread_num);
-    std::atomic<size_t> ret(0);
-
-    for (int i = 0; i < thread_num; ++i) {
-      threads[i] = std::thread(
-          [&](int tid) {
-            typename GRAPH_T::vid_t id;
-            typename GRAPH_T::vertex_t vertex(0);
-            MESSAGE_T msg;
-            auto& que = recv_queues_[round_ % 2];
-            OutArchive arc;
-            size_t local_count = 0;
-            while (que.Get(arc)) {
-              while (!arc.Empty()) {
-                arc >> id >> msg;
-                frag.Gid2Vertex(id, vertex);
-                func(tid, vertex, msg);
-                ++local_count;
-              }
-            }
-            ret.fetch_add(local_count, std::memory_order_relaxed);
-          },
-          i);
-    }
-
-    for (auto& thrd : threads) {
-      thrd.join();
-    }
-    return ret.load();
   }
 
   /**
@@ -384,7 +369,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
       threads[i] = std::thread(
           [&](int tid) {
             MESSAGE_T msg;
-            auto& que = recv_queues_[round_ % 2];
+            auto& que = recv_queue_;
             OutArchive arc;
             while (que.Get(arc)) {
               while (!arc.Empty()) {
@@ -402,42 +387,6 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
   }
 
  private:
-  void probeAllIncomingMessages() {
-    int self_worker_id = comm_.rank();
-    while (true) {
-      int src_worker_id, tag;
-      std::vector<char> buf;
-      comm_.recv(src_worker_id, buf, tag);
-      if (src_worker_id == self_worker_id) {
-        break;
-      }
-      if (buf.size() == 1) {
-        uint8_t flag = buf[0];
-        if (flag) {
-          buf.clear();
-          OutArchive arc(std::move(buf));
-          recv_queues_[tag % 2].Put(std::move(arc));
-        } else {
-          buf.clear();
-	}
-        recv_queues_[tag % 2].DecProducerNum();
-      } else {
-        CHECK(!buf.empty());
-        OutArchive arc(std::move(buf));
-        recv_queues_[tag % 2].Put(std::move(arc));
-      }
-    }
-  }
-
-  void startRecvThread() {
-    recv_thread_ = std::thread([this]() { probeAllIncomingMessages(); });
-  }
-
-  void stopRecvThread() {
-    comm_.send_empty(comm_.rank(), 0);
-    recv_thread_.join();
-  }
-
   inline size_t finishMsgFilling() {
     size_t ret = 0;
     for (auto& channel : channels_) {
@@ -452,18 +401,17 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
     for (fid_t i = 1; i < fnum_; ++i) {
       int dst_fid = (fid_ + i) % fnum_;
       comm_.send(dst_fid, reinterpret_cast<const char*>(&flag), 1, round_ + 1);
-      // comm_.send_empty(dst_fid, round_ + 1);
     }
     return ret;
   }
 
   void resetRecvQueue() {
-    auto& curr_recv_queue = recv_queues_[round_ % 2];
     if (round_) {
       OutArchive arc;
-      while (curr_recv_queue.Get(arc)) {}
+      while (recv_queue_.Get(arc)) {}
+      recv_thread_.join();
     }
-    curr_recv_queue.SetProducerNum(fnum_);
+    recv_queue_.SetProducerNum(fnum_);
   }
 
   fid_t fid_;
@@ -475,7 +423,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
   std::vector<ThreadLocalMessageBuffer<ParallelMessageManagerOpt>> channels_;
   int round_;
 
-  std::array<BlockingQueue<OutArchive>, 2> recv_queues_;
+  BlockingQueue<OutArchive> recv_queue_;
   std::thread recv_thread_;
 
   bool force_continue_;
