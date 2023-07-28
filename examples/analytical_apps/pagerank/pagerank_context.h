@@ -20,6 +20,8 @@ limitations under the License.
 
 #include <grape/grape.h>
 
+#ifdef USE_MPI
+
 namespace grape {
 /**
  * @brief Context for the batch version of PageRank.
@@ -90,6 +92,9 @@ class PageRankContext : public VertexDataContext<FRAG_T, double> {
   double dangling_sum = 0.0;
   double avg_degree = 0;
 };
+
 }  // namespace grape
+
+#endif
 
 #endif  // EXAMPLES_ANALYTICAL_APPS_PAGERANK_PAGERANK_CONTEXT_H_

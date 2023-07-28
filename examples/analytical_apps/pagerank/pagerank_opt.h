@@ -19,6 +19,7 @@ limitations under the License.
 
 #include "pagerank/pagerank_context.h"
 
+#ifdef USE_MPI
 namespace grape {
 
 /**
@@ -230,5 +231,7 @@ class PageRankOpt : public BatchShuffleAppBase<FRAG_T, PageRankContext<FRAG_T>>,
 };
 
 }  // namespace grape
+
+#endif
 
 #endif  // EXAMPLES_ANALYTICAL_APPS_PAGERANK_PAGERANK_OPT_H_

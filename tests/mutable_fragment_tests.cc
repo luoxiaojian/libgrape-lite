@@ -22,6 +22,7 @@ limitations under the License.
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include <grape/communication/comm.h>
 #include <grape/fragment/loader.h>
 #include <grape/fragment/mutable_edgecut_fragment.h>
 #include <grape/grape.h>
@@ -62,6 +63,11 @@ DEFINE_double(pr_d, 0.85, "damping_factor of pagerank");
 DEFINE_int32(pr_mr, 10, "max rounds of pagerank");
 DEFINE_bool(directed, false, "input graph is directed or not.");
 DEFINE_string(application, "", "application name");
+#ifndef USE_MPI
+DEFINE_string(hostfile, "", "path to hostfile");
+DEFINE_int32(worker_id, 0, "worker id");
+DEFINE_int32(worker_num, 1, "worker num");
+#endif
 
 void Init() {
   if (FLAGS_out_prefix.empty()) {
@@ -74,27 +80,26 @@ void Init() {
     mkdir(FLAGS_out_prefix.c_str(), 0777);
   }
 
-  grape::InitMPIComm();
-  grape::CommSpec comm_spec;
-  comm_spec.Init(MPI_COMM_WORLD);
-  if (comm_spec.worker_id() == grape::kCoordinatorRank) {
+#ifdef USE_MPI
+  grape::CommAllocatorType::get().init();
+#else
+  grape::CommAllocatorType::get().init(FLAGS_hostfile, FLAGS_worker_id,
+                                       FLAGS_worker_num);
+#endif
+  if (grape::CommAllocatorType::get().rank() == grape::kCoordinatorRank) {
     VLOG(1) << "Workers of libgrape-lite initialized.";
   }
 }
 
-void Finalize() {
-  grape::FinalizeMPIComm();
-  VLOG(1) << "Workers finalized.";
-}
+void Finalize() { VLOG(1) << "Workers finalized."; }
 
 template <typename FRAG_T, typename APP_T, typename... Args>
 void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
-             const grape::CommSpec& comm_spec,
              const grape::ParallelEngineSpec& spec,
              const std::string& out_prefix, Args... args) {
   timer_next("load application");
   auto worker = APP_T::CreateWorker(app, fragment);
-  worker->Init(comm_spec, spec);
+  worker->Init(grape::CommAllocatorType::get(), spec);
   timer_next("run algorithm");
   worker->Query(std::forward<Args>(args)...);
   timer_next("print output");
@@ -107,7 +112,7 @@ void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
   ostream.close();
   worker->Finalize();
   timer_end();
-  VLOG(1) << "Worker-" << comm_spec.worker_id() << " finished: " << output_path;
+  VLOG(1) << "Worker-" << fragment->fid() << " finished: " << output_path;
 }
 
 template <typename T>
@@ -126,8 +131,7 @@ struct ParamConverter<std::string> {
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
           grape::LoadStrategy load_strategy, template <class> class APP_T,
           typename... Args>
-void CreateAndQuery(const grape::CommSpec& comm_spec,
-                    const std::string& out_prefix, int fnum,
+void CreateAndQuery(const std::string& out_prefix, int fnum,
                     const grape::ParallelEngineSpec& spec, Args... args) {
   timer_next("load graph");
   grape::LoadGraphSpec graph_spec = grape::DefaultLoadGraphSpec();
@@ -135,21 +139,20 @@ void CreateAndQuery(const grape::CommSpec& comm_spec,
   graph_spec.set_rebalance(false, 0);
   using FRAG_T = grape::MutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
                                                load_strategy>;
+  grape::CommType loader_comm = grape::CommAllocatorType::get().allocate();
   std::shared_ptr<FRAG_T> fragment = grape::LoadGraphAndMutate<FRAG_T>(
-      FLAGS_efile, FLAGS_vfile, FLAGS_delta_efile, FLAGS_delta_vfile, comm_spec,
-      graph_spec);
+      loader_comm, FLAGS_efile, FLAGS_vfile, FLAGS_delta_efile,
+      FLAGS_delta_vfile, graph_spec);
   using AppType = APP_T<FRAG_T>;
   auto app = std::make_shared<AppType>();
-  DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec, out_prefix,
-                                    args...);
+  DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix, args...);
 }
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
 void Run() {
-  grape::CommSpec comm_spec;
-  comm_spec.Init(MPI_COMM_WORLD);
-
-  bool is_coordinator = comm_spec.worker_id() == grape::kCoordinatorRank;
+  int worker_id = grape::CommAllocatorType::get().rank();
+  int worker_num = grape::CommAllocatorType::get().size();
+  bool is_coordinator = worker_id == grape::kCoordinatorRank;
   timer_start(is_coordinator);
 
   // FIXME: no barrier apps. more manager? or use a dynamic-cast.
@@ -158,19 +161,21 @@ void Run() {
   std::string delta_efile = FLAGS_delta_efile;
   std::string delta_vfile = FLAGS_delta_vfile;
   std::string out_prefix = FLAGS_out_prefix;
-  auto spec = grape::MultiProcessSpec(comm_spec, __AFFINITY__);
-  int fnum = comm_spec.fnum();
+  int local_id = grape::CommAllocatorType::get().local_rank();
+  int local_size = grape::CommAllocatorType::get().local_size();
+  auto spec = grape::MultiProcessSpec(local_id, local_size, __AFFINITY__);
+  int fnum = worker_num;
   std::string name = FLAGS_application;
   if (name.find("sssp") != std::string::npos) {
     if (name == "sssp") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, double,
                      grape::LoadStrategy::kOnlyOut, grape::SSSP, OID_T>(
-          comm_spec, out_prefix, fnum, spec,
+          out_prefix, fnum, spec,
           ParamConverter<OID_T>::FromInt64(FLAGS_sssp_source));
     } else if (name == "sssp_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, double,
                      grape::LoadStrategy::kOnlyOut, grape::SSSPAuto, OID_T>(
-          comm_spec, out_prefix, fnum, spec,
+          out_prefix, fnum, spec,
           ParamConverter<OID_T>::FromInt64(FLAGS_sssp_source));
     } else {
       LOG(FATAL) << "No avaiable application named [" << name << "].";
@@ -179,62 +184,65 @@ void Run() {
     if (name == "bfs") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
                      grape::LoadStrategy::kOnlyOut, grape::BFS, OID_T>(
-          comm_spec, out_prefix, fnum, spec,
+          out_prefix, fnum, spec,
           ParamConverter<OID_T>::FromInt64(FLAGS_bfs_source));
     } else if (name == "bfs_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
                      grape::LoadStrategy::kOnlyOut, grape::BFSAuto, OID_T>(
-          comm_spec, out_prefix, fnum, spec,
+          out_prefix, fnum, spec,
           ParamConverter<OID_T>::FromInt64(FLAGS_bfs_source));
+#ifdef USE_MPI
     } else if (name == "pagerank_local") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
                      grape::LoadStrategy::kOnlyOut, grape::PageRankLocal,
-                     double, int>(comm_spec, out_prefix, fnum, spec, FLAGS_pr_d,
+                     double, int>(out_prefix, fnum, spec, FLAGS_pr_d,
                                   FLAGS_pr_mr);
+#endif
     } else if (name == "pagerank_local_parallel") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
                      grape::LoadStrategy::kBothOutIn,
                      grape::PageRankLocalParallel, double, int>(
-          comm_spec, out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
+          out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
+#ifdef USE_MPI
     } else if (name == "pagerank") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
                      grape::LoadStrategy::kOnlyOut, grape::PageRank, double,
-                     int>(comm_spec, out_prefix, fnum, spec, FLAGS_pr_d,
-                          FLAGS_pr_mr);
+                     int>(out_prefix, fnum, spec, FLAGS_pr_d, FLAGS_pr_mr);
+#endif
     } else if (name == "pagerank_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
                      grape::LoadStrategy::kBothOutIn, grape::PageRankAuto,
-                     double, int>(comm_spec, out_prefix, fnum, spec, FLAGS_pr_d,
+                     double, int>(out_prefix, fnum, spec, FLAGS_pr_d,
                                   FLAGS_pr_mr);
     } else if (name == "pagerank_parallel") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
                      grape::LoadStrategy::kBothOutIn, grape::PageRankParallel,
-                     double, int>(comm_spec, out_prefix, fnum, spec, FLAGS_pr_d,
+                     double, int>(out_prefix, fnum, spec, FLAGS_pr_d,
                                   FLAGS_pr_mr);
     } else if (name == "cdlp") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
                      grape::LoadStrategy::kOnlyOut, grape::CDLP, int>(
-          comm_spec, out_prefix, fnum, spec, FLAGS_cdlp_mr);
+          out_prefix, fnum, spec, FLAGS_cdlp_mr);
     } else if (name == "cdlp_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
                      grape::LoadStrategy::kBothOutIn, grape::CDLPAuto, int>(
-          comm_spec, out_prefix, fnum, spec, FLAGS_cdlp_mr);
+          out_prefix, fnum, spec, FLAGS_cdlp_mr);
     } else if (name == "wcc") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
-                     grape::LoadStrategy::kOnlyOut, grape::WCC>(
-          comm_spec, out_prefix, fnum, spec);
+                     grape::LoadStrategy::kOnlyOut, grape::WCC>(out_prefix,
+                                                                fnum, spec);
     } else if (name == "wcc_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
-                     grape::LoadStrategy::kOnlyOut, grape::WCCAuto>(
-          comm_spec, out_prefix, fnum, spec);
+                     grape::LoadStrategy::kOnlyOut, grape::WCCAuto>(out_prefix,
+                                                                    fnum, spec);
     } else if (name == "lcc") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
-                     grape::LoadStrategy::kOnlyOut, grape::LCC>(
-          comm_spec, out_prefix, fnum, spec);
+                     grape::LoadStrategy::kOnlyOut, grape::LCC>(out_prefix,
+                                                                fnum, spec);
     } else if (name == "lcc_auto") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, grape::EmptyType,
-                     grape::LoadStrategy::kOnlyOut, grape::LCCAuto>(
-          comm_spec, out_prefix, fnum, spec);
+                     grape::LoadStrategy::kOnlyOut, grape::LCCAuto>(out_prefix,
+                                                                    fnum, spec);
     } else {
       LOG(FATAL) << "No avaiable application named [" << name << "].";
     }

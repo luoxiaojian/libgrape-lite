@@ -16,8 +16,6 @@ limitations under the License.
 #ifndef GRAPE_WORKER_WORKER_H_
 #define GRAPE_WORKER_WORKER_H_
 
-#include <mpi.h>
-
 #include <memory>
 #include <ostream>
 #include <type_traits>
@@ -32,7 +30,6 @@ limitations under the License.
 #include "grape/parallel/parallel_message_manager.h"
 #include "grape/parallel/parallel_message_manager_opt.h"
 #include "grape/util.h"
-#include "grape/worker/comm_spec.h"
 
 namespace grape {
 
@@ -61,25 +58,30 @@ class Worker {
     prepare_conf_.need_split_edges = APP_T::need_split_edges;
     prepare_conf_.need_split_edges_by_fragment =
         APP_T::need_split_edges_by_fragment;
+#ifdef USE_MPI
     prepare_conf_.need_mirror_info =
         std::is_same<message_manager_t, BatchShuffleMessageManager>::value;
+#else
+    prepare_conf_.need_mirror_info = false;
+#endif
   }
 
   ~Worker() = default;
 
-  void Init(const CommSpec& comm_spec,
+  void Init(CommAllocatorType& comm_allocator,
             const ParallelEngineSpec& pe_spec = DefaultParallelEngineSpec()) {
+    worker_comm_ = comm_allocator.allocate();
+
     auto& graph = const_cast<fragment_t&>(context_->fragment());
     // prepare for the query
-    graph.PrepareToRunApp(comm_spec, prepare_conf_);
+    graph.PrepareToRunApp(prepare_conf_, worker_comm_);
 
-    comm_spec_ = comm_spec;
-    MPI_Barrier(comm_spec_.comm());
+    worker_comm_.barrier();
 
-    messages_.Init(comm_spec_.comm());
+    messages_.Init(comm_allocator.allocate());
 
     InitParallelEngine(app_, pe_spec);
-    InitCommunicator(app_, comm_spec_.comm());
+    InitCommunicator(app_, comm_allocator);
   }
 
   void Finalize() {}
@@ -88,10 +90,10 @@ class Worker {
   void Query(Args&&... args) {
     double t = GetCurrentTime();
 
-    MPI_Barrier(comm_spec_.comm());
+    worker_comm_.barrier();
 
     context_->Init(messages_, std::forward<Args>(args)...);
-    processMutation();
+    processMutation(worker_comm_);
 
     int round = 0;
 
@@ -100,11 +102,11 @@ class Worker {
     messages_.StartARound();
 
     runPEval();
-    processMutation();
+    processMutation(worker_comm_);
 
     messages_.FinishARound();
 
-    if (comm_spec_.worker_id() == kCoordinatorRank) {
+    if (worker_comm_.rank() == kCoordinatorRank) {
       VLOG(1) << "[Coordinator]: Finished PEval, time: " << GetCurrentTime() - t
               << " sec";
     }
@@ -117,18 +119,18 @@ class Worker {
       messages_.StartARound();
 
       runIncEval();
-      processMutation();
+      processMutation(worker_comm_);
 
       messages_.FinishARound();
 
-      if (comm_spec_.worker_id() == kCoordinatorRank) {
+      if (worker_comm_.rank() == kCoordinatorRank) {
         VLOG(1) << "[Coordinator]: Finished IncEval - " << step
                 << ", time: " << GetCurrentTime() - t << " sec";
       }
       ++step;
     }
 
-    MPI_Barrier(comm_spec_.comm());
+    worker_comm_.barrier();
 
     messages_.Finalize();
   }
@@ -177,23 +179,23 @@ class Worker {
   template <typename T = context_t>
   typename std::enable_if<
       std::is_base_of<MutationContext<fragment_t>, T>::value>::type
-  processMutation() {
-    context_->apply_mutation(fragment_, comm_spec_);
-    fragment_->PrepareToRunApp(comm_spec_, prepare_conf_);
+  processMutation(CommType& comm) {
+    context_->apply_mutation(fragment_, comm);
+    fragment_->PrepareToRunApp(prepare_conf_, comm);
   }
 
   template <typename T = context_t>
   typename std::enable_if<
       !std::is_base_of<MutationContext<fragment_t>, T>::value>::type
-  processMutation() {}
+  processMutation(CommType&) {}
 
   std::shared_ptr<APP_T> app_;
   std::shared_ptr<context_t> context_;
   std::shared_ptr<fragment_t> fragment_;
   message_manager_t messages_;
 
-  CommSpec comm_spec_;
   PrepareConf prepare_conf_;
+  CommType worker_comm_;
 };
 
 template <typename APP_T>
@@ -206,8 +208,10 @@ template <typename APP_T>
 using AutoWorker =
     Worker<APP_T, AutoParallelMessageManager<typename APP_T::fragment_t>>;
 
+#ifdef USE_MPI
 template <typename APP_T>
 using BatchShuffleWorker = Worker<APP_T, BatchShuffleMessageManager>;
+#endif
 
 }  // namespace grape
 
