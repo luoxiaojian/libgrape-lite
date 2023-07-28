@@ -961,6 +961,7 @@ class AsioCommAllocator {
             resolver.resolve(boost::asio::ip::tcp::v4(),
                              addresses[dst_worker_id], ports[dst_worker_id]);
         auto socket = loop_connect(ioc_, endpoints);
+	socket->set_option(boost::asio::ip::tcp::no_delay(true));
         VLOG(2) << "[worker-" << rank_ << "] connected to [worker-"
                 << dst_worker_id << "]";
         socket->write_some(boost::asio::buffer(&rank_, sizeof(int)));
@@ -976,6 +977,7 @@ class AsioCommAllocator {
            ++src_worker_id) {
         auto socket = std::make_shared<boost::asio::ip::tcp::socket>(ioc_);
         acceptor.accept(*socket);
+	socket->set_option(boost::asio::ip::tcp::no_delay(true));
         int src;
         socket->read_some(boost::asio::buffer(&src, sizeof(int)));
         VLOG(2) << "[worker-" << rank_ << "] accepted from [worker-" << src
