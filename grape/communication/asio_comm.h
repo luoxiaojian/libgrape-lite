@@ -16,7 +16,6 @@
 
 #include "glog/logging.h"
 
-#include "grape/communication/comm_base.h"
 #include "grape/serialization/in_archive.h"
 #include "grape/serialization/out_archive.h"
 #include "grape/utils/concurrent_queue.h"
@@ -471,7 +470,7 @@ class AsioWriter : public std::enable_shared_from_this<AsioWriter> {
   size_t offset_;
 };
 
-class AsioComm : public CommBase {
+class AsioComm {
  public:
   AsioComm()
       : pool_(nullptr),
@@ -542,13 +541,13 @@ class AsioComm : public CommBase {
         barrier_count_(0) {}
 
  public:
-  int rank() const override { return rank_; }
-  int size() const override { return size_; }
+  int rank() const { return rank_; }
+  int size() const { return size_; }
 
-  int local_rank() const override { return local_rank_; }
-  int local_size() const override { return local_size_; }
+  int local_rank() const { return local_rank_; }
+  int local_size() const { return local_size_; }
 
-  void barrier() override {
+  void barrier() {
     ++barrier_count_;
     if (size_ == 1) {
       return;
@@ -565,7 +564,7 @@ class AsioComm : public CommBase {
     }
   }
 
-  void send(int dst, std::vector<char>&& buf, int tag) override {
+  void send(int dst, std::vector<char>&& buf, int tag) {
     CHECK_LT(tag, asio_comm_constants::reserved_tag_base);
     if (dst == rank_) {
       pool_->put(comm_id_, rank_, tag, std::move(buf));
@@ -574,17 +573,17 @@ class AsioComm : public CommBase {
     }
   }
 
-  void send(int dst, const char* buf, size_t count, int tag) override {
+  void send(int dst, const char* buf, size_t count, int tag) {
     std::vector<char> vec(count);
     memcpy(vec.data(), buf, count);
     send(dst, std::move(vec), tag);
   }
 
-  void send(int dst, const std::vector<char>& buf, int tag) override {
+  void send(int dst, const std::vector<char>& buf, int tag) {
     send(dst, buf.data(), buf.size(), tag);
   }
 
-  void send_empty(int dst, int tag) override {
+  void send_empty(int dst, int tag) {
     CHECK_LT(tag, asio_comm_constants::reserved_tag_base);
     if (dst == rank_) {
       pool_->put(comm_id_, rank_, tag, std::vector<char>());
@@ -593,35 +592,35 @@ class AsioComm : public CommBase {
     }
   }
 
-  void wait_send() override {}
+  void wait_send() {}
 
-  void recv(int& src, std::vector<char>& buf, int& tag) override {
+  void recv(int& src, std::vector<char>& buf, int& tag) {
     pool_->take(comm_id_, src, tag, buf);
     CHECK_LT(tag, asio_comm_constants::reserved_tag_base);
   }
 
-  void recv_from(int src, std::vector<char>& buf, int& tag) override {
+  void recv_from(int src, std::vector<char>& buf, int& tag) {
     pool_->take_from(comm_id_, src, tag, buf);
     CHECK_LT(tag, asio_comm_constants::reserved_tag_base);
   }
 
-  void recv_tagged(int& src, std::vector<char>& buf, int tag) override {
+  void recv_tagged(int& src, std::vector<char>& buf, int tag) {
     CHECK_LT(tag, asio_comm_constants::reserved_tag_base);
     pool_->take_tagged(comm_id_, src, tag, buf);
   }
 
-  void recv_from_tagged(int src, std::vector<char>& buf, int tag) override {
+  void recv_from_tagged(int src, std::vector<char>& buf, int tag) {
     CHECK_LT(tag, asio_comm_constants::reserved_tag_base);
     pool_->take_from_tagged(comm_id_, src, tag, buf);
   }
 
-  int64_t sum(int64_t input) override {
+  int64_t sum(int64_t input) {
     int64_t ret;
     sum(&input, &ret, 1);
     return ret;
   }
 
-  void sum(int64_t* input, int64_t* output, size_t count) override {
+  void sum(int64_t* input, int64_t* output, size_t count) {
     static constexpr int sum_tag = std::numeric_limits<int>::max() - 16;
     static constexpr int sum_ack_tag = std::numeric_limits<int>::max() - 15;
     if (rank_ == 0) {
@@ -962,7 +961,7 @@ class AsioCommAllocator {
             resolver.resolve(boost::asio::ip::tcp::v4(),
                              addresses[dst_worker_id], ports[dst_worker_id]);
         auto socket = loop_connect(ioc_, endpoints);
-        socket->set_option(boost::asio::ip::tcp::no_delay(true));
+	socket->set_option(boost::asio::ip::tcp::no_delay(true));
         VLOG(2) << "[worker-" << rank_ << "] connected to [worker-"
                 << dst_worker_id << "]";
         socket->write_some(boost::asio::buffer(&rank_, sizeof(int)));
@@ -978,7 +977,7 @@ class AsioCommAllocator {
            ++src_worker_id) {
         auto socket = std::make_shared<boost::asio::ip::tcp::socket>(ioc_);
         acceptor.accept(*socket);
-        socket->set_option(boost::asio::ip::tcp::no_delay(true));
+	socket->set_option(boost::asio::ip::tcp::no_delay(true));
         int src;
         socket->read_some(boost::asio::buffer(&src, sizeof(int)));
         VLOG(2) << "[worker-" << rank_ << "] accepted from [worker-" << src

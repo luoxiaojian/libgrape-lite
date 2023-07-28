@@ -61,10 +61,9 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
    */
   void Init(CommType&& comm) override {
     comm_ = std::move(comm);
-    comm_ptr_ = dynamic_cast<CommBase*>(&comm_);
 
-    fid_ = comm_ptr_->rank();
-    fnum_ = comm_ptr_->size();
+    fid_ = comm_.rank();
+    fnum_ = comm_.size();
 
     round_ = 0;
 
@@ -115,20 +114,20 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
       while (remaining_frag) {
         std::vector<char> buf;
         int src_worker_id;
-        comm_ptr_->recv_tagged(src_worker_id, buf, round_);
-        if (buf.size() == 1) {
+        comm_.recv_tagged(src_worker_id, buf, round_);
+	if (buf.size() == 1) {
           uint8_t cur_flag = buf[0];
           if (!flag && cur_flag) {
             flag = true;
             recv_queue_.Put(OutArchive());
           }
-          buf.clear();
-          --remaining_frag;
-        } else {
+	  buf.clear();
+	  --remaining_frag;
+	} else {
           flag = true;
           OutArchive arc(std::move(buf));
           recv_queue_.Put(std::move(arc));
-        }
+	}
       }
       recv_queue_.DecProducerNum();
     });
@@ -145,7 +144,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
   /**
    * @brief Inherit
    */
-  void Finalize() override { comm_ptr_->barrier(); }
+  void Finalize() override { comm_.barrier(); }
 
   /**
    * @brief Inherit
@@ -204,7 +203,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
     if (fid == fid_) {
       to_self_[channel_id].emplace_back(std::move(arc));
     } else {
-      comm_ptr_->send(fid, std::move(arc.GetBufferVector()), round_ + 1);
+      comm_.send(fid, std::move(arc.GetBufferVector()), round_ + 1);
     }
   }
 
@@ -409,8 +408,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
     }
     for (fid_t i = 1; i < fnum_; ++i) {
       int dst_fid = (fid_ + i) % fnum_;
-      comm_ptr_->send(dst_fid, reinterpret_cast<const char*>(&flag), 1,
-                      round_ + 1);
+      comm_.send(dst_fid, reinterpret_cast<const char*>(&flag), 1, round_ + 1);
     }
     return ret;
   }
@@ -428,6 +426,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
   fid_t fnum_;
 
   std::vector<std::vector<InArchive>> to_self_;
+  std::vector<InArchive> to_others_;
 
   std::vector<ThreadLocalMessageBuffer<ParallelMessageManagerOpt>> channels_;
   int round_;
@@ -439,7 +438,6 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
   size_t sent_size_;
   size_t total_sent_size_;
 
-  CommBase* comm_ptr_;
   CommType comm_;
 };
 
