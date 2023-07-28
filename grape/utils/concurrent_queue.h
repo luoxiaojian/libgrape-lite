@@ -54,7 +54,6 @@ class BlockingQueue {
     {
       std::unique_lock<std::mutex> lk(lock_);
       --producer_num_;
-      LOG(INFO) << "producer_num = " << producer_num_;
     }
     if (producer_num_ == 0) {
       empty_.notify_all();

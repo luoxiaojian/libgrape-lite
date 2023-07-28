@@ -110,25 +110,30 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
           vec.clear();
         }
       }
-      for (fid_t i = 1; i < fnum_; ++i) {
+      fid_t remaining_frag = fnum_ - 1;
+      while (remaining_frag) {
         std::vector<char> buf;
         int src_worker_id;
         comm_.recv_tagged(src_worker_id, buf, round_);
-        if (buf.size() == 1) {
+	if (buf.size() == 1) {
           uint8_t cur_flag = buf[0];
-          recv_queue_.DecProducerNum();
           if (!flag && cur_flag) {
             flag = true;
             recv_queue_.Put(OutArchive());
           }
-        } else {
+	  buf.clear();
+	  --remaining_frag;
+	} else {
           flag = true;
           OutArchive arc(std::move(buf));
           recv_queue_.Put(std::move(arc));
-        }
+	}
       }
+      recv_queue_.DecProducerNum();
     });
-    if (!recv_queue_.Wait()) {
+    if (force_continue_) {
+      return false;
+    } else if (!recv_queue_.Wait()) {
       recv_thread_.join();
       return true;
     } else {
@@ -395,7 +400,10 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
       channel.Reset();
     }
     uint8_t flag = 0;
-    if (ret > 0 || force_continue_) {
+    if (ret > 0) {
+      force_continue_ = true;
+    }
+    if (force_continue_) {
       flag = 1;
     }
     for (fid_t i = 1; i < fnum_; ++i) {
@@ -411,7 +419,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
       while (recv_queue_.Get(arc)) {}
       recv_thread_.join();
     }
-    recv_queue_.SetProducerNum(fnum_);
+    recv_queue_.SetProducerNum(1);
   }
 
   fid_t fid_;
