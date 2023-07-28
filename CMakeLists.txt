@@ -166,6 +166,7 @@ if (USE_MPI)
 else ()
     find_package(Boost REQUIRED system)
     include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
+    add_definitions(-DUSE_ASIO)
 endif ()
 
 # find Threads------------------------------------------------------------------
@@ -212,7 +213,7 @@ macro(install_libgrapelite_target target)
             ARCHIVE DESTINATION lib
             LIBRARY DESTINATION lib
             RUNTIME DESTINATION bin
-            )
+    )
 endmacro()
 
 # ------------------------------------------------------------------------------
@@ -311,7 +312,7 @@ if (PROFILING)
             DESTINATION include # target directory
             FILES_MATCHING      # install only matched files
             PATTERN "*.h"       # select header files
-            )
+    )
 endif ()
 
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/thirdparty/flat_hash_map
@@ -320,7 +321,7 @@ install(DIRECTORY ${PROJECT_SOURCE_DIR}/thirdparty/flat_hash_map
         FILES_MATCHING
         PATTERN "*.h"
         PATTERN "*.hpp"
-        )
+)
 
 if (WITH_CUDA)
     install(DIRECTORY ${PROJECT_SOURCE_DIR}/thirdparty/cub/cub
@@ -332,19 +333,19 @@ if (WITH_CUDA)
             PATTERN "*.cuh"
             PATTERN "*.hpp"
             PATTERN "*.hxx"
-            )
+    )
     install(DIRECTORY ${PROJECT_SOURCE_DIR}/thirdparty/cuda_hashmap
             DESTINATION include/cuda_hashmap
             FILES_MATCHING
             PATTERN "*.h"
-            )
+    )
 endif ()
 
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/grape
         DESTINATION include
         FILES_MATCHING
         PATTERN "*.h"
-        )
+)
 
 install(DIRECTORY ${EXAMPLES_DIR}/analytical_apps/bfs
         ${EXAMPLES_DIR}/analytical_apps/cdlp
@@ -356,31 +357,31 @@ install(DIRECTORY ${EXAMPLES_DIR}/analytical_apps/bfs
         DESTINATION include/grape/analytical_apps
         FILES_MATCHING
         PATTERN "*.h"
-        )
+)
 
 install(DIRECTORY ${EXAMPLES_DIR}/gnn_sampler
         DESTINATION include/grape/analytical_apps
         FILES_MATCHING
         PATTERN "*.h"
-        )
+)
 
 configure_file(libgrapelite-config.in.cmake
         "${PROJECT_BINARY_DIR}/libgrapelite-config.cmake" @ONLY
-        )
+)
 
 configure_file(libgrapelite-config-version.in.cmake
         "${PROJECT_BINARY_DIR}/libgrapelite-config-version.cmake" @ONLY
-        )
+)
 
 install(FILES "${PROJECT_BINARY_DIR}/libgrapelite-config.cmake"
         "${PROJECT_BINARY_DIR}/libgrapelite-config-version.cmake"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libgrapelite
-        )
+)
 
 install(EXPORT libgrapelite-targets
         FILE libgrapelite-targets.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libgrapelite
-        )
+)
 
 # ------------------------------------------------------------------------------
 # format code

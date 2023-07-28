@@ -223,7 +223,7 @@ class BasicFragmentMutator {
 
     {
       std::vector<std::vector<vid_t>> tmp(comm_.size());
-      comm_.gather(parsed_vertices_to_remove_, tmp);
+      sync_comm::Gather(comm_, parsed_vertices_to_remove_, tmp);
       for (auto& vec : tmp) {
         for (auto& gid : vec) {
           mutation_.vertices_to_remove.emplace_back(gid);
@@ -233,7 +233,7 @@ class BasicFragmentMutator {
     {
       std::vector<std::vector<internal::Vertex<vid_t, vdata_t>>> tmp(
           comm_.size());
-      comm_.gather(parsed_vertices_to_update_, tmp);
+      sync_comm::Gather(comm_, parsed_vertices_to_update_, tmp);
       for (auto& vec : tmp) {
         for (auto& v : vec) {
           mutation_.vertices_to_update.emplace_back(std::move(v));
@@ -243,7 +243,7 @@ class BasicFragmentMutator {
     {
       std::vector<std::vector<internal::Vertex<vid_t, vdata_t>>> tmp(
           comm_.size());
-      comm_.gather(parsed_vertices_to_add_, tmp);
+      sync_comm::Gather(comm_, parsed_vertices_to_add_, tmp);
       for (auto& vec : tmp) {
         for (auto& v : vec) {
           mutation_.vertices_to_add.emplace_back(std::move(v));

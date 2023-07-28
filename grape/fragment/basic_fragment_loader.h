@@ -317,7 +317,7 @@ class BasicFragmentLoader {
       request_gid_lists[fid].emplace_back(fragment->GetOuterVertexGid(v));
     }
     std::vector<std::vector<vid_t>> requested_gid_lists(worker_num);
-    comm_.all_to_all(request_gid_lists, requested_gid_lists);
+    sync_comm::AllToAll(comm_, request_gid_lists, requested_gid_lists);
     std::vector<std::vector<vdata_t>> response_vdata_lists(worker_num);
     for (int i = 0; i < worker_num; ++i) {
       auto& id_vec = requested_gid_lists[i];
@@ -330,7 +330,7 @@ class BasicFragmentLoader {
       }
     }
     std::vector<std::vector<vdata_t>> responsed_vdata_lists(worker_num);
-    comm_.all_to_all(response_vdata_lists, responsed_vdata_lists);
+    sync_comm::AllToAll(comm_, response_vdata_lists, responsed_vdata_lists);
     for (int i = 0; i < worker_num; ++i) {
       auto& id_vec = request_gid_lists[i];
       auto& data_vec = responsed_vdata_lists[i];

@@ -24,6 +24,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "grape/communication/sync_comm.h"
 #include "grape/config.h"
 #include "grape/fragment/partitioner.h"
 #include "grape/graph/id_indexer.h"
@@ -107,7 +108,8 @@ class LocalVertexMapBuilder {
     comm_.barrier();
 
     vertex_map.vertices_num_.resize(fnum_);
-    comm_.gather<VID_T>(oid_to_index_[fid_].size(), vertex_map.vertices_num_);
+    sync_comm::Gather(comm_, static_cast<VID_T>(oid_to_index_[fid_].size()),
+                      vertex_map.vertices_num_);
   }
 
  private:

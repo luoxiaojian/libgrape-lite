@@ -491,7 +491,7 @@ class AppendOnlyEdgecutFragment
 
   void ExtendFragment(CommType& comm, std::vector<std::string>& edge_messages,
                       const LoadGraphSpec& spec) {
-    comm.bcast(edge_messages, kCoordinatorRank);
+    sync_comm::Bcast(comm, edge_messages, kCoordinatorRank);
 
     if (edge_messages.empty()) {
       return;

@@ -113,7 +113,7 @@ int main(int argc, char* argv[]) {
         if (is_coordinator) {
           consumer->ConsumeMessages(query_vertices, edge_msgs);
         }
-        comm.bcast(query_vertices, grape::kCoordinatorRank);
+        grape::sync_comm::Bcast(comm, query_vertices, grape::kCoordinatorRank);
 
         fragment->ExtendFragment(comm, edge_msgs, graph_spec);
         if (!query_vertices.empty()) {

@@ -312,10 +312,11 @@ class DefaultMessageManager : public MessageManagerBase {
     int terminate_flag_sum = comm_.sum(terminate_flag);
     if (terminate_flag_sum > 0) {
       terminate_info_.success = false;
-      comm_.gather(terminate_info_.info[fid_], terminate_info_.info);
+      sync_comm::Gather(comm_, terminate_info_.info[fid_],
+                        terminate_info_.info);
       return true;
     } else {
-      comm_.gather(lengths_out_, lengths_in_);
+      sync_comm::Gather(comm_, lengths_out_, lengths_in_);
       for (auto& vec : lengths_in_) {
         for (auto s : vec) {
           if (s != 0) {

@@ -172,7 +172,8 @@ class BatchShuffleMessageManager : public MessageManagerBase {
     int ret = comm_.sum(flag);
     if (ret > 0) {
       terminate_info_.success = false;
-      comm_.gather(terminate_info_.info[fid_], terminate_info_.info);
+      sync_comm::Gather(comm_, terminate_info_.info[fid_],
+                        terminate_info_.info);
       return true;
     }
     return to_terminate_;
