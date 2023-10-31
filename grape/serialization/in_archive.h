@@ -101,8 +101,7 @@ inline InArchive& operator<<(InArchive& in_archive, const std::string& str) {
   return in_archive;
 }
 
-inline InArchive& operator<<(InArchive& archive,
-                             const nonstd::string_view& str) {
+inline InArchive& operator<<(InArchive& archive, const string_view& str) {
   archive << str.length();
   archive.AddBytes(str.data(), str.length());
   return archive;

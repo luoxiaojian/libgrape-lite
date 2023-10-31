@@ -28,6 +28,7 @@ limitations under the License.
 #include "grape/config.h"
 #include "grape/fragment/partitioner.h"
 #include "grape/graph/id_indexer.h"
+#include "grape/io/local_io_adaptor.h"
 #include "grape/serialization/in_archive.h"
 #include "grape/serialization/out_archive.h"
 #include "grape/vertex_map/vertex_map_base.h"
@@ -251,6 +252,10 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     }
   }
 
+  void Serialize(const std::string& prefix) {
+    Serialize<LocalIOAdaptor>(prefix);
+  }
+
   template <typename IOADAPTOR_T>
   void Deserialize(const std::string& prefix, fid_t fid) {
     char fbuf[1024];
@@ -268,6 +273,10 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
       indexers_[i].Deserialize(io_adaptor);
     }
     io_adaptor->Close();
+  }
+
+  void Deserialize(const std::string& prefix, fid_t fid) {
+    Deserialize<LocalIOAdaptor>(prefix, fid);
   }
 
   void UpdateToBalance(std::vector<VID_T>& vnum_list,
@@ -301,6 +310,14 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
       }
     }
     std::swap(indexers_, new_indexers);
+  }
+
+  size_t memory_usage() const {
+    size_t ret = base_t::memory_usage();
+    for (auto& ind : indexers_) {
+      ret += ind.memory_usage();
+    }
+    return ret;
   }
 
  private:

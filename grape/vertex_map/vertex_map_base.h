@@ -115,6 +115,11 @@ class VertexMapBase {
 
   PARTITIONER_T& GetPartitioner() { return partitioner_; }
 
+  size_t memory_usage() const {
+    return sizeof(CommSpec) + partitioner_.memory_usage() +
+           sizeof(IdParser<VID_T>);
+  }
+
  protected:
   CommSpec comm_spec_;
   PARTITIONER_T partitioner_;

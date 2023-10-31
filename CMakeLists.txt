@@ -73,7 +73,17 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall")
+include(CheckCXXCompilerFlag)
+CHECK_CXX_COMPILER_FLAG("-std=c++17" HAS_STDCXX_17)
+if (HAS_STDCXX_17)
+  message(STATUS "Build with C++17")
+  set(CMAKE_CXX_STANDARD 17)
+else ()
+  message(STATUS "Build with C++14")
+  set(CMAKE_CXX_STANDARD 14)
+endif ()
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -march=native")
 
 
 if (APPLE)

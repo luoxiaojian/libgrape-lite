@@ -59,8 +59,8 @@ inline void GetMemoryUsage(const int proc_id, const std::string& info) {
 
   double pm_usage;
   pm_usage = pagenum * getpagesize() * BYTES_TO_MB;
-  VLOG(2) << "[pid=" << proc_id << "] alloc_size: " << pm_usage << "MB, "
-          << vm_usage << "MB. " << info;
+  LOG(INFO) << "[pid=" << proc_id << "] alloc_size: " << pm_usage << "MB, "
+            << vm_usage << "MB. " << info;
 }
 
 template <typename... Args>
@@ -138,9 +138,20 @@ struct IdenticalHasher<uint64_t> {
   static uint64_t hash(uint64_t x) { return x; }
 };
 
-static inline bool exists_file(const std::string& name) {
+inline bool exists_file(const std::string& name) {
   struct stat buffer;
   return (stat(name.c_str(), &buffer) == 0);
+}
+
+inline size_t file_size(const std::string& name) {
+  if (!exists_file(name)) {
+    return 0;
+  }
+  FILE* fp = fopen(name.c_str(), "rb");
+  fseek(fp, 0, SEEK_END);
+  size_t size = ftell(fp);
+  fclose(fp);
+  return size;
 }
 
 }  // namespace grape

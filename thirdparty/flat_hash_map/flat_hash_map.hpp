@@ -1277,6 +1277,11 @@ public:
 
     int8_t get_max_lookups() const { return max_lookups; }
 
+    size_t memory_usage() const {
+        return (num_slots_minus_one + 1 + max_lookups) * sizeof(Entry) + sizeof(size_t) + sizeof(ska::prime_number_hash_policy)
+        + sizeof(int8_t) + sizeof(float) + sizeof(size_t);
+    }
+
 private:
     EntryPointer entries = Entry::empty_default_table();
     size_t num_slots_minus_one = 0;

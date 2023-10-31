@@ -79,10 +79,14 @@ struct KeyBuffer {
                        MPI_Comm comm) {
     sync_comm::Recv(buffer, src_worker_id, tag, comm);
   }
+
+  static size_t memory_usage(const type& buffer) {
+    return buffer.capacity() * sizeof(T);
+  }
 };
 
 template <>
-struct KeyBuffer<nonstd::string_view> {
+struct KeyBuffer<string_view> {
   using type = StringViewVector;
 
   template <typename IOADAPTOR_T>
@@ -127,6 +131,11 @@ struct KeyBuffer<nonstd::string_view> {
   static void RecvFrom(type& buffer, int src_worker_id, int tag,
                        MPI_Comm comm) {
     sync_comm::Recv(buffer, src_worker_id, tag, comm);
+  }
+
+  static size_t memory_usage(const type& buffer) {
+    return buffer.content_buffer().capacity() * sizeof(char) +
+           buffer.offset_buffer().capacity() * sizeof(size_t);
   }
 };
 
@@ -329,6 +338,18 @@ class IdIndexer {
   const key_buffer_t& keys() const { return keys_; }
 
   key_buffer_t& keys() { return keys_; }
+
+  size_t memory_usage() const {
+    size_t ret = id_indexer_impl::KeyBuffer<KEY_T>::memory_usage(keys_);
+    ret += indices_.capacity() * sizeof(INDEX_T);
+    ret += distances_.capacity() * sizeof(int8_t);
+    ret += sizeof(ska::ska::prime_number_hash_policy);
+    ret += sizeof(int8_t);
+    ret += sizeof(size_t);
+    ret += sizeof(size_t);
+    ret += sizeof(std::hash<KEY_T>);
+    return ret;
+  }
 
   template <typename IOADAPTOR_T>
   void Serialize(std::unique_ptr<IOADAPTOR_T>& writer) {

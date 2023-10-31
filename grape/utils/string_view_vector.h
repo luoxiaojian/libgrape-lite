@@ -30,14 +30,14 @@ class StringViewVector {
   StringViewVector() { offsets_.push_back(0); }
   ~StringViewVector() {}
 
-  void push_back(const nonstd::string_view& val) {
+  void push_back(const string_view& val) {
     size_t old_size = buffer_.size();
     buffer_.resize(old_size + val.size());
     memcpy(&buffer_[old_size], val.data(), val.size());
     offsets_.push_back(buffer_.size());
   }
 
-  void emplace_back(const nonstd::string_view& val) {
+  void emplace_back(const string_view& val) {
     size_t old_size = buffer_.size();
     buffer_.resize(old_size + val.size());
     memcpy(&buffer_[old_size], val.data(), val.size());
@@ -49,10 +49,10 @@ class StringViewVector {
     return offsets_.size() - 1;
   }
 
-  nonstd::string_view operator[](size_t index) const {
+  string_view operator[](size_t index) const {
     size_t from = offsets_[index];
     size_t len = offsets_[index + 1] - from;
-    return nonstd::string_view(&buffer_[from], len);
+    return string_view(&buffer_[from], len);
   }
 
   std::vector<char>& content_buffer() { return buffer_; }

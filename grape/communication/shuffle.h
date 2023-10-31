@@ -67,7 +67,7 @@ struct ShuffleBuffer {
 };
 
 template <>
-struct ShuffleBuffer<nonstd::string_view> {
+struct ShuffleBuffer<string_view> {
   using type = StringViewVector;
 
   static void SendTo(const type& buffer, int dst_worker_id, int tag,

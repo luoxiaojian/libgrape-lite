@@ -20,6 +20,7 @@ limitations under the License.
 
 #include "flat_hash_map/flat_hash_map.hpp"
 #include "grape/config.h"
+#include "grape/types.h"
 
 namespace grape {
 
@@ -34,7 +35,8 @@ class HashPartitioner {
  public:
   HashPartitioner() : fnum_(1) {}
   explicit HashPartitioner(size_t frag_num) : fnum_(frag_num) {}
-  HashPartitioner(size_t frag_num, std::vector<OID_T>&) : fnum_(frag_num) {}
+  HashPartitioner(size_t frag_num, const std::vector<OID_T>&)
+      : fnum_(frag_num) {}
 
   inline fid_t GetPartitionId(const OID_T& oid) const {
     return static_cast<fid_t>(static_cast<uint64_t>(oid) % fnum_);
@@ -70,6 +72,8 @@ class HashPartitioner {
     CHECK(reader->Read(&fnum_, sizeof(fid_t)));
   }
 
+  size_t memory_usage() const { return sizeof(fid_t); }
+
  private:
   fid_t fnum_;
 };
@@ -78,11 +82,11 @@ template <>
 class HashPartitioner<std::string> {
  public:
   using oid_t = std::string;
-  using internal_oid_t = nonstd::string_view;
+  using internal_oid_t = string_view;
 
   HashPartitioner() : fnum_(1) {}
   explicit HashPartitioner(size_t frag_num) : fnum_(frag_num) {}
-  HashPartitioner(size_t frag_num, std::vector<std::string>&)
+  HashPartitioner(size_t frag_num, const std::vector<std::string>&)
       : fnum_(frag_num) {}
 
   inline fid_t GetPartitionId(const internal_oid_t& oid) const {
@@ -130,6 +134,7 @@ class HashPartitioner<std::string> {
   void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
     CHECK(reader->Read(&fnum_, sizeof(fid_t)));
   }
+  size_t memory_usage() const { return sizeof(fid_t); }
 
  private:
   fid_t fnum_;
@@ -146,7 +151,7 @@ class SegmentedPartitioner {
  public:
   SegmentedPartitioner() : fnum_(1) {}
   explicit SegmentedPartitioner(size_t frag_num) : fnum_(frag_num) {}
-  SegmentedPartitioner(size_t frag_num, std::vector<OID_T>& oid_list) {
+  SegmentedPartitioner(size_t frag_num, const std::vector<OID_T>& oid_list) {
     fnum_ = frag_num;
     size_t vnum = oid_list.size();
     size_t frag_vnum = (vnum + fnum_ - 1) / fnum_;
@@ -193,6 +198,8 @@ class SegmentedPartitioner {
     arc >> fnum_ >> o2f_;
   }
 
+  size_t memory_usage() const { return sizeof(fid_t) + o2f_.memory_usage(); }
+
  private:
   fid_t fnum_;
   ska::flat_hash_map<OID_T, fid_t> o2f_;
@@ -201,12 +208,12 @@ class SegmentedPartitioner {
 template <>
 class SegmentedPartitioner<std::string> {
   using oid_t = std::string;
-  using internal_oid_t = nonstd::string_view;
+  using internal_oid_t = string_view;
 
  public:
   SegmentedPartitioner() : fnum_(1) {}
   explicit SegmentedPartitioner(size_t frag_num) : fnum_(frag_num) {}
-  SegmentedPartitioner(size_t frag_num, std::vector<oid_t>& oid_list) {
+  SegmentedPartitioner(size_t frag_num, const std::vector<oid_t>& oid_list) {
     fnum_ = frag_num;
     size_t vnum = oid_list.size();
     size_t frag_vnum = (vnum + fnum_ - 1) / fnum_;
@@ -260,6 +267,8 @@ class SegmentedPartitioner<std::string> {
     CHECK(reader->ReadArchive(arc));
     arc >> fnum_ >> o2f_;
   }
+
+  size_t memory_usage() const { return sizeof(fid_t) + o2f_.memory_usage(); }
 
  private:
   fid_t fnum_;
