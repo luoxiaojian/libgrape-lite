@@ -82,7 +82,7 @@ struct KeyBuffer {
 };
 
 template <>
-struct KeyBuffer<nonstd::string_view> {
+struct KeyBuffer<string_view> {
   using type = StringViewVector;
 
   template <typename IOADAPTOR_T>

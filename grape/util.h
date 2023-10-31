@@ -138,9 +138,20 @@ struct IdenticalHasher<uint64_t> {
   static uint64_t hash(uint64_t x) { return x; }
 };
 
-static inline bool exists_file(const std::string& name) {
+inline bool exists_file(const std::string& name) {
   struct stat buffer;
   return (stat(name.c_str(), &buffer) == 0);
+}
+
+inline size_t file_size(const std::string& name) {
+  if (!exists_file(name)) {
+    return 0;
+  }
+  FILE* fp = fopen(name.c_str(), "rb");
+  fseek(fp, 0, SEEK_END);
+  size_t size = ftell(fp);
+  fclose(fp);
+  return size;
 }
 
 }  // namespace grape

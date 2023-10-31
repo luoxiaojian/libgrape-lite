@@ -158,11 +158,10 @@ inline OutArchive& operator>>(OutArchive& out_archive, std::string& str) {
   return out_archive;
 }
 
-inline OutArchive& operator>>(OutArchive& archive, nonstd::string_view& str) {
+inline OutArchive& operator>>(OutArchive& archive, string_view& str) {
   size_t length;
   archive >> length;
-  str = nonstd::string_view(reinterpret_cast<char*>(archive.GetBytes(length)),
-                            length);
+  str = string_view(reinterpret_cast<char*>(archive.GetBytes(length)), length);
   return archive;
 }
 

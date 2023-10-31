@@ -127,12 +127,18 @@ struct InternalOID {
   static T FromInternal(const type& val) { return val; }
 };
 
+#if __cplusplus >= 201703L
+using string_view = std::string_view;
+#else
+using string_view = nonstd::string_view;
+#endif
+
 template <>
 struct InternalOID<std::string> {
-  using type = nonstd::string_view;
+  using type = string_view;
 
   static type ToInternal(const std::string& val) {
-    return nonstd::string_view(val.data(), val.size());
+    return string_view(val.data(), val.size());
   }
 
   static std::string FromInternal(const type& val) { return std::string(val); }
