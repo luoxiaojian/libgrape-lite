@@ -28,6 +28,7 @@ limitations under the License.
 
 #include "grape/communication/shuffle.h"
 #include "grape/config.h"
+#include "grape/fragment/partitioner.h"
 #include "grape/graph/edge.h"
 #include "grape/graph/vertex.h"
 #include "grape/util.h"
@@ -45,6 +46,8 @@ struct LoadGraphSpec {
   bool directed;
   bool rebalance;
   int rebalance_vertex_factor;
+  PartitionStrategy partition_strategy;
+  LoadStrategy load_strategy;
 
   bool serialize;
   std::string serialization_prefix;
@@ -67,6 +70,12 @@ struct LoadGraphSpec {
     deserialize = flag;
     deserialization_prefix = prefix;
   }
+
+  void set_partition_strategy(PartitionStrategy strategy) {
+    partition_strategy = strategy;
+  }
+
+  void set_load_strategy(LoadStrategy strategy) { load_strategy = strategy; }
 };
 
 inline LoadGraphSpec DefaultLoadGraphSpec() {
@@ -76,6 +85,8 @@ inline LoadGraphSpec DefaultLoadGraphSpec() {
   spec.rebalance_vertex_factor = 0;
   spec.serialize = false;
   spec.deserialize = false;
+  spec.partition_strategy = PartitionStrategy::kHash;
+  spec.load_strategy = LoadStrategy::kOnlyOut;
   return spec;
 }
 
@@ -168,7 +179,7 @@ class BasicFragmentLoader {
 
   bool SerializeFragment(std::shared_ptr<fragment_t>& fragment,
                          const std::string& serialization_prefix) {
-    std::string type_prefix = fragment_t::type_info();
+    std::string type_prefix = fragment_t::type_info(fragment->load_strategy());
     std::string typed_prefix = serialization_prefix + "/" + type_prefix;
     char serial_file[1024];
     snprintf(serial_file, sizeof(serial_file), "%s/%s", typed_prefix.c_str(),
@@ -191,8 +202,9 @@ class BasicFragmentLoader {
   }
 
   bool DeserializeFragment(std::shared_ptr<fragment_t>& fragment,
-                           const std::string& deserialization_prefix) {
-    std::string type_prefix = fragment_t::type_info();
+                           const std::string& deserialization_prefix,
+                           LoadStrategy load_strategy) {
+    std::string type_prefix = fragment_t::type_info(load_strategy);
     std::string typed_prefix = deserialization_prefix + "/" + type_prefix;
     if (!existSerializationFile(typed_prefix)) {
       return false;
@@ -211,7 +223,8 @@ class BasicFragmentLoader {
     }
   }
 
-  void ConstructFragment(std::shared_ptr<fragment_t>& fragment, bool directed) {
+  void ConstructFragment(std::shared_ptr<fragment_t>& fragment,
+                         const LoadGraphSpec& spec) {
     for (auto& va : vertices_to_frag_) {
       va.Flush();
     }
@@ -273,8 +286,8 @@ class BasicFragmentLoader {
     }
 
     fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr_));
-    fragment->Init(comm_spec_.fid(), directed, processed_vertices_,
-                   processed_edges_);
+    fragment->Init(comm_spec_.fid(), spec.directed, spec.load_strategy,
+                   processed_vertices_, processed_edges_);
 
     if (!std::is_same<vdata_t, EmptyType>::value) {
       initOuterVertexData(fragment);

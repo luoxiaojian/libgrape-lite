@@ -50,13 +50,13 @@ class Worker {
 
   using message_manager_t = MESSAGE_MANAGER_T;
 
-  static_assert(check_app_fragment_consistency<APP_T, fragment_t>(),
-                "The loaded graph is not valid for application");
-
   Worker(std::shared_ptr<APP_T> app, std::shared_ptr<fragment_t> graph)
       : app_(app),
         context_(std::make_shared<context_t>(*graph)),
         fragment_(graph) {
+    if (!grape::check_app_fragment_consistency<APP_T>(graph->load_strategy())) {
+      LOG(FATAL) << "The graph is not valid for application";
+    }
     prepare_conf_.message_strategy = APP_T::message_strategy;
     prepare_conf_.need_split_edges = APP_T::need_split_edges;
     prepare_conf_.need_split_edges_by_fragment =

@@ -75,7 +75,7 @@ class EVFragmentLoader {
     CHECK(!spec.rebalance);
     if (spec.deserialize && (!spec.serialize)) {
       bool deserialized = basic_fragment_loader_.DeserializeFragment(
-          fragment, spec.deserialization_prefix);
+          fragment, spec.deserialization_prefix, spec.load_strategy);
       int flag = 0;
       int sum = 0;
       if (!deserialized) {
@@ -93,8 +93,7 @@ class EVFragmentLoader {
       }
     }
 
-    std::vector<oid_t> id_list;
-    std::vector<vdata_t> vdata_list;
+    std::vector<internal::Vertex<oid_t, vdata_t>> vertices;
     if (!vfile.empty()) {
       auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(vfile));
       io_adaptor->Open();
@@ -116,22 +115,37 @@ class EVFragmentLoader {
           VLOG(1) << e.what();
           continue;
         }
-        id_list.push_back(vertex_id);
-        vdata_list.push_back(v_data);
+        vertices.emplace_back(vertex_id, v_data);
       }
       io_adaptor->Close();
     }
+    size_t vnum = vertices.size();
 
-    partitioner_t partitioner(comm_spec_.fnum(), id_list);
+    partitioner_t partitioner;
+    if (spec.partition_strategy == PartitionStrategy::kHash) {
+      partitioner.InitHashPartitioner(comm_spec_.fnum());
+    } else {
+      std::sort(vertices.begin(), vertices.end(),
+                [](const internal::Vertex<oid_t, vdata_t>& lhs,
+                   const internal::Vertex<oid_t, vdata_t>& rhs) {
+                  return lhs.vid < rhs.vid;
+                });
+      std::vector<oid_t> spliters;
+      size_t chunk = (vnum + comm_spec_.fnum() - 1) / comm_spec_.fnum();
+      for (fid_t k = 1; k != comm_spec_.fnum(); ++k) {
+        spliters.push_back(vertices[k * chunk].vid);
+      }
+
+      partitioner.InitSegmentedPartitioner(spliters);
+    }
 
     basic_fragment_loader_.SetPartitioner(std::move(partitioner));
 
     basic_fragment_loader_.Start();
 
     {
-      size_t vnum = id_list.size();
       for (size_t i = 0; i < vnum; ++i) {
-        basic_fragment_loader_.AddVertex(id_list[i], vdata_list[i]);
+        basic_fragment_loader_.AddVertex(vertices[i].vid, vertices[i].vdata);
       }
     }
 
@@ -170,7 +184,7 @@ class EVFragmentLoader {
     VLOG(1) << "[worker-" << comm_spec_.worker_id()
             << "] finished add vertices and edges";
 
-    basic_fragment_loader_.ConstructFragment(fragment, spec.directed);
+    basic_fragment_loader_.ConstructFragment(fragment, spec);
 
     if (spec.serialize) {
       bool serialized = basic_fragment_loader_.SerializeFragment(

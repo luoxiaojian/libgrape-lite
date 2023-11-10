@@ -65,14 +65,12 @@ inline void CalculateOffsetWithPrefixSum(const Stream& stream,
 }
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
-          grape::LoadStrategy _load_strategy = grape::LoadStrategy::kOnlyOut,
           typename VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T>>
-class HostFragment
-    : public ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                      _load_strategy, VERTEX_MAP_T> {
+class HostFragment : public ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T,
+                                                     EDATA_T, VERTEX_MAP_T> {
  public:
-  using base_t = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                          _load_strategy, VERTEX_MAP_T>;
+  using base_t =
+      ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, VERTEX_MAP_T>;
   using internal_vertex_t = typename base_t::internal_vertex_t;
   using edge_t = typename base_t::edge_t;
   using nbr_t = typename base_t::nbr_t;
@@ -90,23 +88,21 @@ class HostFragment
   using dev_vertex_map_t = cuda::DeviceVertexMap<vertex_map_t>;
   using inner_vertices_t = typename base_t::inner_vertices_t;
   using outer_vertices_t = typename base_t::outer_vertices_t;
-  using device_t =
-      dev::DeviceFragment<OID_T, VID_T, VDATA_T, EDATA_T, _load_strategy>;
+  using device_t = dev::DeviceFragment<OID_T, VID_T, VDATA_T, EDATA_T>;
   using coo_t = COOFragment<oid_t, vid_t, vdata_t, edata_t>;
 
   using IsEdgeCut = std::true_type;
   using IsVertexCut = std::false_type;
-
-  static constexpr grape::LoadStrategy load_strategy = _load_strategy;
 
   HostFragment() = default;
 
   explicit HostFragment(std::shared_ptr<vertex_map_t> vm_ptr)
       : FragmentBase<OID_T, VID_T, VDATA_T, EDATA_T, traits_t>(vm_ptr) {}
 
-  void Init(fid_t fid, bool directed, std::vector<internal_vertex_t>& vertices,
+  void Init(fid_t fid, bool directed, LoadStrategy load_strategy,
+            std::vector<internal_vertex_t>& vertices,
             std::vector<edge_t>& edges) {
-    base_t::Init(fid, directed, vertices, edges);
+    base_t::Init(fid, directed, load_strategy, vertices, edges);
     __allocate_device_fragment__();
   }
 
@@ -152,7 +148,7 @@ class HostFragment
             return prefix_sum;
           };
       // Engage incoming edges for outer vertices.
-      if (load_strategy == grape::LoadStrategy::kOnlyOut) {
+      if (this->load_strategy() == grape::LoadStrategy::kOnlyOut) {
         d_ieoffset_.resize(offset_size);
         d_ie_.resize(ie_.edge_num());
         CHECK_CUDA(cudaMemcpyAsync(thrust::raw_pointer_cast(d_ie_.data()),
@@ -167,7 +163,7 @@ class HostFragment
             stream, d_prefix_sum, thrust::raw_pointer_cast(d_ie_.data()),
             thrust::raw_pointer_cast(d_ieoffset_.data()));
       }
-      if (load_strategy == grape::LoadStrategy::kOnlyIn) {
+      if (this->load_strategy() == grape::LoadStrategy::kOnlyIn) {
         d_oeoffset_.resize(offset_size);
         d_oe_.resize(oe_.edge_num());
         CHECK_CUDA(cudaMemcpyAsync(thrust::raw_pointer_cast(d_oe_.data()),
@@ -192,14 +188,14 @@ class HostFragment
     }
 
     if (conf.need_split_edges_by_fragment) {
-      if (load_strategy == grape::LoadStrategy::kOnlyIn ||
-          load_strategy == grape::LoadStrategy::kBothOutIn) {
+      if (this->load_strategy() == grape::LoadStrategy::kOnlyIn ||
+          this->load_strategy() == grape::LoadStrategy::kBothOutIn) {
         __init_edges_splitter_by_fragment__(
             stream, ie_.get_offsets(), iespliters_, d_ieoffset_,
             d_iespliters_holder_, d_iespliters_);
       }
-      if (load_strategy == grape::LoadStrategy::kOnlyOut ||
-          load_strategy == grape::LoadStrategy::kBothOutIn) {
+      if (this->load_strategy() == grape::LoadStrategy::kOnlyOut ||
+          this->load_strategy() == grape::LoadStrategy::kBothOutIn) {
         __init_edges_splitter_by_fragment__(
             stream, oe_.get_offsets(), oespliters_, d_oeoffset_,
             d_oespliters_holder_, d_oespliters_);
@@ -345,8 +341,8 @@ class HostFragment
           return prefix_sum;
         };
 
-    if (load_strategy == grape::LoadStrategy::kOnlyIn ||
-        load_strategy == grape::LoadStrategy::kBothOutIn) {
+    if (this->load_strategy() == grape::LoadStrategy::kOnlyIn ||
+        this->load_strategy() == grape::LoadStrategy::kBothOutIn) {
       d_ieoffset_.resize(offset_size);
       d_ie_.resize(ie_.edge_num());
       CHECK_CUDA(cudaMemcpyAsync(thrust::raw_pointer_cast(d_ie_.data()),
@@ -361,8 +357,8 @@ class HostFragment
           thrust::raw_pointer_cast(d_ieoffset_.data()));
     }
 
-    if (load_strategy == grape::LoadStrategy::kOnlyOut ||
-        load_strategy == grape::LoadStrategy::kBothOutIn) {
+    if (this->load_strategy() == grape::LoadStrategy::kOnlyOut ||
+        this->load_strategy() == grape::LoadStrategy::kBothOutIn) {
       d_oeoffset_.resize(offset_size);
       d_oe_.resize(oe_.edge_num());
       CHECK_CUDA(cudaMemcpyAsync(thrust::raw_pointer_cast(d_oe_.data()),
@@ -454,16 +450,16 @@ class HostFragment
     auto& ie = ie_.get_edges();
     auto& oe = oe_.get_edges();
     Stream stream;
-    if (load_strategy == grape::LoadStrategy::kOnlyIn ||
-        load_strategy == grape::LoadStrategy::kBothOutIn) {
+    if (this->load_strategy() == grape::LoadStrategy::kOnlyIn ||
+        this->load_strategy() == grape::LoadStrategy::kBothOutIn) {
       d_ie_.resize(ie_.edge_num());
       CHECK_CUDA(cudaMemcpyAsync(thrust::raw_pointer_cast(d_ie_.data()),
                                  ie.data(), sizeof(nbr_t) * ie_.edge_num(),
                                  cudaMemcpyHostToDevice, stream.cuda_stream()));
     }
 
-    if (load_strategy == grape::LoadStrategy::kOnlyOut ||
-        load_strategy == grape::LoadStrategy::kBothOutIn) {
+    if (this->load_strategy() == grape::LoadStrategy::kOnlyOut ||
+        this->load_strategy() == grape::LoadStrategy::kBothOutIn) {
       d_oe_.resize(oe_.edge_num());
       CHECK_CUDA(cudaMemcpyAsync(thrust::raw_pointer_cast(d_oe_.data()),
                                  oe.data(), sizeof(nbr_t) * oe_.edge_num(),

@@ -22,6 +22,7 @@ limitations under the License.
 #include "grape/graph/adj_list.h"
 #include "grape/graph/edge.h"
 #include "grape/graph/vertex.h"
+#include "grape/types.h"
 #include "grape/worker/comm_spec.h"
 
 namespace grape {
@@ -66,9 +67,10 @@ class FragmentBase {
   const std::shared_ptr<vertex_map_t> GetVertexMap() const { return vm_ptr_; }
 
  protected:
-  void init(fid_t fid, bool directed) {
+  void init(fid_t fid, bool directed, LoadStrategy load_strategy) {
     fid_ = fid;
     directed_ = directed;
+    load_strategy_ = load_strategy;
     fnum_ = vm_ptr_->GetFragmentNum();
     id_parser_.init(fnum_);
     ivnum_ = vm_ptr_->GetInnerVertexSize(fid);
@@ -82,7 +84,7 @@ class FragmentBase {
    * @param vertices A set of vertices.
    * @param edges A set of edges.
    */
-  virtual void Init(fid_t fid, bool directed,
+  virtual void Init(fid_t fid, bool directed, LoadStrategy load_strategy,
                     std::vector<internal::Vertex<VID_T, VDATA_T>>& vertices,
                     std::vector<Edge<VID_T, EDATA_T>>& edges) = 0;
 
@@ -101,6 +103,8 @@ class FragmentBase {
    * @return true if the fragment is directed, false otherwise.
    */
   bool directed() const { return directed_; }
+
+  LoadStrategy load_strategy() const { return load_strategy_; }
 
   /**
    * @brief Returns the ID of this fragment.
@@ -309,7 +313,8 @@ class FragmentBase {
   template <typename IOADAPTOR_T>
   void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
     InArchive arc;
-    arc << fid_ << fnum_ << directed_ << ivnum_ << vertices_;
+    int ils = underlying_value(load_strategy_);
+    arc << fid_ << fnum_ << directed_ << ils << ivnum_ << vertices_;
     CHECK(writer->WriteArchive(arc));
   }
 
@@ -317,12 +322,15 @@ class FragmentBase {
   void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
     OutArchive arc;
     CHECK(reader->ReadArchive(arc));
-    arc >> fid_ >> fnum_ >> directed_ >> ivnum_ >> vertices_;
+    int ils;
+    arc >> fid_ >> fnum_ >> directed_ >> ils >> ivnum_ >> vertices_;
+    load_strategy_ = static_cast<LoadStrategy>(ils);
     id_parser_.init(fnum_);
   }
 
   fid_t fid_, fnum_;
   bool directed_;
+  LoadStrategy load_strategy_;
   VID_T ivnum_;
 
   vertices_t vertices_;

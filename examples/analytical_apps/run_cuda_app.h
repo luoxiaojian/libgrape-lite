@@ -155,51 +155,29 @@ void CreateAndQueryWithPreprocess(const grape::CommSpec& comm_spec,
   } else if (FLAGS_serialize) {
     graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
-  if (FLAGS_segmented_partition) {
-    using VERTEX_MAP_T =
-        GlobalVertexMap<OID_T, VID_T, SegmentedPartitioner<OID_T>>;
-    using FRAG_T = grape::cuda::HostFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                             load_strategy, VERTEX_MAP_T>;
-    std::shared_ptr<FRAG_T> fragment;
-    int dev_id = comm_spec.local_id();
-    int dev_count;
+  graph_spec.set_segmented_partition(FLAGS_segmented_partition
+                                         ? grape::PartitionStrategy::kSegmented
+                                         : grape::PartitionStrategy::kHash);
+  using VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T>;
+  using FRAG_T = grape::cuda::HostFragment<OID_T, VID_T, VDATA_T, EDATA_T,
+                                           load_strategy, VERTEX_MAP_T>;
+  std::shared_ptr<FRAG_T> fragment;
+  int dev_id = comm_spec.local_id();
+  int dev_count;
 
-    CHECK_CUDA(cudaGetDeviceCount(&dev_count));
-    CHECK_LE(comm_spec.local_num(), dev_count)
-        << "Only found " << dev_count << " GPUs, but " << comm_spec.local_num()
-        << " processes are launched";
-    CHECK_CUDA(cudaSetDevice(dev_id));
-    fragment = LoadGraph<FRAG_T>(efile, vfile, comm_spec, graph_spec);
+  CHECK_CUDA(cudaGetDeviceCount(&dev_count));
+  CHECK_LE(comm_spec.local_num(), dev_count)
+      << "Only found " << dev_count << " GPUs, but " << comm_spec.local_num()
+      << " processes are launched";
+  CHECK_CUDA(cudaSetDevice(dev_id));
+  fragment = LoadGraph<FRAG_T>(efile, vfile, comm_spec, graph_spec);
 
-    auto app = std::make_shared<APP_T<FRAG_T>>();
-    auto pre = std::make_shared<PRE_T<FRAG_T>>();
-    DoPreprocess<FRAG_T, PRE_T<FRAG_T>, Args...>(fragment, pre, comm_spec,
-                                                 dev_id, out_prefix, args...);
-    DoQuery<FRAG_T, APP_T<FRAG_T>, Args...>(fragment, app, comm_spec, dev_id,
-                                            out_prefix, args...);
-  } else {
-    graph_spec.set_rebalance(false, 0);
-    using VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T, HashPartitioner<OID_T>>;
-    using FRAG_T = grape::cuda::HostFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                             load_strategy, VERTEX_MAP_T>;
-    std::shared_ptr<FRAG_T> fragment;
-    int dev_id = comm_spec.local_id();
-    int dev_count;
-
-    CHECK_CUDA(cudaGetDeviceCount(&dev_count));
-    CHECK_LE(comm_spec.local_num(), dev_count)
-        << "Only found " << dev_count << " GPUs, but " << comm_spec.local_num()
-        << " processes are launched";
-    CHECK_CUDA(cudaSetDevice(dev_id));
-    fragment = LoadGraph<FRAG_T>(efile, vfile, comm_spec, graph_spec);
-
-    auto app = std::make_shared<APP_T<FRAG_T>>();
-    auto pre = std::make_shared<PRE_T<FRAG_T>>();
-    DoPreprocess<FRAG_T, PRE_T<FRAG_T>, Args...>(fragment, pre, comm_spec,
-                                                 dev_id, out_prefix, args...);
-    DoQuery<FRAG_T, APP_T<FRAG_T>, Args...>(fragment, app, comm_spec, dev_id,
-                                            out_prefix, args...);
-  }
+  auto app = std::make_shared<APP_T<FRAG_T>>();
+  auto pre = std::make_shared<PRE_T<FRAG_T>>();
+  DoPreprocess<FRAG_T, PRE_T<FRAG_T>, Args...>(fragment, pre, comm_spec, dev_id,
+                                               out_prefix, args...);
+  DoQuery<FRAG_T, APP_T<FRAG_T>, Args...>(fragment, app, comm_spec, dev_id,
+                                          out_prefix, args...);
 }
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
@@ -220,45 +198,26 @@ void CreateAndQuery(const grape::CommSpec& comm_spec, const std::string& efile,
   } else if (FLAGS_serialize) {
     graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
-  if (FLAGS_segmented_partition) {
-    using VERTEX_MAP_T =
-        GlobalVertexMap<OID_T, VID_T, SegmentedPartitioner<OID_T>>;
-    using FRAG_T = grape::cuda::HostFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                             load_strategy, VERTEX_MAP_T>;
-    std::shared_ptr<FRAG_T> fragment;
-    int dev_id = comm_spec.local_id();
-    int dev_count;
+  graph_spec.set_segmented_partition(FLAGS_segmented_partition
+                                         ? grape::PartitionStrategy::kSegmented
+                                         : grape::PartitionStrategy::kHash);
+  using VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T>;
+  using FRAG_T = grape::cuda::HostFragment<OID_T, VID_T, VDATA_T, EDATA_T,
+                                           load_strategy, VERTEX_MAP_T>;
+  std::shared_ptr<FRAG_T> fragment;
+  int dev_id = comm_spec.local_id();
+  int dev_count;
 
-    CHECK_CUDA(cudaGetDeviceCount(&dev_count));
-    CHECK_LE(comm_spec.local_num(), dev_count)
-        << "Only found " << dev_count << " GPUs, but " << comm_spec.local_num()
-        << " processes are launched";
-    CHECK_CUDA(cudaSetDevice(dev_id));
-    fragment = LoadGraph<FRAG_T>(efile, vfile, comm_spec, graph_spec);
+  CHECK_CUDA(cudaGetDeviceCount(&dev_count));
+  CHECK_LE(comm_spec.local_num(), dev_count)
+      << "Only found " << dev_count << " GPUs, but " << comm_spec.local_num()
+      << " processes are launched";
+  CHECK_CUDA(cudaSetDevice(dev_id));
+  fragment = LoadGraph<FRAG_T>(efile, vfile, comm_spec, graph_spec);
 
-    auto app = std::make_shared<APP_T<FRAG_T>>();
-    DoQuery<FRAG_T, APP_T<FRAG_T>, Args...>(fragment, app, comm_spec, dev_id,
-                                            out_prefix, args...);
-  } else {
-    graph_spec.set_rebalance(false, 0);
-    using VERTEX_MAP_T = GlobalVertexMap<OID_T, VID_T, HashPartitioner<OID_T>>;
-    using FRAG_T = grape::cuda::HostFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                             load_strategy, VERTEX_MAP_T>;
-    std::shared_ptr<FRAG_T> fragment;
-    int dev_id = comm_spec.local_id();
-    int dev_count;
-
-    CHECK_CUDA(cudaGetDeviceCount(&dev_count));
-    CHECK_LE(comm_spec.local_num(), dev_count)
-        << "Only found " << dev_count << " GPUs, but " << comm_spec.local_num()
-        << " processes are launched";
-    CHECK_CUDA(cudaSetDevice(dev_id));
-    fragment = LoadGraph<FRAG_T>(efile, vfile, comm_spec, graph_spec);
-
-    auto app = std::make_shared<APP_T<FRAG_T>>();
-    DoQuery<FRAG_T, APP_T<FRAG_T>, Args...>(fragment, app, comm_spec, dev_id,
-                                            out_prefix, args...);
-  }
+  auto app = std::make_shared<APP_T<FRAG_T>>();
+  DoQuery<FRAG_T, APP_T<FRAG_T>, Args...>(fragment, app, comm_spec, dev_id,
+                                          out_prefix, args...);
 }
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>

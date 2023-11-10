@@ -90,8 +90,7 @@ class EVFragmentRebalanceLoader {
       }
     }
 
-    std::vector<oid_t> id_list;
-    std::vector<vdata_t> vdata_list;
+    std::vector<internal::Vertex<oid_t, vdata_t>> vertices;
 
     CHECK(!vfile.empty());
     {
@@ -115,14 +114,31 @@ class EVFragmentRebalanceLoader {
           VLOG(1) << e.what();
           continue;
         }
-        id_list.push_back(vertex_id);
-        vdata_list.push_back(v_data);
+        vertices.emplace_back(vertex_id, v_data);
       }
       io_adaptor->Close();
     }
 
+    partitioner_t partitioner;
+    if (spec.partition_strategy == PartitionStrategy::kHash) {
+      partitioner.InitHashPartitioner(comm_spec_.fnum());
+    } else {
+      std::sort(vertices.begin(), vertices.end(),
+                [](const internal::Vertex<oid_t, vdata_t>& lhs,
+                   const internal::Vertex<oid_t, vdata_t>& rhs) {
+                  return lhs.vid < rhs.vid;
+                });
+      size_t vnum = vertices.size();
+      std::vector<oid_t> spliters;
+      size_t chunk = (vnum + comm_spec_.fnum() - 1) / comm_spec_.fnum();
+      for (fid_t k = 1; k != comm_spec_.fnum(); ++k) {
+        spliters.push_back(vertices[k * chunk].vid);
+      }
+
+      partitioner.InitSegmentedPartitioner(spliters);
+    }
+
     fid_t fnum = comm_spec_.fnum();
-    partitioner_t partitioner(fnum, id_list);
 
     std::shared_ptr<vertex_map_t> vm_ptr =
         std::make_shared<vertex_map_t>(comm_spec_);
@@ -130,8 +146,8 @@ class EVFragmentRebalanceLoader {
     vm_ptr->Init();
     auto builder = vm_ptr->GetLocalBuilder();
 
-    for (auto id : id_list) {
-      builder.add_vertex(id);
+    for (auto& v : vertices) {
+      builder.add_vertex(v.vid);
     }
     builder.finish(*vm_ptr);
 
@@ -330,28 +346,28 @@ class EVFragmentRebalanceLoader {
       });
     }
 
-    size_t vertex_num = id_list.size();
+    size_t vertex_num = vertices.size();
     if (!std::is_same<vdata_t, EmptyType>::value) {
       for (size_t i = 0; i < vertex_num; ++i) {
         vid_t gid;
-        CHECK(vm_ptr->GetGid(id_list[i], gid));
+        CHECK(vm_ptr->GetGid(vertices[i].vid, gid));
         fid_t fid = vm_ptr->GetFidFromGid(gid);
         if (fid == comm_spec_.fid()) {
-          processed_vertices.emplace_back(gid, vdata_list[i]);
+          processed_vertices.emplace_back(gid, vertices[i].vdata);
         }
       }
     }
 
     fragment = std::shared_ptr<fragment_t>(new fragment_t(vm_ptr));
-    fragment->Init(comm_spec_.fid(), spec.directed, processed_vertices,
-                   processed_edges);
+    fragment->Init(comm_spec_.fid(), spec.directed, spec.load_strategy,
+                   processed_vertices, processed_edges);
 
     if (!std::is_same<vdata_t, EmptyType>::value) {
       for (size_t i = 0; i < vertex_num; ++i) {
         typename fragment_t::vertex_t v;
-        if (fragment->GetVertex(id_list[i], v)) {
+        if (fragment->GetVertex(vertices[i].vid, v)) {
           if (fragment->IsOuterVertex(v)) {
-            fragment->SetData(v, vdata_list[i]);
+            fragment->SetData(v, vertices[i].vdata);
           }
         }
       }
@@ -382,7 +398,7 @@ class EVFragmentRebalanceLoader {
 
   bool deserializeFragment(std::shared_ptr<fragment_t>& fragment,
                            const LoadGraphSpec& spec) {
-    std::string type_prefix = fragment_t::type_info();
+    std::string type_prefix = fragment_t::type_info(spec.load_strategy);
     CHECK(spec.rebalance);
     type_prefix += ("_rb_" + std::to_string(spec.rebalance_vertex_factor));
     std::string typed_prefix = spec.deserialization_prefix + "/" + type_prefix;
@@ -408,7 +424,7 @@ class EVFragmentRebalanceLoader {
   bool serializeFragment(std::shared_ptr<fragment_t> fragment,
                          std::shared_ptr<vertex_map_t> vm_ptr,
                          const LoadGraphSpec& spec) {
-    std::string type_prefix = fragment_t::type_info();
+    std::string type_prefix = fragment_t::type_info(spec.load_strategy);
     CHECK(spec.rebalance);
     type_prefix += ("_rb_" + std::to_string(spec.rebalance_vertex_factor));
     std::string typed_prefix = spec.serialization_prefix + "/" + type_prefix;

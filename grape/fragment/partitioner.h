@@ -18,171 +18,73 @@ limitations under the License.
 
 #include <vector>
 
-#include "flat_hash_map/flat_hash_map.hpp"
 #include "grape/config.h"
+#include "grape/types.h"
+#include "murmurhash/murmurhash.h"
 
 namespace grape {
 
-/**
- * @brief HashPartitoner is a partitioner with the strategy of hashing on
- * original vertex_ids.
- *
- * @tparam OID_T
- */
+#define USE_MURMUR_HASH
+
+static constexpr fid_t INVALID_PARTITION_ID = std::numeric_limits<fid_t>::max();
+
+enum class PartitionStrategy { kHash, kSegmented };
+
 template <typename OID_T>
-class HashPartitioner {
+class Partitioner {
  public:
-  HashPartitioner() : fnum_(1) {}
-  explicit HashPartitioner(size_t frag_num) : fnum_(frag_num) {}
-  HashPartitioner(size_t frag_num, std::vector<OID_T>&) : fnum_(frag_num) {}
+  using oid_t = OID_T;
 
-  inline fid_t GetPartitionId(const OID_T& oid) const {
-    return static_cast<fid_t>(static_cast<uint64_t>(oid) % fnum_);
-  }
+  Partitioner() : fnum_(0) {}
+  ~Partitioner() = default;
 
-  void SetPartitionId(const OID_T& oid, fid_t fid) {
-    LOG(FATAL) << "not support";
-  }
-
-  HashPartitioner& operator=(const HashPartitioner& other) {
-    if (this == &other) {
-      return *this;
-    }
-    fnum_ = other.fnum_;
-    return *this;
-  }
-
-  HashPartitioner& operator=(HashPartitioner&& other) {
-    if (this == &other) {
-      return *this;
-    }
-    fnum_ = other.fnum_;
-    return *this;
-  }
-
-  template <typename IOADAPTOR_T>
-  void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
-    CHECK(writer->Write(&fnum_, sizeof(fid_t)));
-  }
-
-  template <typename IOADAPTOR_T>
-  void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
-    CHECK(reader->Read(&fnum_, sizeof(fid_t)));
-  }
-
- private:
-  fid_t fnum_;
-};
-
-template <>
-class HashPartitioner<std::string> {
- public:
-  using oid_t = std::string;
-  using internal_oid_t = nonstd::string_view;
-
-  HashPartitioner() : fnum_(1) {}
-  explicit HashPartitioner(size_t frag_num) : fnum_(frag_num) {}
-  HashPartitioner(size_t frag_num, std::vector<std::string>&)
-      : fnum_(frag_num) {}
-
-  inline fid_t GetPartitionId(const internal_oid_t& oid) const {
-    return static_cast<fid_t>(
-        static_cast<uint64_t>(std::hash<internal_oid_t>()(oid) % fnum_));
-  }
-
-  inline fid_t GetPartitionId(const oid_t& oid) const {
-    internal_oid_t internal_oid(oid);
-    return GetPartitionId(internal_oid);
-  }
-
-  void SetPartitionId(const oid_t& oid, fid_t fid) {
-    LOG(FATAL) << "not support";
-  }
-
-  void SetPartitionId(const internal_oid_t& oid, fid_t fid) {
-    LOG(FATAL) << "not support";
-  }
-
-  HashPartitioner& operator=(const HashPartitioner& other) {
-    if (this == &other) {
-      return *this;
-    }
-    fnum_ = other.fnum_;
-    return *this;
-  }
-
-  HashPartitioner(const HashPartitioner& other) { fnum_ = other.fnum_; }
-
-  HashPartitioner& operator=(HashPartitioner&& other) {
-    if (this == &other) {
-      return *this;
-    }
-    fnum_ = other.fnum_;
-    return *this;
-  }
-
-  template <typename IOADAPTOR_T>
-  void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
-    CHECK(writer->Write(&fnum_, sizeof(fid_t)));
-  }
-
-  template <typename IOADAPTOR_T>
-  void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
-    CHECK(reader->Read(&fnum_, sizeof(fid_t)));
-  }
-
- private:
-  fid_t fnum_;
-};
-
-/**
- * @brief SegmentedPartitioner is a partitioner with a strategy of chunking
- * original vertex_ids.
- *
- * @tparam OID_T
- */
-template <typename OID_T>
-class SegmentedPartitioner {
- public:
-  SegmentedPartitioner() : fnum_(1) {}
-  explicit SegmentedPartitioner(size_t frag_num) : fnum_(frag_num) {}
-  SegmentedPartitioner(size_t frag_num, std::vector<OID_T>& oid_list) {
+  void InitHashPartitioner(size_t frag_num, uint64_t seed = 0x11151115) {
     fnum_ = frag_num;
-    size_t vnum = oid_list.size();
-    size_t frag_vnum = (vnum + fnum_ - 1) / fnum_;
-    o2f_.reserve(vnum);
-    for (size_t i = 0; i < vnum; ++i) {
-      fid_t fid = static_cast<fid_t>(i / frag_vnum);
-      o2f_.emplace(oid_list[i], fid);
+    spliters_.clear();
+    seed_ = seed;
+  }
+
+  void InitSegmentedPartitioner(const std::vector<OID_T>& spliters) {
+    spliters_ = spliters;
+    if (spliters_.empty()) {
+      fnum_ = 1;
+    } else {
+      fnum_ = 0;
     }
   }
 
-  inline fid_t GetPartitionId(const OID_T& oid) const { return o2f_.at(oid); }
-
-  void SetPartitionId(const OID_T& oid, fid_t fid) { o2f_[oid] = fid; }
-
-  SegmentedPartitioner& operator=(const SegmentedPartitioner& other) {
-    if (this == &other) {
-      return *this;
+  fid_t GetPartitionId(const OID_T& oid) const {
+    if (fnum_) {
+#ifdef USE_MURMUR_HASH
+      return static_cast<fid_t>(
+          MurmurHash2_64(reinterpret_cast<const char*>(&oid), sizeof(OID_T),
+                         seed_) %
+          fnum_);
+#else
+      return hash_func_(oid) % fnum_;
+#endif
+    } else if (!spliters_.empty()) {
+      auto iter = std::upper_bound(spliters_.begin(), spliters_.end(), oid);
+      if (iter == spliters_.end()) {
+        return spliters_.size();
+      } else {
+        return iter - spliters_.begin();
+      }
     }
-    fnum_ = other.fnum_;
-    o2f_ = other.o2f_;
-    return *this;
+    return INVALID_PARTITION_ID;
   }
 
-  SegmentedPartitioner& operator=(SegmentedPartitioner&& other) {
-    if (this == &other) {
-      return *this;
-    }
-    fnum_ = other.fnum_;
-    o2f_ = std::move(other.o2f_);
-    return *this;
+  bool valid() const { return fnum_ > 0 || !spliters_.empty(); }
+
+  void reset() {
+    fnum_ = 0;
+    spliters_.clear();
   }
 
   template <typename IOADAPTOR_T>
   void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
     InArchive arc;
-    arc << fnum_ << o2f_;
+    arc << fnum_ << spliters_ << seed_;
     CHECK(writer->WriteArchive(arc));
   }
 
@@ -190,67 +92,100 @@ class SegmentedPartitioner {
   void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
     OutArchive arc;
     CHECK(reader->ReadArchive(arc));
-    arc >> fnum_ >> o2f_;
+    arc >> fnum_ >> spliters_ >> seed_;
   }
 
  private:
   fid_t fnum_;
-  ska::flat_hash_map<OID_T, fid_t> o2f_;
+  std::vector<OID_T> spliters_;
+  uint64_t seed_;
+#ifndef USE_MURMUR_HASH
+  std::hash<OID_T> hash_func_;
+#endif
 };
 
 template <>
-class SegmentedPartitioner<std::string> {
-  using oid_t = std::string;
-  using internal_oid_t = nonstd::string_view;
-
+class Partitioner<std::string> {
  public:
-  SegmentedPartitioner() : fnum_(1) {}
-  explicit SegmentedPartitioner(size_t frag_num) : fnum_(frag_num) {}
-  SegmentedPartitioner(size_t frag_num, std::vector<oid_t>& oid_list) {
+  using oid_t = std::string;
+  Partitioner() : fnum_(0) {}
+  ~Partitioner() = default;
+
+  void InitHashPartitioner(size_t frag_num, uint64_t seed = 0x11151115) {
     fnum_ = frag_num;
-    size_t vnum = oid_list.size();
-    size_t frag_vnum = (vnum + fnum_ - 1) / fnum_;
-    o2f_.reserve(vnum);
-    for (size_t i = 0; i < vnum; ++i) {
-      fid_t fid = static_cast<fid_t>(i / frag_vnum);
-      o2f_.emplace(oid_list[i], fid);
+    spliters_.clear();
+    seed_ = seed;
+  }
+
+  void InitSegmentedPartitioner(const std::vector<std::string>& spliters) {
+    spliters_ = spliters;
+    if (spliters_.empty()) {
+      fnum_ = 1;
+    } else {
+      fnum_ = 0;
     }
   }
 
-  inline fid_t GetPartitionId(const oid_t& oid) const { return o2f_.at(oid); }
-
-  inline fid_t GetPartitionId(const internal_oid_t& oid) const {
-    return o2f_.at(std::string(oid));
-  }
-
-  void SetPartitionId(const oid_t& oid, fid_t fid) { o2f_[oid] = fid; }
-
-  void SetPartitionId(const internal_oid_t& oid, fid_t fid) {
-    o2f_[std::string(oid)] = fid;
-  }
-
-  SegmentedPartitioner& operator=(const SegmentedPartitioner& other) {
-    if (this == &other) {
-      return *this;
+  void InitSegmentedPartitioner(const std::vector<string_view>& spliters) {
+    for (auto s : spliters) {
+      spliters_.emplace_back(s.data(), s.size());
     }
-    fnum_ = other.fnum_;
-    o2f_ = other.o2f_;
-    return *this;
+    if (spliters_.empty()) {
+      fnum_ = 1;
+    } else {
+      fnum_ = 0;
+    }
   }
 
-  SegmentedPartitioner& operator=(SegmentedPartitioner&& other) {
-    if (this == &other) {
-      return *this;
+  fid_t GetPartitionId(const std::string& oid) const {
+    if (fnum_) {
+#ifdef USE_MURMUR_HASH
+      return static_cast<fid_t>(MurmurHash2_64(oid.data(), oid.size(), seed_) %
+                                fnum_);
+#else
+      return hash_func_(string_view(oid)) % fnum_;
+#endif
+    } else if (!spliters_.empty()) {
+      auto iter = std::upper_bound(spliters_.begin(), spliters_.end(), oid);
+      if (iter == spliters_.end()) {
+        return spliters_.size();
+      } else {
+        return iter - spliters_.begin();
+      }
     }
-    fnum_ = other.fnum_;
-    o2f_ = std::move(other.o2f_);
-    return *this;
+    return INVALID_PARTITION_ID;
+  }
+
+  fid_t GetPartitionId(const string_view& oid) const {
+    if (fnum_) {
+#ifdef USE_MURMUR_HASH
+      return static_cast<fid_t>(MurmurHash2_64(oid.data(), oid.size(), seed_) %
+                                fnum_);
+#else
+      return hash_func_(string_view(oid)) % fnum_;
+#endif
+    } else if (!spliters_.empty()) {
+      auto iter = std::upper_bound(spliters_.begin(), spliters_.end(), oid);
+      if (iter == spliters_.end()) {
+        return spliters_.size();
+      } else {
+        return iter - spliters_.begin();
+      }
+    }
+    return INVALID_PARTITION_ID;
+  }
+
+  bool valid() const { return fnum_ > 0 || !spliters_.empty(); }
+
+  void reset() {
+    fnum_ = 0;
+    spliters_.clear();
   }
 
   template <typename IOADAPTOR_T>
   void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
     InArchive arc;
-    arc << fnum_ << o2f_;
+    arc << fnum_ << spliters_ << seed_;
     CHECK(writer->WriteArchive(arc));
   }
 
@@ -258,12 +193,117 @@ class SegmentedPartitioner<std::string> {
   void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
     OutArchive arc;
     CHECK(reader->ReadArchive(arc));
-    arc >> fnum_ >> o2f_;
+    arc >> fnum_ >> spliters_ >> seed_;
   }
 
  private:
   fid_t fnum_;
-  ska::flat_hash_map<oid_t, fid_t> o2f_;
+  std::vector<std::string> spliters_;
+  uint64_t seed_;
+#ifndef USE_MURMUR_HASH
+  std::hash<string_view> hash_func_;
+#endif
+};
+
+template <>
+class Partitioner<string_view> {
+ public:
+  using oid_t = string_view;
+  Partitioner() : fnum_(0) {}
+  ~Partitioner() = default;
+
+  void InitHashPartitioner(size_t frag_num, uint64_t seed = 0x11151115) {
+    fnum_ = frag_num;
+    spliters_.clear();
+    seed_ = seed;
+  }
+
+  void InitSegmentedPartitioner(const std::vector<std::string>& spliters) {
+    spliters_ = spliters;
+    if (spliters_.empty()) {
+      fnum_ = 1;
+    } else {
+      fnum_ = 0;
+    }
+  }
+
+  void InitSegmentedPartitioner(const std::vector<string_view>& spliters) {
+    for (auto s : spliters) {
+      spliters_.emplace_back(s.data(), s.size());
+    }
+    if (spliters_.empty()) {
+      fnum_ = 1;
+    } else {
+      fnum_ = 0;
+    }
+  }
+
+  fid_t GetPartitionId(const std::string& oid) const {
+    if (fnum_) {
+#ifdef USE_MURMUR_HASH
+      return static_cast<fid_t>(MurmurHash2_64(oid.data(), oid.size(), seed_) %
+                                fnum_);
+#else
+      return hash_func_(string_view(oid)) % fnum_;
+#endif
+    } else if (!spliters_.empty()) {
+      auto iter = std::upper_bound(spliters_.begin(), spliters_.end(), oid);
+      if (iter == spliters_.end()) {
+        return spliters_.size();
+      } else {
+        return iter - spliters_.begin();
+      }
+    }
+    return INVALID_PARTITION_ID;
+  }
+
+  fid_t GetPartitionId(const string_view& oid) const {
+    if (fnum_) {
+#ifdef USE_MURMUR_HASH
+      return static_cast<fid_t>(MurmurHash2_64(oid.data(), oid.size(), seed_) %
+                                fnum_);
+#else
+      return hash_func_(string_view(oid)) % fnum_;
+#endif
+    } else if (!spliters_.empty()) {
+      auto iter = std::upper_bound(spliters_.begin(), spliters_.end(), oid);
+      if (iter == spliters_.end()) {
+        return spliters_.size();
+      } else {
+        return iter - spliters_.begin();
+      }
+    }
+    return INVALID_PARTITION_ID;
+  }
+
+  bool valid() const { return fnum_ > 0 || !spliters_.empty(); }
+
+  void reset() {
+    fnum_ = 0;
+    spliters_.clear();
+  }
+
+  template <typename IOADAPTOR_T>
+  void serialize(std::unique_ptr<IOADAPTOR_T>& writer) {
+    InArchive arc;
+    arc << fnum_ << spliters_ << seed_;
+    CHECK(writer->WriteArchive(arc));
+  }
+
+  template <typename IOADAPTOR_T>
+  void deserialize(std::unique_ptr<IOADAPTOR_T>& reader) {
+    OutArchive arc;
+    CHECK(reader->ReadArchive(arc));
+    arc >> fnum_ >> spliters_ >> seed_;
+  }
+
+ private:
+  fid_t fnum_;
+  std::vector<std::string> spliters_;
+  uint64_t seed_;
+#ifndef USE_MURMUR_HASH
+  std::hash<string_view> hash_func_;
+#endif
 };
 
 }  // namespace grape

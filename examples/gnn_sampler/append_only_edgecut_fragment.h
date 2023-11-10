@@ -280,8 +280,7 @@ struct AppendOnlyEdgecutFragmentTraits {
   using mirror_vertices_t = std::vector<Vertex<VID_T>>;
 };
 
-template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
-          LoadStrategy _load_strategy = LoadStrategy::kBothOutIn>
+template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
 class AppendOnlyEdgecutFragment
     : public EdgecutFragmentBase<
           OID_T, VID_T, VDATA_T, EDATA_T,
@@ -308,8 +307,6 @@ class AppendOnlyEdgecutFragment
   using IsEdgeCut = std::true_type;
   using IsVertexCut = std::false_type;
 
-  static constexpr LoadStrategy load_strategy = LoadStrategy::kOnlyOut;
-
   using inner_vertices_t = typename traits_t::inner_vertices_t;
   using outer_vertices_t = typename traits_t::outer_vertices_t;
   using vertices_t = typename traits_t::vertices_t;
@@ -335,10 +332,11 @@ class AppendOnlyEdgecutFragment
   using base_t::init;
   using base_t::InnerVertexGid2Lid;
   using base_t::IsInnerVertexGid;
-  static std::string type_info() { return ""; }
-  void Init(fid_t fid, bool directed, std::vector<internal_vertex_t>& vertices,
+  static std::string type_info(LoadStrategy load_strategy) { return ""; }
+  void Init(fid_t fid, bool directed, LoadStrategy load_strategy,
+            std::vector<internal_vertex_t>& vertices,
             std::vector<edge_t>& edges) override {
-    init(fid, directed);
+    init(fid, directed, load_strategy);
 
     ovnum_ = 0;
     oenum_ = 0;

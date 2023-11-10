@@ -34,10 +34,10 @@ limitations under the License.
 
 namespace grape {
 
-template <typename OID_T, typename VID_T, typename PARTITIONER_T>
+template <typename OID_T, typename VID_T>
 class LocalVertexMap;
 
-template <typename OID_T, typename VID_T, typename PARTITIONER_T>
+template <typename OID_T, typename VID_T>
 class LocalVertexMapBuilder {
   using internal_oid_t = typename InternalOID<OID_T>::type;
 
@@ -45,7 +45,7 @@ class LocalVertexMapBuilder {
   LocalVertexMapBuilder(
       fid_t fid, std::vector<IdIndexer<internal_oid_t, VID_T>>& oid_to_index,
       std::vector<IdIndexer<VID_T, VID_T>>& gid_to_index,
-      const PARTITIONER_T& partitioner, const IdParser<VID_T>& id_parser)
+      const Partitioner<OID_T>& partitioner, const IdParser<VID_T>& id_parser)
       : fid_(fid),
         oid_to_index_(oid_to_index),
         gid_to_index_(gid_to_index),
@@ -63,10 +63,11 @@ class LocalVertexMapBuilder {
 
   void add_vertex(const internal_oid_t& id) {
     fid_t fid = partitioner_.GetPartitionId(id);
+    assert(fid != INVALID_PARTITION_ID);
     oid_to_index_[fid]._add(id);
   }
 
-  void finish(LocalVertexMap<OID_T, VID_T, PARTITIONER_T>& vertex_map) {
+  void finish(LocalVertexMap<OID_T, VID_T>& vertex_map) {
     const CommSpec& comm_spec = vertex_map.GetCommSpec();
     int worker_id = comm_spec.worker_id();
     int worker_num = comm_spec.worker_num();
@@ -111,20 +112,19 @@ class LocalVertexMapBuilder {
   }
 
  private:
-  template <typename _OID_T, typename _VID_T, typename _PARTITIONER_T>
+  template <typename _OID_T, typename _VID_T>
   friend class LocalVertexMap;
 
   fid_t fid_;
   std::vector<IdIndexer<internal_oid_t, VID_T>>& oid_to_index_;
   std::vector<IdIndexer<VID_T, VID_T>>& gid_to_index_;
-  const PARTITIONER_T& partitioner_;
+  const Partitioner<OID_T>& partitioner_;
   const IdParser<VID_T> id_parser_;
 };
 
-template <typename OID_T, typename VID_T,
-          typename PARTITIONER_T = HashPartitioner<OID_T>>
-class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
-  using base_t = VertexMapBase<OID_T, VID_T, PARTITIONER_T>;
+template <typename OID_T, typename VID_T>
+class LocalVertexMap : public VertexMapBase<OID_T, VID_T> {
+  using base_t = VertexMapBase<OID_T, VID_T>;
   using internal_oid_t = typename InternalOID<OID_T>::type;
 
  public:
@@ -201,17 +201,35 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
   bool GetGid(const OID_T& oid, VID_T& gid) const {
     fid_t fid = partitioner_.GetPartitionId(oid);
-    return GetGid(fid, oid, gid);
+    if (fid != INVALID_PARTITION_ID) {
+      return GetGid(fid, oid, gid);
+    } else {
+      for (fid_t i = 0; i < comm_spec_.fnum(); ++i) {
+        if (GetGid(i, oid, gid)) {
+          return true;
+        }
+      }
+      return false;
+    }
   }
 
   bool _GetGid(const internal_oid_t& oid, VID_T& gid) const {
     fid_t fid = partitioner_.GetPartitionId(oid);
-    return _GetGid(fid, oid, gid);
+    if (fid != INVALID_PARTITION_ID) {
+      return _GetGid(fid, oid, gid);
+    } else {
+      for (fid_t i = 0; i < comm_spec_.fnum(); ++i) {
+        if (_GetGid(i, oid, gid)) {
+          return true;
+        }
+      }
+      return false;
+    }
   }
 
-  LocalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T> GetLocalBuilder() {
+  LocalVertexMapBuilder<OID_T, VID_T> GetLocalBuilder() {
     fid_t fid = comm_spec_.fid();
-    return LocalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T>(
+    return LocalVertexMapBuilder<OID_T, VID_T>(
         fid, oid_to_index_, gid_to_index_, partitioner_, id_parser_);
   }
 
@@ -263,7 +281,7 @@ class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   }
 
  private:
-  template <typename _OID_T, typename _VID_T, typename _PARTITIONER_T>
+  template <typename _OID_T, typename _VID_T>
   friend class LocalVertexMapBuilder;
 
   std::vector<IdIndexer<internal_oid_t, VID_T>> oid_to_index_;

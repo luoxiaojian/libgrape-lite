@@ -33,7 +33,6 @@ namespace grape {
  * @tparam IOADAPTOR_T, Type of IOAdaptor, default is LocalIOAdaptor
  * @tparam LINE_PARSER_T, Type of LineParser, default is TSVLineParser
  *
- * SegmentedPartitioner<typename FRAG_T::oid_t>
  * @param efile The input file of edges.
  * @param vfile The input file of vertices.
  * @param comm Communication world.

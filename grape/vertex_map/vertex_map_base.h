@@ -21,6 +21,7 @@ limitations under the License.
 
 #include "grape/config.h"
 #include "grape/fragment/id_parser.h"
+#include "grape/fragment/partitioner.h"
 #include "grape/serialization/in_archive.h"
 #include "grape/serialization/out_archive.h"
 #include "grape/worker/comm_spec.h"
@@ -57,10 +58,10 @@ namespace grape {
  * @tparam OID_T
  * @tparam VID_T
  */
-template <typename OID_T, typename VID_T, typename PARTITIONER_T>
+template <typename OID_T, typename VID_T>
 class VertexMapBase {
  public:
-  using partitioner_t = PARTITIONER_T;
+  using partitioner_t = Partitioner<OID_T>;
   using oid_t = OID_T;
   using vid_t = VID_T;
   explicit VertexMapBase(const CommSpec& comm_spec)
@@ -70,11 +71,11 @@ class VertexMapBase {
   }
   virtual ~VertexMapBase() = default;
 
-  void SetPartitioner(const PARTITIONER_T& partitioner) {
+  void SetPartitioner(const partitioner_t& partitioner) {
     partitioner_ = partitioner;
   }
 
-  void SetPartitioner(PARTITIONER_T&& partitioner) {
+  void SetPartitioner(partitioner_t&& partitioner) {
     partitioner_ = std::move(partitioner);
   }
 
@@ -111,13 +112,13 @@ class VertexMapBase {
     return partitioner_.GetPartitionId(oid);
   }
 
-  const PARTITIONER_T& GetPartitioner() const { return partitioner_; }
+  const partitioner_t& GetPartitioner() const { return partitioner_; }
 
-  PARTITIONER_T& GetPartitioner() { return partitioner_; }
+  partitioner_t& GetPartitioner() { return partitioner_; }
 
  protected:
   CommSpec comm_spec_;
-  PARTITIONER_T partitioner_;
+  partitioner_t partitioner_;
   IdParser<VID_T> id_parser_;
 
  public:

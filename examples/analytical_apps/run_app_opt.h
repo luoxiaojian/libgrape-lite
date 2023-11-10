@@ -20,6 +20,7 @@ limitations under the License.
 #include "cdlp/cdlp_opt.h"
 #include "cdlp/cdlp_opt_ud.h"
 #include "cdlp/cdlp_opt_ud_dense.h"
+#include "grape/fragment/partitioner.h"
 #include "lcc/lcc_beta.h"
 #include "lcc/lcc_directed.h"
 #include "lcc/lcc_opt.h"
@@ -50,7 +51,6 @@ using LCCBeta32 = LCCBeta<FRAG_T, uint32_t>;
 template <typename FRAG_T>
 using LCCDirected32 = LCCDirected<FRAG_T, uint32_t>;
 
-template <LoadStrategy load_strategy>
 void RunUndirectedPageRankOpt(const CommSpec& comm_spec,
                               const std::string& out_prefix,
                               const ParallelEngineSpec& spec, double delta,
@@ -64,60 +64,17 @@ void RunUndirectedPageRankOpt(const CommSpec& comm_spec,
   } else if (FLAGS_serialize) {
     graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
-  if (FLAGS_segmented_partition) {
-    using VertexMapType =
-        GlobalVertexMap<int64_t, uint32_t, SegmentedPartitioner<int64_t>>;
-    using FRAG_T =
-        ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType, EmptyType,
-                                 load_strategy, VertexMapType>;
-    std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
-    bool push;
-    if (fragment->fnum() >= 8) {
-      uint64_t local_ivnum = fragment->GetInnerVerticesNum();
-      uint64_t local_ovnum = fragment->GetOuterVerticesNum();
-      uint64_t total_ivnum, total_ovnum;
-      MPI_Allreduce(&local_ivnum, &total_ivnum, 1, MPI_UINT64_T, MPI_SUM,
-                    comm_spec.comm());
-      MPI_Allreduce(&local_ovnum, &total_ovnum, 1, MPI_UINT64_T, MPI_SUM,
-                    comm_spec.comm());
-
-      double avg_degree = static_cast<double>(FLAGS_edge_num) /
-                          static_cast<double>(FLAGS_vertex_num);
-      double rate =
-          static_cast<double>(total_ovnum) / static_cast<double>(total_ivnum);
-
-      if (rate < 0.5) {
-        // not to many outer vertices
-        push = true;
-      } else if (avg_degree > 60) {
-        // dense
-        push = true;
-      } else {
-        push = false;
-      }
-    } else {
-      push = true;
-    }
-
-    if (!push) {
-      using AppType = PageRankOpt<FRAG_T>;
-      auto app = std::make_shared<AppType>();
-      DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec,
-                                            out_prefix, delta, mr);
-    } else {
-      using AppType = PageRankPushOpt<FRAG_T>;
-      auto app = std::make_shared<AppType>();
-      DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec,
-                                            out_prefix, delta, mr);
-    }
-  } else {
-    graph_spec.set_rebalance(false, 0);
-    using FRAG_T = ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType,
-                                            EmptyType, load_strategy>;
-    std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
-
+  graph_spec.set_load_strategy(LoadStrategy::kOnlyOut);
+  graph_spec.set_partition_strategy(FLAGS_segmented_partition
+                                        ? PartitionStrategy::kSegmented
+                                        : PartitionStrategy::kHash);
+  using VertexMapType = GlobalVertexMap<int64_t, uint32_t>;
+  using FRAG_T = ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType,
+                                          EmptyType, VertexMapType>;
+  std::shared_ptr<FRAG_T> fragment =
+      LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+  bool push;
+  if (fragment->fnum() >= 8) {
     uint64_t local_ivnum = fragment->GetInnerVerticesNum();
     uint64_t local_ovnum = fragment->GetOuterVerticesNum();
     uint64_t total_ivnum, total_ovnum;
@@ -126,18 +83,34 @@ void RunUndirectedPageRankOpt(const CommSpec& comm_spec,
     MPI_Allreduce(&local_ovnum, &total_ovnum, 1, MPI_UINT64_T, MPI_SUM,
                   comm_spec.comm());
 
-    if (static_cast<double>(total_ovnum) >
-        static_cast<double>(total_ivnum) * 3.2) {
-      using AppType = PageRank<FRAG_T>;
-      auto app = std::make_shared<AppType>();
-      DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec,
-                                            out_prefix, delta, mr);
+    double avg_degree = static_cast<double>(FLAGS_edge_num) /
+                        static_cast<double>(FLAGS_vertex_num);
+    double rate =
+        static_cast<double>(total_ovnum) / static_cast<double>(total_ivnum);
+
+    if (rate < 0.5) {
+      // not to many outer vertices
+      push = true;
+    } else if (avg_degree > 60) {
+      // dense
+      push = true;
     } else {
-      using AppType = PageRankPushOpt<FRAG_T>;
-      auto app = std::make_shared<AppType>();
-      DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec,
-                                            out_prefix, delta, mr);
+      push = false;
     }
+  } else {
+    push = true;
+  }
+
+  if (!push) {
+    using AppType = PageRankOpt<FRAG_T>;
+    auto app = std::make_shared<AppType>();
+    DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec,
+                                          out_prefix, delta, mr);
+  } else {
+    using AppType = PageRankPushOpt<FRAG_T>;
+    auto app = std::make_shared<AppType>();
+    DoQuery<FRAG_T, AppType, double, int>(fragment, app, comm_spec, spec,
+                                          out_prefix, delta, mr);
   }
 }
 
@@ -198,9 +171,10 @@ void RunDirectedCDLP(const CommSpec& comm_spec, const std::string& out_prefix,
   } else if (FLAGS_serialize) {
     graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
+  graph_spec.set_load_strategy(LoadStrategy::kOnlyOut);
 
-  using FRAG_T = ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType,
-                                          EmptyType, LoadStrategy::kOnlyOut>;
+  using FRAG_T =
+      ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType, EmptyType>;
 
   std::shared_ptr<FRAG_T> fragment =
       LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
@@ -232,11 +206,11 @@ void RunUndirectedCDLP(const CommSpec& comm_spec, const std::string& out_prefix,
     graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
 
-  using VertexMapType =
-      GlobalVertexMap<int64_t, uint32_t, SegmentedPartitioner<int64_t>>;
-  using FRAG_T =
-      ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType, EmptyType,
-                               LoadStrategy::kOnlyOut, VertexMapType>;
+  graph_spec.set_partition_strategy(PartitionStrategy::kSegmented);
+  graph_spec.set_load_strategy(LoadStrategy::kOnlyOut);
+  using VertexMapType = GlobalVertexMap<int64_t, uint32_t>;
+  using FRAG_T = ImmutableEdgecutFragment<int64_t, uint32_t, EmptyType,
+                                          EmptyType, VertexMapType>;
 
   std::shared_ptr<FRAG_T> fragment =
       LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
@@ -272,9 +246,9 @@ void RunUndirectedCDLP(const CommSpec& comm_spec, const std::string& out_prefix,
   }
 }
 
-template <typename EDATA_T, LoadStrategy load_strategy,
-          template <class> class APP_T, typename... Args>
-void CreateAndQueryOpt(const CommSpec& comm_spec, const std::string& out_prefix,
+template <typename EDATA_T, template <class> class APP_T, typename... Args>
+void CreateAndQueryOpt(const CommSpec& comm_spec, LoadStrategy load_strategy,
+                       const std::string& out_prefix,
                        const ParallelEngineSpec& spec, Args... args) {
   timer_next("load graph");
   LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
@@ -285,29 +259,19 @@ void CreateAndQueryOpt(const CommSpec& comm_spec, const std::string& out_prefix,
   } else if (FLAGS_serialize) {
     graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
-  if (FLAGS_segmented_partition) {
-    using VertexMapType =
-        GlobalVertexMap<int64_t, uint32_t, SegmentedPartitioner<int64_t>>;
-    using FRAG_T =
-        ImmutableEdgecutFragment<int64_t, uint32_t, grape::EmptyType, EDATA_T,
-                                 load_strategy, VertexMapType>;
-    std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
-    using AppType = APP_T<FRAG_T>;
-    auto app = std::make_shared<AppType>();
-    DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                      out_prefix, args...);
-  } else {
-    graph_spec.set_rebalance(false, 0);
-    using FRAG_T = ImmutableEdgecutFragment<int64_t, uint32_t, grape::EmptyType,
-                                            EDATA_T, load_strategy>;
-    std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
-    using AppType = APP_T<FRAG_T>;
-    auto app = std::make_shared<AppType>();
-    DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                      out_prefix, args...);
-  }
+  graph_spec.set_partition_strategy(FLAGS_segmented_partition
+                                        ? PartitionStrategy::kSegmented
+                                        : PartitionStrategy::kHash);
+  graph_spec.set_load_strategy(load_strategy);
+  using VertexMapType = GlobalVertexMap<int64_t, uint32_t>;
+  using FRAG_T = ImmutableEdgecutFragment<int64_t, uint32_t, grape::EmptyType,
+                                          EDATA_T, VertexMapType>;
+  std::shared_ptr<FRAG_T> fragment =
+      LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+  using AppType = APP_T<FRAG_T>;
+  auto app = std::make_shared<AppType>();
+  DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec, out_prefix,
+                                    args...);
 }
 
 void RunOpt() {
@@ -337,32 +301,34 @@ void RunOpt() {
   if (name == "sssp") {
     FLAGS_segmented_partition = true;
     FLAGS_rebalance = false;
-    CreateAndQueryOpt<double, LoadStrategy::kOnlyOut, SSSPOpt, int64_t>(
-        comm_spec, out_prefix, spec, FLAGS_sssp_source);
+    CreateAndQueryOpt<double, SSSPOpt, int64_t>(
+        comm_spec, LoadStrategy::kOnlyOut, out_prefix, spec, FLAGS_sssp_source);
   } else if (name == "bfs") {
     if (FLAGS_directed) {
       FLAGS_segmented_partition = true;
       FLAGS_rebalance = false;
-      CreateAndQueryOpt<EmptyType, LoadStrategy::kBothOutIn, BFSOpt, int64_t>(
-          comm_spec, out_prefix, spec, FLAGS_bfs_source);
+      CreateAndQueryOpt<EmptyType, BFSOpt, int64_t>(
+          comm_spec, LoadStrategy::kBothOutIn, out_prefix, spec,
+          FLAGS_bfs_source);
     } else {
       FLAGS_segmented_partition = true;
       FLAGS_rebalance = false;
-      CreateAndQueryOpt<EmptyType, LoadStrategy::kOnlyOut, BFSOpt, int64_t>(
-          comm_spec, out_prefix, spec, FLAGS_bfs_source);
+      CreateAndQueryOpt<EmptyType, BFSOpt, int64_t>(
+          comm_spec, LoadStrategy::kOnlyOut, out_prefix, spec,
+          FLAGS_bfs_source);
     }
   } else if (name == "pagerank") {
     if (FLAGS_directed) {
       FLAGS_segmented_partition = false;
-      CreateAndQueryOpt<EmptyType, LoadStrategy::kBothOutIn, PageRankDirected,
-                        double, int>(comm_spec, out_prefix, spec, FLAGS_pr_d,
-                                     FLAGS_pr_mr);
+      CreateAndQueryOpt<EmptyType, PageRankDirected, double, int>(
+          comm_spec, LoadStrategy::kBothOutIn, out_prefix, spec, FLAGS_pr_d,
+          FLAGS_pr_mr);
     } else {
       FLAGS_segmented_partition = true;
       FLAGS_rebalance = true;
       FLAGS_rebalance_vertex_factor = 0;
-      RunUndirectedPageRankOpt<LoadStrategy::kOnlyOut>(
-          comm_spec, out_prefix, spec, FLAGS_pr_d, FLAGS_pr_mr);
+      RunUndirectedPageRankOpt(comm_spec, out_prefix, spec, FLAGS_pr_d,
+                               FLAGS_pr_mr);
     }
   } else if (name == "cdlp") {
     if (FLAGS_directed) {
@@ -379,18 +345,18 @@ void RunOpt() {
     FLAGS_directed = false;
     FLAGS_segmented_partition = true;
     FLAGS_rebalance = false;
-    CreateAndQueryOpt<EmptyType, LoadStrategy::kOnlyOut, WCCOpt>(
-        comm_spec, out_prefix, spec);
+    CreateAndQueryOpt<EmptyType, WCCOpt>(comm_spec, LoadStrategy::kOnlyOut,
+                                         out_prefix, spec);
   } else if (name == "lcc") {
     if (FLAGS_directed) {
       FLAGS_segmented_partition = false;
       if (FLAGS_edge_num >
           static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
-        CreateAndQueryOpt<EmptyType, LoadStrategy::kBothOutIn, LCCDirected64>(
-            comm_spec, out_prefix, spec);
+        CreateAndQueryOpt<EmptyType, LCCDirected64>(
+            comm_spec, LoadStrategy::kBothOutIn, out_prefix, spec);
       } else {
-        CreateAndQueryOpt<EmptyType, LoadStrategy::kBothOutIn, LCCDirected32>(
-            comm_spec, out_prefix, spec);
+        CreateAndQueryOpt<EmptyType, LCCDirected32>(
+            comm_spec, LoadStrategy::kBothOutIn, out_prefix, spec);
       }
     } else {
       FLAGS_segmented_partition = true;
@@ -398,22 +364,22 @@ void RunOpt() {
       FLAGS_rebalance_vertex_factor = 0;
       if (FLAGS_edge_num >
           static_cast<int64_t>(std::numeric_limits<uint32_t>::max()) * 2) {
-        CreateAndQueryOpt<EmptyType, LoadStrategy::kOnlyOut, LCC64>(
-            comm_spec, out_prefix, spec);
+        CreateAndQueryOpt<EmptyType, LCC64>(comm_spec, LoadStrategy::kOnlyOut,
+                                            out_prefix, spec);
       } else {
-        CreateAndQueryOpt<EmptyType, LoadStrategy::kOnlyOut, LCC32>(
-            comm_spec, out_prefix, spec);
+        CreateAndQueryOpt<EmptyType, LCC32>(comm_spec, LoadStrategy::kOnlyOut,
+                                            out_prefix, spec);
       }
     }
   } else if (name == "lcc_beta") {
     CHECK(!FLAGS_directed);
     if (FLAGS_edge_num >
         static_cast<int64_t>(std::numeric_limits<uint32_t>::max()) * 2) {
-      CreateAndQueryOpt<EmptyType, LoadStrategy::kOnlyOut, LCCBeta64>(
-          comm_spec, out_prefix, spec);
+      CreateAndQueryOpt<EmptyType, LCCBeta64>(comm_spec, LoadStrategy::kOnlyOut,
+                                              out_prefix, spec);
     } else {
-      CreateAndQueryOpt<EmptyType, LoadStrategy::kOnlyOut, LCCBeta32>(
-          comm_spec, out_prefix, spec);
+      CreateAndQueryOpt<EmptyType, LCCBeta32>(comm_spec, LoadStrategy::kOnlyOut,
+                                              out_prefix, spec);
     }
   } else {
     LOG(FATAL) << "No avaiable application named [" << name << "].";

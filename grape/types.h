@@ -84,38 +84,38 @@ enum class MessageStrategy {
   kSyncOnOuterVertex = 3,               /// from b' to b and c' to c;
 };
 
-template <typename APP_T, typename GRAPH_T>
-constexpr inline bool check_load_strategy_compatible() {
+template <typename APP_T>
+inline bool check_load_strategy_compatible(LoadStrategy load_strategy) {
   return ((APP_T::load_strategy == LoadStrategy::kBothOutIn) &&
-          (GRAPH_T::load_strategy == LoadStrategy::kBothOutIn)) ||
+          (load_strategy == LoadStrategy::kBothOutIn)) ||
          ((APP_T::load_strategy == LoadStrategy::kOnlyIn) &&
-          ((GRAPH_T::load_strategy == LoadStrategy::kBothOutIn) ||
-           (GRAPH_T::load_strategy == LoadStrategy::kOnlyIn))) ||
+          ((load_strategy == LoadStrategy::kBothOutIn) ||
+           (load_strategy == LoadStrategy::kOnlyIn))) ||
          ((APP_T::load_strategy == LoadStrategy::kOnlyOut) &&
-          ((GRAPH_T::load_strategy == LoadStrategy::kBothOutIn) ||
-           (GRAPH_T::load_strategy == LoadStrategy::kOnlyOut)));
+          ((load_strategy == LoadStrategy::kBothOutIn) ||
+           (load_strategy == LoadStrategy::kOnlyOut)));
 }
 
-template <typename APP_T, typename GRAPH_T>
-constexpr inline bool check_message_strategy_valid() {
+template <typename APP_T>
+inline bool check_message_strategy_valid(LoadStrategy load_strategy) {
   return ((APP_T::message_strategy ==
            MessageStrategy::kAlongEdgeToOuterVertex) &&
-          (GRAPH_T::load_strategy == LoadStrategy::kBothOutIn)) ||
+          (load_strategy == LoadStrategy::kBothOutIn)) ||
          ((APP_T::message_strategy ==
            MessageStrategy::kAlongIncomingEdgeToOuterVertex) &&
-          ((GRAPH_T::load_strategy == LoadStrategy::kOnlyIn) ||
-           (GRAPH_T::load_strategy == LoadStrategy::kBothOutIn))) ||
+          ((load_strategy == LoadStrategy::kOnlyIn) ||
+           (load_strategy == LoadStrategy::kBothOutIn))) ||
          ((APP_T::message_strategy ==
            MessageStrategy::kAlongOutgoingEdgeToOuterVertex) &&
-          ((GRAPH_T::load_strategy == LoadStrategy::kOnlyOut) ||
-           (GRAPH_T::load_strategy == LoadStrategy::kBothOutIn))) ||
+          ((load_strategy == LoadStrategy::kOnlyOut) ||
+           (load_strategy == LoadStrategy::kBothOutIn))) ||
          (APP_T::message_strategy == MessageStrategy::kSyncOnOuterVertex);
 }
 
-template <typename APP_T, typename GRAPH_T>
-constexpr inline bool check_app_fragment_consistency() {
-  return check_load_strategy_compatible<APP_T, GRAPH_T>() &&
-         check_message_strategy_valid<APP_T, GRAPH_T>();
+template <typename APP_T>
+inline bool check_app_fragment_consistency(LoadStrategy load_strategy) {
+  return check_load_strategy_compatible<APP_T>(load_strategy) &&
+         check_message_strategy_valid<APP_T>(load_strategy);
 }
 
 template <typename T>
@@ -127,12 +127,18 @@ struct InternalOID {
   static T FromInternal(const type& val) { return val; }
 };
 
+#if __cplusplus >= 201703L
+using string_view = std::string_view;
+#else
+using string_view = nonstd::string_view;
+#endif
+
 template <>
 struct InternalOID<std::string> {
-  using type = nonstd::string_view;
+  using type = string_view;
 
   static type ToInternal(const std::string& val) {
-    return nonstd::string_view(val.data(), val.size());
+    return string_view(val.data(), val.size());
   }
 
   static std::string FromInternal(const type& val) { return std::string(val); }
