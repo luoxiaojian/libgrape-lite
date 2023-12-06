@@ -121,8 +121,8 @@ class HostFragment
     __allocate_device_fragment__();
   }
 
-  void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) {
-    base_t::PrepareToRunApp(comm_spec, conf);
+  void PrepareToRunApp(CommType& comm, PrepareConf conf) {
+    base_t::PrepareToRunApp(comm, conf);
 
     Stream stream;
     if (conf.message_strategy ==
@@ -135,7 +135,6 @@ class HostFragment
     }
 
     if (conf.need_split_edges || conf.need_split_edges_by_fragment) {
-      auto& comm_spec = vm_ptr_->GetCommSpec();
       auto& ie = ie_.get_edges();
       auto& ieoffset = ie_.get_offsets();
       auto& oe = oe_.get_edges();
@@ -207,7 +206,7 @@ class HostFragment
     }
 
     if (conf.need_mirror_info) {
-      __initMirrorInfo(comm_spec);
+      __initMirrorInfo(comm);
     }
 
     if (conf.need_build_device_vm) {
@@ -654,8 +653,8 @@ class HostFragment
     stream.Sync();
   }
 
-  void __initMirrorInfo(const CommSpec& comm_spec) {
-    int dev_id = comm_spec.local_id();
+  void __initMirrorInfo(CommType& comm) {
+    int dev_id = comm.local_id();
     CHECK_CUDA(cudaSetDevice(dev_id));
 
     for (fid_t i = 0; i < fnum_; ++i) {

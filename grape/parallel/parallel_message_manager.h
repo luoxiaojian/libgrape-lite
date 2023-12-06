@@ -56,21 +56,16 @@ class ParallelMessageManager : public MessageManagerBase {
   static constexpr size_t default_msg_send_block_capacity = 2 * 1023 * 1024;
 
  public:
-  ParallelMessageManager() : comm_(NULL_COMM) {}
-  ~ParallelMessageManager() override {
-    if (ValidComm(comm_)) {
-      MPI_Comm_free(&comm_);
-    }
-  }
+  ParallelMessageManager() {}
+  ~ParallelMessageManager() override {}
 
   /**
    * @brief Inherit
    */
-  void Init(MPI_Comm comm) override {
-    MPI_Comm_dup(comm, &comm_);
-    comm_spec_.Init(comm_);
-    fid_ = comm_spec_.fid();
-    fnum_ = comm_spec_.fnum();
+  void Init(CommAllocatorType& comm_allocator) override {
+    comm_ = comm_allocator.allocate();
+    fid_ = comm_.rank();
+    fnum_ = comm_.size();
 
     force_terminate_ = false;
     terminate_info_.Init(fnum_);
@@ -121,17 +116,18 @@ class ParallelMessageManager : public MessageManagerBase {
    * @brief Inherit
    */
   bool ToTerminate() override {
-    int flag[2];
+    int64_t flag[2];
     flag[0] = 1;
     if (sent_size_ == 0 && !force_continue_) {
       flag[0] = 0;
     }
     flag[1] = force_terminate_ ? 1 : 0;
-    int ret[2];
-    MPI_Allreduce(&flag[0], &ret[0], 2, MPI_INT, MPI_SUM, comm_);
+    int64_t ret[2];
+    comm_.sum(flag, ret, 2);
     if (ret[1] > 0) {
       terminate_info_.success = false;
-      sync_comm::AllGather(terminate_info_.info, comm_);
+      sync_comm::Gather(comm_, terminate_info_.info[fid_],
+                        terminate_info_.info);
       return true;
     }
     return (ret[0] == 0);
@@ -142,11 +138,8 @@ class ParallelMessageManager : public MessageManagerBase {
    */
   void Finalize() override {
     waitSend();
-    MPI_Barrier(comm_);
+    comm_.barrier();
     stopRecvThread();
-
-    MPI_Comm_free(&comm_);
-    comm_ = NULL_COMM;
   }
 
   /**
@@ -159,7 +152,7 @@ class ParallelMessageManager : public MessageManagerBase {
    */
   void ForceTerminate(const std::string& terminate_info) override {
     force_terminate_ = true;
-    terminate_info_.info[comm_spec_.fid()] = terminate_info;
+    terminate_info_.info[fid_] = terminate_info;
   }
 
   /**
@@ -401,7 +394,6 @@ class ParallelMessageManager : public MessageManagerBase {
     sending_queue_.SetProducerNum(1);
     send_thread_ = std::thread(
         [this](int msg_round) {
-          std::vector<MPI_Request> reqs;
           std::pair<fid_t, InArchive> item;
           while (sending_queue_.Get(item)) {
             if (item.second.GetSize() == 0) {
@@ -410,117 +402,45 @@ class ParallelMessageManager : public MessageManagerBase {
             if (item.first == fid_) {
               to_self_.emplace_back(std::move(item.second));
             } else {
-              MPI_Request req;
-              sync_comm::isend_small_buffer<char>(
-                  item.second.GetBuffer(), item.second.GetSize(),
-                  comm_spec_.FragToWorker(item.first), msg_round, comm_, req);
-              reqs.push_back(req);
-              to_others_.emplace_back(std::move(item.second));
+              std::vector<char> buf = std::move(item.second.GetBufferVector());
+              comm_.send(item.first, std::move(buf), msg_round);
             }
           }
           for (fid_t i = 0; i < fnum_; ++i) {
             if (i == fid_) {
               continue;
             }
-            MPI_Request req;
-            sync_comm::isend_small_buffer<char>(
-                NULL, 0, comm_spec_.FragToWorker(i), msg_round, comm_, req);
-            reqs.push_back(req);
+            comm_.send_empty(i, msg_round);
           }
-          MPI_Waitall(reqs.size(), &reqs[0], MPI_STATUSES_IGNORE);
-          to_others_.clear();
+          comm_.wait_send();
         },
         round + 1);
   }
 
   void probeAllIncomingMessages() {
-    MPI_Status status;
+    int self_worker_id = comm_.rank();
     while (true) {
-      MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, comm_, &status);
-      if (status.MPI_SOURCE == comm_spec_.worker_id()) {
-        sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, 0,
-                                           comm_);
-        return;
+      int src_worker_id, tag;
+      std::vector<char> buf;
+      comm_.recv(src_worker_id, buf, tag);
+      if (src_worker_id == self_worker_id) {
+        break;
       }
-      int tag = status.MPI_TAG;
-      int count;
-      MPI_Get_count(&status, MPI_CHAR, &count);
-      if (count == 0) {
-        sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, tag,
-                                           comm_);
+      if (buf.empty()) {
         recv_queues_[tag % 2].DecProducerNum();
       } else {
-        OutArchive arc(count);
-        sync_comm::recv_small_buffer<char>(arc.GetBuffer(), count,
-                                           status.MPI_SOURCE, tag, comm_);
+        OutArchive arc(std::move(buf));
         recv_queues_[tag % 2].Put(std::move(arc));
       }
     }
   }
 
-  int probeIncomingMessages() {
-    int gotMessage = 0;
-    int flag;
-    MPI_Status status;
-    while (true) {
-      MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, comm_, &flag, &status);
-      if (flag) {
-        if (status.MPI_SOURCE == comm_spec_.worker_id()) {
-          sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, 0,
-                                             comm_);
-          return -1;
-        }
-        gotMessage = 1;
-        int tag = status.MPI_TAG;
-        int count;
-        MPI_Get_count(&status, MPI_CHAR, &count);
-        if (count == 0) {
-          sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, tag,
-                                             comm_);
-          recv_queues_[tag % 2].DecProducerNum();
-        } else {
-          OutArchive arc(count);
-          sync_comm::recv_small_buffer<char>(arc.GetBuffer(), count,
-                                             status.MPI_SOURCE, tag, comm_);
-          recv_queues_[tag % 2].Put(std::move(arc));
-        }
-      } else {
-        break;
-      }
-    }
-    return gotMessage;
-  }
-
   void startRecvThread() {
-    recv_thread_ = std::thread([this]() {
-#if 0
-      int idle_time = 0;
-      while (true) {
-        int gotMessage = probeIncomingMessages();
-        if (gotMessage == -1) {
-          break;
-        }
-        idle_time += static_cast<int>(gotMessage == 0);
-        if (idle_time > 10) {
-          poll(NULL, 0, 1);
-          idle_time = 0;
-        } else if (gotMessage == 0) {
-#if __APPLE__
-          sched_yield();
-#else
-          pthread_yield();
-#endif
-        }
-      }
-#else
-      probeAllIncomingMessages();
-#endif
-    });
+    recv_thread_ = std::thread([this]() { probeAllIncomingMessages(); });
   }
 
   void stopRecvThread() {
-    sync_comm::send_small_buffer<char>(NULL, 0, comm_spec_.worker_id(), 0,
-                                       comm_);
+    comm_.send_empty(comm_.rank(), 0);
     recv_thread_.join();
   }
 
@@ -548,9 +468,6 @@ class ParallelMessageManager : public MessageManagerBase {
 
   fid_t fid_;
   fid_t fnum_;
-  CommSpec comm_spec_;
-
-  MPI_Comm comm_;
 
   std::vector<InArchive> to_self_;
   std::vector<InArchive> to_others_;
@@ -569,6 +486,8 @@ class ParallelMessageManager : public MessageManagerBase {
 
   bool force_terminate_;
   TerminateInfo terminate_info_;
+
+  CommType comm_;
 };
 
 }  // namespace grape

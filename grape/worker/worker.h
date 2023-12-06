@@ -16,8 +16,6 @@ limitations under the License.
 #ifndef GRAPE_WORKER_WORKER_H_
 #define GRAPE_WORKER_WORKER_H_
 
-#include <mpi.h>
-
 #include <memory>
 #include <ostream>
 #include <type_traits>
@@ -25,6 +23,7 @@ limitations under the License.
 
 #include "grape/app/mutation_context.h"
 #include "grape/app/parallel_app_base.h"
+#include "grape/communication/comm.h"
 #include "grape/communication/communicator.h"
 #include "grape/config.h"
 #include "grape/parallel/auto_parallel_message_manager.h"
@@ -34,7 +33,6 @@ limitations under the License.
 #include "grape/parallel/parallel_message_manager_opt.h"
 #include "grape/util.h"
 #include "grape/utils/message_buffer_pool.h"
-#include "grape/worker/comm_spec.h"
 
 namespace grape {
 
@@ -67,21 +65,23 @@ class Worker {
 
   ~Worker() = default;
 
-  void Init(const CommSpec& comm_spec,
+  void Init(CommAllocatorType& comm_allocator,
             const ParallelEngineSpec& pe_spec = DefaultParallelEngineSpec()) {
+    worker_comm_ = comm_allocator.allocate();
     auto& graph = *fragment_;
     // prepare for the query
-    graph.PrepareToRunApp(comm_spec, prepare_conf_);
+    graph.PrepareToRunApp(worker_comm_, prepare_conf_);
 
-    comm_spec_ = comm_spec;
-    MPI_Barrier(comm_spec_.comm());
+    worker_comm_.barrier();
     context_ = std::make_shared<context_t>(graph);
 
     initPool(pe_spec);
-    messages_.Init(comm_spec_.comm());
+    messages_.Init(comm_allocator);
 
     InitParallelEngine(app_, pe_spec);
-    InitCommunicator(app_, comm_spec_.comm());
+    InitCommunicator(app_, comm_allocator);
+
+    worker_comm_.barrier();
   }
 
   void Finalize() {}
@@ -104,7 +104,7 @@ class Worker {
 
     messages_.FinishARound();
 
-    if (comm_spec_.worker_id() == kCoordinatorRank) {
+    if (worker_comm_.rank() == kCoordinatorRank) {
       VLOG(1) << "[Coordinator]: Finished PEval, time: " << GetCurrentTime() - t
               << " sec";
     }
@@ -121,14 +121,14 @@ class Worker {
 
       messages_.FinishARound();
 
-      if (comm_spec_.worker_id() == kCoordinatorRank) {
+      if (worker_comm_.rank() == kCoordinatorRank) {
         VLOG(1) << "[Coordinator]: Finished IncEval - " << step
                 << ", time: " << GetCurrentTime() - t << " sec";
       }
       ++step;
     }
 
-    MPI_Barrier(comm_spec_.comm());
+    worker_comm_.barrier();
 
     messages_.Finalize();
   }
@@ -153,7 +153,7 @@ class Worker {
     app_->EstimateMessageSize(frag, send_size, recv_size);
     size_t pool_size =
         estimate_pool_size(send_size, recv_size, kDefaultPoolBatchSize,
-                           comm_spec_.fnum(), pe_spec.thread_num);
+                           worker_comm_.size(), pe_spec.thread_num);
     messages_.GetPool().init(pool_size, kDefaultPoolBatchSize);
   }
 
@@ -200,8 +200,8 @@ class Worker {
   typename std::enable_if<
       std::is_base_of<MutationContext<fragment_t>, T>::value>::type
   processMutation() {
-    context_->apply_mutation(fragment_, comm_spec_);
-    fragment_->PrepareToRunApp(comm_spec_, prepare_conf_);
+    context_->apply_mutation(fragment_, worker_comm_);
+    fragment_->PrepareToRunApp(worker_comm_, prepare_conf_);
   }
 
   template <typename T = context_t>
@@ -214,7 +214,7 @@ class Worker {
   std::shared_ptr<fragment_t> fragment_;
   message_manager_t messages_;
 
-  CommSpec comm_spec_;
+  CommType worker_comm_;
   PrepareConf prepare_conf_;
 };
 

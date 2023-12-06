@@ -371,34 +371,34 @@ class EdgecutFragmentBase
 
   virtual bool OuterVertexGid2Lid(VID_T gid, VID_T& lid) const = 0;
 
-  void initMirrorInfo(const CommSpec& comm_spec) {
-    int worker_id = comm_spec.worker_id();
-    int worker_num = comm_spec.worker_num();
+  void initMirrorInfo(CommType& comm) {
+    int worker_id = comm.rank();
+    int worker_num = comm.size();
     mirrors_of_frag_.resize(fnum());
 
     std::thread send_thread([&]() {
       std::vector<vertex_t> gid_list;
       for (int i = 1; i < worker_num; ++i) {
         int dst_worker_id = (worker_id + i) % worker_num;
-        fid_t dst_fid = comm_spec.WorkerToFrag(dst_worker_id);
+        fid_t dst_fid = dst_worker_id;
         auto& range = OuterVertices(dst_fid);
         gid_list.clear();
         gid_list.reserve(range.size());
         for (auto& v : range) {
           gid_list.emplace_back(id_parser_.get_local_id(Vertex2Gid(v)));
         }
-        sync_comm::Send<std::vector<vertex_t>>(gid_list, dst_worker_id, 0,
-                                               comm_spec.comm());
+        sync_comm::Send<std::vector<vertex_t>>(comm, gid_list, dst_worker_id,
+                                               0);
       }
     });
 
     std::thread recv_thread([&]() {
       for (int i = 1; i < worker_num; ++i) {
         int src_worker_id = (worker_id + worker_num - i) % worker_num;
-        fid_t src_fid = comm_spec.WorkerToFrag(src_worker_id);
+        fid_t src_fid = src_worker_id;
         auto& mirror_vec = mirrors_of_frag_[src_fid];
-        sync_comm::Recv<std::vector<vertex_t>>(mirror_vec, src_worker_id, 0,
-                                               comm_spec.comm());
+        sync_comm::Recv<std::vector<vertex_t>>(comm, mirror_vec, src_worker_id,
+                                               0);
       }
     });
 

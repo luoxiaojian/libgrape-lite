@@ -42,7 +42,8 @@ class GPUBatchShuffleWorker {
         messages_() {}
 
   template <class... Args>
-  void Init(const grape::CommSpec& comm_spec, Args&&... args) {
+  void Init(grape::CommAllocatorType& comm_allocator, Args&&... args) {
+    worker_comm_ = comm_allocator.allocate();
     auto& graph = const_cast<fragment_t&>(context_->fragment());
     // prepare for the query
     PrepareConf prepare_conf;
@@ -50,16 +51,14 @@ class GPUBatchShuffleWorker {
     prepare_conf.need_split_edges = APP_T::need_split_edges;
     prepare_conf.need_mirror_info = true;
     prepare_conf.need_build_device_vm = APP_T::need_build_device_vm;
-    graph.PrepareToRunApp(comm_spec, prepare_conf);
+    graph.PrepareToRunApp(worker_comm_, prepare_conf);
 
-    comm_spec_ = comm_spec;
+    messages_.Init(comm_allocator);
 
-    messages_.Init(comm_spec);
-
-    InitCommunicator(app_, comm_spec.comm(), messages_.nccl_comm());
+    InitCommunicator(app_, comm_allocator, messages_.nccl_comm());
 
     context_->Init(messages_, std::forward<Args>(args)...);
-    if (comm_spec_.worker_id() == grape::kCoordinatorRank) {
+    if (worker_comm_.rank() == grape::kCoordinatorRank) {
       VLOG(1) << "[Coordinator]: Finished Init";
     }
   }
@@ -77,9 +76,9 @@ class GPUBatchShuffleWorker {
 
     messages_.FinishARound();
 
-    MPI_Barrier(comm_spec_.comm());
+    worker_comm_.barrier();
 
-    if (comm_spec_.worker_id() == grape::kCoordinatorRank) {
+    if (worker_comm_.rank() == grape::kCoordinatorRank) {
       VLOG(1) << "[Coordinator]: Finished PEval";
     }
 
@@ -93,7 +92,7 @@ class GPUBatchShuffleWorker {
 
       messages_.FinishARound();
 
-      MPI_Barrier(comm_spec_.comm());
+      worker_comm_.barrier();
 
       if (graph.fid() == 0) {
         VLOG(1) << "[Coordinator]: Finished IncEval - " << step
@@ -114,7 +113,7 @@ class GPUBatchShuffleWorker {
   std::shared_ptr<APP_T> app_;
   std::shared_ptr<context_t> context_;
   message_manager_t messages_;
-  grape::CommSpec comm_spec_;
+  grape::CommType worker_comm_;
 };
 }  // namespace cuda
 }  // namespace grape

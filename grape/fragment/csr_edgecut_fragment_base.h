@@ -388,7 +388,7 @@ class CSREdgecutFragmentBase
 
  public:
   using base_t::initMirrorInfo;
-  void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) override {
+  void PrepareToRunApp(CommType& comm, PrepareConf conf) override {
     if (conf.message_strategy == MessageStrategy::kAlongEdgeToOuterVertex ||
         conf.message_strategy ==
             MessageStrategy::kAlongIncomingEdgeToOuterVertex ||
@@ -398,7 +398,7 @@ class CSREdgecutFragmentBase
     }
 
     if (conf.need_mirror_info && !mirror_info_initialized_) {
-      initMirrorInfo(comm_spec);
+      initMirrorInfo(comm);
       mirror_info_initialized_ = true;
     }
   }

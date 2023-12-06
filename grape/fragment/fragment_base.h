@@ -93,7 +93,7 @@ class FragmentBase {
    * @param strategy
    * @param need_split_edge
    */
-  virtual void PrepareToRunApp(const CommSpec& comm_spec, PrepareConf conf) = 0;
+  virtual void PrepareToRunApp(CommType& comm, PrepareConf conf) = 0;
 
   /**
    * @brief Returns true if the fragment is directed, false otherwise.

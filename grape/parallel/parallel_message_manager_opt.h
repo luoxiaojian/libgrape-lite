@@ -56,23 +56,17 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
   static constexpr size_t default_msg_send_block_capacity = 2 * 1024 * 1024;
 
  public:
-  ParallelMessageManagerOpt() : comm_(NULL_COMM) {}
-  ~ParallelMessageManagerOpt() override {
-    if (ValidComm(comm_)) {
-      MPI_Comm_free(&comm_);
-    }
-  }
+  ParallelMessageManagerOpt() {}
+  ~ParallelMessageManagerOpt() override {}
 
   /**
    * @brief Inherit
    */
-  void Init(MPI_Comm comm) override {
-    int channel_num = std::thread::hardware_concurrency();
+  void Init(CommAllocatorType& comm_allocator) override {
+    comm_ = comm_allocator.allocate();
 
-    MPI_Comm_dup(comm, &comm_);
-    comm_spec_.Init(comm_);
-    fid_ = comm_spec_.fid();
-    fnum_ = comm_spec_.fnum();
+    fid_ = comm_.rank();
+    fnum_ = comm_.size();
 
     force_terminate_ = false;
     terminate_info_.Init(fnum_);
@@ -85,6 +79,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
     sent_size_ = 0;
     total_sent_size_ = 0;
 
+    int channel_num = std::thread::hardware_concurrency();
     channels_.resize(channel_num);
     for (auto& channel : channels_) {
       channel.Init(fid_, fnum_, this, &pool_);
@@ -654,9 +649,6 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
 
   fid_t fid_;
   fid_t fnum_;
-  CommSpec comm_spec_;
-
-  MPI_Comm comm_;
 
   std::vector<MicroBuffer> to_self_;
 
@@ -681,6 +673,7 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
   TerminateInfo terminate_info_;
 
   MessageBufferPool pool_;
+  CommType comm_;
 };
 
 }  // namespace grape
