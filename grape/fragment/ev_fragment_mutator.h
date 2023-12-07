@@ -30,15 +30,11 @@ class EVFragmentMutator {
   using edata_t = typename FRAG_T::edata_t;
 
  public:
-  explicit EVFragmentMutator(const CommSpec& comm_spec)
-      : comm_spec_(comm_spec), t0_(0), t1_(0) {}
-  ~EVFragmentMutator() {
-    if (comm_spec_.worker_id() == 0) {
-      VLOG(1) << "mutating graph: " << t0_ << " s + " << t1_ << " s";
-    }
-  }
+  explicit EVFragmentMutator() {}
+  ~EVFragmentMutator() {}
 
-  std::shared_ptr<fragment_t> MutateFragment(const std::string& efile,
+  std::shared_ptr<fragment_t> MutateFragment(CommType& comm,
+                                             const std::string& efile,
                                              const std::string& vfile,
                                              std::shared_ptr<fragment_t> frag,
                                              bool directed) {
@@ -46,14 +42,12 @@ class EVFragmentMutator {
     if (efile == "" && vfile == "") {
       return frag;
     }
-    MPI_Barrier(comm_spec_.comm());
-    t0_ -= GetCurrentTime();
-    BasicFragmentMutator<fragment_t> mutator(comm_spec_, frag);
+    comm.barrier();
+    BasicFragmentMutator<fragment_t> mutator(comm, frag);
     mutator.Start();
     if (!vfile.empty() || !std::is_same<vdata_t, EmptyType>::value) {
       auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(vfile));
-      io_adaptor->SetPartialRead(comm_spec_.worker_id(),
-                                 comm_spec_.worker_num());
+      io_adaptor->SetPartialRead(comm.rank(), comm.size());
       io_adaptor->Open();
       std::string line;
 
@@ -67,8 +61,7 @@ class EVFragmentMutator {
       while (io_adaptor->ReadLine(line)) {
         ++lineNo;
         if (lineNo % 1000000 == 0) {
-          VLOG(10) << "[worker-" << comm_spec_.worker_id() << "][efile] "
-                   << lineNo;
+          VLOG(10) << "[worker-" << comm.rank() << "][efile] " << lineNo;
         }
         if (line.empty() || line[0] == '#')
           continue;
@@ -90,8 +83,7 @@ class EVFragmentMutator {
     }
     {
       auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(efile));
-      io_adaptor->SetPartialRead(comm_spec_.worker_id(),
-                                 comm_spec_.worker_num());
+      io_adaptor->SetPartialRead(comm.rank(), comm.size());
       io_adaptor->Open();
 
       std::string line;
@@ -105,8 +97,7 @@ class EVFragmentMutator {
       while (io_adaptor->ReadLine(line)) {
         ++lineNo;
         if (lineNo % 1000000 == 0) {
-          VLOG(10) << "[worker-" << comm_spec_.worker_id() << "][efile] "
-                   << lineNo;
+          VLOG(10) << "[worker-" << comm.rank() << "][efile] " << lineNo;
         }
         istrm.str(line);
         istrm >> type;
@@ -130,20 +121,12 @@ class EVFragmentMutator {
       }
       VLOG(1) << "read edges to add: " << count;
     }
-    MPI_Barrier(comm_spec_.comm());
-    t0_ += GetCurrentTime();
-    t1_ -= GetCurrentTime();
+    comm.barrier();
     auto ret = mutator.MutateFragment();
-    MPI_Barrier(comm_spec_.comm());
-    t1_ += GetCurrentTime();
+    comm.barrier();
 
     return ret;
   }
-
- private:
-  CommSpec comm_spec_;
-  double t0_;
-  double t1_;
 };
 }  // namespace grape
 

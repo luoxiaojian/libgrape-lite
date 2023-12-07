@@ -79,6 +79,10 @@ class InArchive {
 
   void Reserve(size_t cap) { buffer_.reserve(cap); }
 
+  std::vector<char>& GetBufferVector() { return buffer_; }
+
+  const std::vector<char>& GetBufferVector() const { return buffer_; }
+
  private:
   std::vector<char> buffer_;
 };

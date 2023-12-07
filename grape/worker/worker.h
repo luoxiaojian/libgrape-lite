@@ -59,8 +59,12 @@ class Worker {
     prepare_conf_.need_split_edges = APP_T::need_split_edges;
     prepare_conf_.need_split_edges_by_fragment =
         APP_T::need_split_edges_by_fragment;
+#if 0
     prepare_conf_.need_mirror_info =
         std::is_same<message_manager_t, BatchShuffleMessageManager>::value;
+#else
+    prepare_conf_.need_mirror_info = false;
+#endif
   }
 
   ~Worker() = default;
@@ -148,13 +152,13 @@ class Worker {
       std::is_base_of<ParallelAppBase<fragment_t, context_t, T>,
                       APP_T>::value>::type
   initPool(const ParallelEngineSpec& pe_spec) {
-    auto& frag = *fragment_;
-    size_t send_size = 0, recv_size = 0;
-    app_->EstimateMessageSize(frag, send_size, recv_size);
-    size_t pool_size =
-        estimate_pool_size(send_size, recv_size, kDefaultPoolBatchSize,
-                           worker_comm_.size(), pe_spec.thread_num);
-    messages_.GetPool().init(pool_size, kDefaultPoolBatchSize);
+    // auto& frag = *fragment_;
+    // size_t send_size = 0, recv_size = 0;
+    // app_->EstimateMessageSize(frag, send_size, recv_size);
+    // size_t pool_size =
+    //     estimate_pool_size(send_size, recv_size, kDefaultPoolBatchSize,
+    //                        worker_comm_.size(), pe_spec.thread_num);
+    // messages_.GetPool().init(pool_size, kDefaultPoolBatchSize);
   }
 
   template <typename T = message_manager_t>
@@ -228,8 +232,8 @@ template <typename APP_T>
 using AutoWorker =
     Worker<APP_T, AutoParallelMessageManager<typename APP_T::fragment_t>>;
 
-template <typename APP_T>
-using BatchShuffleWorker = Worker<APP_T, BatchShuffleMessageManager>;
+// template <typename APP_T>
+// using BatchShuffleWorker = Worker<APP_T, BatchShuffleMessageManager>;
 
 }  // namespace grape
 

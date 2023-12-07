@@ -16,8 +16,6 @@ limitations under the License.
 #ifndef GRAPE_COMMUNICATION_SHUFFLE_H_
 #define GRAPE_COMMUNICATION_SHUFFLE_H_
 
-#include <mpi.h>
-
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -55,14 +53,14 @@ template <typename T>
 struct ShuffleBuffer {
   using type = std::vector<T>;
 
-  static void SendTo(const type& buffer, int dst_worker_id, int tag,
-                     MPI_Comm comm) {
-    sync_comm::Send(buffer, dst_worker_id, tag, comm);
+  static void SendTo(CommType& comm, const type& buffer, int dst_worker_id,
+                     int tag) {
+    sync_comm::Send(comm, buffer, dst_worker_id, tag);
   }
 
-  static void RecvFrom(type& buffer, int src_worker_id, int tag,
-                       MPI_Comm comm) {
-    sync_comm::RecvAt<T>(buffer, buffer.size(), src_worker_id, tag, comm);
+  static void RecvFrom(CommType& comm, type& buffer, int src_worker_id,
+                       int tag) {
+    sync_comm::Recv(comm, buffer, src_worker_id, tag);
   }
 };
 
@@ -70,23 +68,14 @@ template <>
 struct ShuffleBuffer<nonstd::string_view> {
   using type = StringViewVector;
 
-  static void SendTo(const type& buffer, int dst_worker_id, int tag,
-                     MPI_Comm comm) {
-    sync_comm::Send(buffer, dst_worker_id, tag, comm);
+  static void SendTo(CommType& comm, const type& buffer, int dst_worker_id,
+                     int tag) {
+    sync_comm::Send(comm, buffer, dst_worker_id, tag);
   }
 
-  static void RecvFrom(type& buffer, int src_worker_id, int tag,
-                       MPI_Comm comm) {
-    if (buffer.size() == 0) {
-      sync_comm::Recv(buffer, src_worker_id, tag, comm);
-    } else {
-      type delta;
-      sync_comm::Recv(delta, src_worker_id, tag, comm);
-      size_t num = delta.size();
-      for (size_t i = 0; i < num; ++i) {
-        buffer.push_back(delta[i]);
-      }
-    }
+  static void RecvFrom(CommType& comm, type& buffer, int src_worker_id,
+                       int tag) {
+    sync_comm::Recv(comm, buffer, src_worker_id, tag);
   }
 };
 
@@ -151,14 +140,14 @@ struct ShuffleBufferTuple : public ShuffleBufferTuple<Rest...> {
     ShuffleBufferTuple<Rest...>::resize(size);
   }
 
-  void SendTo(int dst_worker_id, int tag, MPI_Comm comm) {
-    ShuffleBuffer<First>::SendTo(first, dst_worker_id, tag, comm);
-    ShuffleBufferTuple<Rest...>::SendTo(dst_worker_id, tag, comm);
+  void SendTo(CommType& comm, int dst_worker_id, int tag) {
+    ShuffleBuffer<First>::SendTo(comm, first, dst_worker_id, tag);
+    ShuffleBufferTuple<Rest...>::SendTo(comm, dst_worker_id, tag);
   }
 
-  void RecvFrom(int src_worker_id, int tag, MPI_Comm comm) {
-    ShuffleBuffer<First>::RecvFrom(first, src_worker_id, tag, comm);
-    ShuffleBufferTuple<Rest...>::RecvFrom(src_worker_id, tag, comm);
+  void RecvFrom(CommType& comm, int src_worker_id, int tag) {
+    ShuffleBuffer<First>::RecvFrom(comm, first, src_worker_id, tag);
+    ShuffleBufferTuple<Rest...>::RecvFrom(comm, src_worker_id, tag);
   }
 
   void Clear() {
@@ -205,12 +194,12 @@ struct ShuffleBufferTuple<First> {
 
   void resize(size_t size) { first.resize(size); }
 
-  void SendTo(int dst_worker_id, int tag, MPI_Comm comm) {
-    ShuffleBuffer<First>::SendTo(first, dst_worker_id, tag, comm);
+  void SendTo(CommType& comm, int dst_worker_id, int tag) {
+    ShuffleBuffer<First>::SendTo(comm, first, dst_worker_id, tag);
   }
 
-  void RecvFrom(int src_worker_id, int tag, MPI_Comm comm) {
-    ShuffleBuffer<First>::RecvFrom(first, src_worker_id, tag, comm);
+  void RecvFrom(CommType& comm, int src_worker_id, int tag) {
+    ShuffleBuffer<First>::RecvFrom(comm, first, src_worker_id, tag);
   }
 
   void Clear() { first.clear(); }
@@ -338,7 +327,7 @@ class ShuffleOut {
   ShuffleOut() {}
   ~ShuffleOut() {}
 
-  void Init(MPI_Comm comm, int tag = 0, size_t cs = 4096) {
+  void Init(CommType* comm, int tag = 0, size_t cs = 4096) {
     comm_ = comm;
     tag_ = tag;
     chunk_size_ = cs;
@@ -419,10 +408,11 @@ class ShuffleOut {
  private:
   void issue() {
     frag_shuffle_header header(current_size_, dst_frag_id_);
-    sync_comm::Send<frag_shuffle_header>(header, dst_worker_id_, tag_, comm_);
+    comm_->send(dst_worker_id_, reinterpret_cast<const char*>(&header),
+                sizeof(header), tag_);
 
     if (current_size_) {
-      buffers_.SendTo(dst_worker_id_, tag_, comm_);
+      buffers_.SendTo(*comm_, dst_worker_id_, tag_);
     }
   }
 
@@ -434,39 +424,38 @@ class ShuffleOut {
   int tag_;
   bool comm_disabled_;
 
-  MPI_Comm comm_;
+  CommType* comm_;
 };
 
 template <typename... TYPES>
 class ShuffleIn {
  public:
-  ShuffleIn() {}
+  ShuffleIn() : comm_(NULL) {}
   ~ShuffleIn() {}
 
-  void Init(fid_t fnum, MPI_Comm comm, int tag = 0) {
-    remaining_frag_num_ = fnum - 1;
+  void Init(CommType* comm, int tag = 0) {
     comm_ = comm;
+    remaining_frag_num_ = comm->size() - 1;
     tag_ = tag;
     current_size_ = 0;
   }
 
   int Recv(fid_t& fid) {
-    MPI_Status status;
     frag_shuffle_header header;
+    std::vector<char> buf;
     while (true) {
       if (remaining_frag_num_ == 0) {
         return -1;
       }
-      MPI_Probe(MPI_ANY_SOURCE, tag_, comm_, &status);
-      sync_comm::Recv<frag_shuffle_header>(header, status.MPI_SOURCE, tag_,
-                                           comm_);
+      int src_worker_id;
+      comm_->recv_tagged(src_worker_id, buf, tag_);
+      memcpy(&header, buf.data(), sizeof(header));
       if (header.size == 0) {
         --remaining_frag_num_;
       } else {
-        int src_worker_id = status.MPI_SOURCE;
         current_size_ += header.size;
         fid = header.fid;
-        buffers_.RecvFrom(src_worker_id, tag_, comm_);
+        buffers_.RecvFrom(*comm_, src_worker_id, tag_);
         return src_worker_id;
       }
     }
@@ -474,12 +463,14 @@ class ShuffleIn {
 
   int RecvFrom(int src_worker_id) {
     frag_shuffle_header header;
-    sync_comm::Recv<frag_shuffle_header>(header, src_worker_id, tag_, comm_);
+    std::vector<char> buf;
+    comm_->recv_from_tagged(src_worker_id, buf, tag_);
+    memcpy(&header, buf.data(), sizeof(header));
     if (header.size == 0) {
       --remaining_frag_num_;
     } else {
       current_size_ += header.size;
-      buffers_.RecvFrom(src_worker_id, tag_, comm_);
+      buffers_.RecvFrom(*comm_, src_worker_id, tag_);
     }
     return header.size;
   }
@@ -501,7 +492,8 @@ class ShuffleIn {
   fid_t remaining_frag_num_;
   int tag_;
   size_t current_size_;
-  MPI_Comm comm_;
+
+  CommType* comm_;
 };
 
 }  // namespace grape

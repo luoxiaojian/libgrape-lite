@@ -20,6 +20,8 @@ limitations under the License.
 
 #include <grape/grape.h>
 
+#if 0
+
 namespace grape {
 /**
  * @brief Context for the parallel version of PageRankLocal.
@@ -79,5 +81,7 @@ class PageRankLocalContext : public VertexDataContext<FRAG_T, double> {
   double avg_degree = 0;
 };
 }  // namespace grape
+
+#endif
 
 #endif  // EXAMPLES_ANALYTICAL_APPS_PAGERANK_PAGERANK_LOCAL_CONTEXT_H_

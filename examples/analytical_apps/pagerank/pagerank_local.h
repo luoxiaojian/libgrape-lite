@@ -19,6 +19,8 @@ limitations under the License.
 
 #include "pagerank/pagerank_local_context.h"
 
+#if 0
+
 namespace grape {
 
 /**
@@ -221,5 +223,7 @@ class PageRankLocal
 };
 
 }  // namespace grape
+
+#endif
 
 #endif  // EXAMPLES_ANALYTICAL_APPS_PAGERANK_PAGERANK_LOCAL_H_

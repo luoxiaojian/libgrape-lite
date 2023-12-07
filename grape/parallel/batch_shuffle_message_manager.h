@@ -27,6 +27,8 @@ limitations under the License.
 
 namespace grape {
 
+#if 0
+
 /**
  * @brief A kind of collective message manager.
  *
@@ -580,6 +582,8 @@ class BatchShuffleMessageManager : public MessageManagerBase {
 
   BlockingQueue<fid_t> sending_queue_;
 };
+
+#endif
 
 }  // namespace grape
 

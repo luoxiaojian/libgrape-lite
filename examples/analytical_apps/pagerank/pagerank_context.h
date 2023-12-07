@@ -16,6 +16,8 @@ limitations under the License.
 #ifndef EXAMPLES_ANALYTICAL_APPS_PAGERANK_PAGERANK_CONTEXT_H_
 #define EXAMPLES_ANALYTICAL_APPS_PAGERANK_PAGERANK_CONTEXT_H_
 
+#if 0
+
 #include <iomanip>
 
 #include <grape/grape.h>
@@ -107,5 +109,7 @@ class PageRankContext : public VertexDataContext<FRAG_T, double> {
   double avg_degree = 0;
 };
 }  // namespace grape
+
+#endif
 
 #endif  // EXAMPLES_ANALYTICAL_APPS_PAGERANK_PAGERANK_CONTEXT_H_

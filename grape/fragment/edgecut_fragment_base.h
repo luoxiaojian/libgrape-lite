@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef GRAPE_FRAGMENT_EDGECUT_FRAGMENT_BASE_H_
 #define GRAPE_FRAGMENT_EDGECUT_FRAGMENT_BASE_H_
 
+#include "grape/communication/sync_comm.h"
 #include "grape/fragment/fragment_base.h"
 #include "grape/graph/adj_list.h"
 #include "grape/utils/vertex_array.h"

@@ -1,5 +1,11 @@
 #include "grape/communication/mpi_comm.h"
 
+#include <glog/logging.h>
+#include <string.h>
+
+#include <map>
+#include <thread>
+
 namespace grape {
 
 MPIComm::MPIComm()

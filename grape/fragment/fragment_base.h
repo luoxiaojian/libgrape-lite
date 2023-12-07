@@ -18,11 +18,11 @@ limitations under the License.
 
 #include <vector>
 
+#include "grape/communication/comm.h"
 #include "grape/fragment/id_parser.h"
 #include "grape/graph/adj_list.h"
 #include "grape/graph/edge.h"
 #include "grape/graph/vertex.h"
-#include "grape/worker/comm_spec.h"
 
 namespace grape {
 

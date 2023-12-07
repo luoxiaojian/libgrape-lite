@@ -21,6 +21,8 @@ limitations under the License.
 #include "grape/types.h"
 #include "grape/worker/worker.h"
 
+#if 0
+
 namespace grape {
 
 class BatchShuffleMessageManager;
@@ -79,5 +81,7 @@ class BatchShuffleAppBase {
   }
 
 }  // namespace grape
+
+#endif
 
 #endif  // GRAPE_APP_BATCH_SHUFFLE_APP_BASE_H_

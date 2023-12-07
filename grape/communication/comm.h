@@ -1,9 +1,9 @@
 #ifndef GRAPE_COMMUNICATION_COMM_H_
 #define GRAPE_COMMUNICATION_COMM_H_
 
-namespace grape {
-
 #include "grape/communication/mpi_comm.h"
+
+namespace grape {
 
 using CommType = MPIComm;
 using CommAllocatorType = MPICommAllocator;

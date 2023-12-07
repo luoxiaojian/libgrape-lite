@@ -41,6 +41,11 @@ class OutArchive {
  public:
   OutArchive() : begin_(NULL), end_(NULL) {}
 
+  explicit OutArchive(std::vector<char>&& buf) : buffer_(std::move(buf)) {
+    begin_ = buffer_.data();
+    end_ = begin_ + static_cast<ptrdiff_t>(buffer_.size());
+  }
+
   OutArchive(const OutArchive& rhs) : buffer_(rhs.buffer_) {
     if (buffer_.empty()) {
       if (!rhs.Empty()) {
@@ -90,6 +95,14 @@ class OutArchive {
     end_ = rhs.end_;
     rhs.begin_ = NULL;
     rhs.end_ = NULL;
+    return *this;
+  }
+
+  OutArchive& operator=(std::vector<char>&& rhs) {
+    buffer_.clear();
+    buffer_.swap(rhs);
+    begin_ = buffer_.data();
+    end_ = begin_ + static_cast<ptrdiff_t>(buffer_.size());
     return *this;
   }
 

@@ -28,7 +28,6 @@ limitations under the License.
 #include "grape/io/line_parser_base.h"
 #include "grape/io/local_io_adaptor.h"
 #include "grape/io/tsv_line_parser.h"
-#include "grape/worker/comm_spec.h"
 
 namespace grape {
 
@@ -63,28 +62,28 @@ class EVFragmentLoader {
                 "LineParser type is invalid");
 
  public:
-  explicit EVFragmentLoader(const CommSpec& comm_spec)
-      : comm_spec_(comm_spec), basic_fragment_loader_(comm_spec) {}
-
+  explicit EVFragmentLoader() {}
   ~EVFragmentLoader() = default;
 
-  std::shared_ptr<fragment_t> LoadFragment(const std::string& efile,
+  std::shared_ptr<fragment_t> LoadFragment(CommType& comm,
+                                           const std::string& efile,
                                            const std::string& vfile,
                                            const LoadGraphSpec& spec) {
+    BasicFragmentLoader<fragment_t, io_adaptor_t> basic_fragment_loader(comm);
     std::shared_ptr<fragment_t> fragment(nullptr);
     CHECK(!spec.rebalance);
     if (spec.deserialize && (!spec.serialize)) {
-      bool deserialized = basic_fragment_loader_.DeserializeFragment(
+      bool deserialized = basic_fragment_loader.DeserializeFragment(
           fragment, spec.deserialization_prefix);
       int flag = 0;
       int sum = 0;
       if (!deserialized) {
         flag = 1;
       }
-      MPI_Allreduce(&flag, &sum, 1, MPI_INT, MPI_SUM, comm_spec_.comm());
+      sum = comm.sum(flag);
       if (sum != 0) {
         fragment.reset();
-        if (comm_spec_.worker_id() == 0) {
+        if (comm.rank() == 0) {
           VLOG(2) << "Deserialization failed, start loading graph from "
                      "efile and vfile.";
         }
@@ -105,8 +104,7 @@ class EVFragmentLoader {
       while (io_adaptor->ReadLine(line)) {
         ++line_no;
         if (line_no % 1000000 == 0) {
-          VLOG(10) << "[worker-" << comm_spec_.worker_id() << "][vfile] "
-                   << line_no;
+          VLOG(10) << "[worker-" << comm.rank() << "][vfile] " << line_no;
         }
         if (line.empty() || line[0] == '#')
           continue;
@@ -122,24 +120,23 @@ class EVFragmentLoader {
       io_adaptor->Close();
     }
 
-    partitioner_t partitioner(comm_spec_.fnum(), id_list);
+    partitioner_t partitioner(comm.size(), id_list);
 
-    basic_fragment_loader_.SetPartitioner(std::move(partitioner));
+    basic_fragment_loader.SetPartitioner(std::move(partitioner));
 
-    basic_fragment_loader_.Start();
+    basic_fragment_loader.Start();
 
     {
       size_t vnum = id_list.size();
       for (size_t i = 0; i < vnum; ++i) {
-        basic_fragment_loader_.AddVertex(id_list[i], vdata_list[i]);
+        basic_fragment_loader.AddVertex(id_list[i], vdata_list[i]);
       }
     }
 
     {
       auto io_adaptor =
           std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(std::string(efile)));
-      io_adaptor->SetPartialRead(comm_spec_.worker_id(),
-                                 comm_spec_.worker_num());
+      io_adaptor->SetPartialRead(comm.rank(), comm.size());
       io_adaptor->Open();
       std::string line;
       edata_t e_data;
@@ -149,8 +146,7 @@ class EVFragmentLoader {
       while (io_adaptor->ReadLine(line)) {
         ++lineNo;
         if (lineNo % 1000000 == 0) {
-          VLOG(10) << "[worker-" << comm_spec_.worker_id() << "][efile] "
-                   << lineNo;
+          VLOG(10) << "[worker-" << comm.rank() << "][efile] " << lineNo;
         }
         if (line.empty() || line[0] == '#')
           continue;
@@ -162,22 +158,20 @@ class EVFragmentLoader {
           continue;
         }
 
-        basic_fragment_loader_.AddEdge(src, dst, e_data);
+        basic_fragment_loader.AddEdge(src, dst, e_data);
       }
       io_adaptor->Close();
     }
 
-    VLOG(1) << "[worker-" << comm_spec_.worker_id()
-            << "] finished add vertices and edges";
+    VLOG(1) << "[worker-" << comm.rank() << "] finished add vertices and edges";
 
-    basic_fragment_loader_.ConstructFragment(fragment, spec.directed);
+    basic_fragment_loader.ConstructFragment(fragment, spec.directed);
 
     if (spec.serialize) {
-      bool serialized = basic_fragment_loader_.SerializeFragment(
+      bool serialized = basic_fragment_loader.SerializeFragment(
           fragment, spec.serialization_prefix);
       if (!serialized) {
-        VLOG(2) << "[worker-" << comm_spec_.worker_id()
-                << "] Serialization failed.";
+        VLOG(2) << "[worker-" << comm.rank() << "] Serialization failed.";
       }
     }
 
@@ -185,9 +179,6 @@ class EVFragmentLoader {
   }
 
  private:
-  CommSpec comm_spec_;
-
-  BasicFragmentLoader<fragment_t, io_adaptor_t> basic_fragment_loader_;
   line_parser_t line_parser_;
 };
 

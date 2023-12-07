@@ -179,8 +179,9 @@ class ParallelMessageManager : public MessageManagerBase {
                     size_t block_size = default_msg_send_block_size,
                     size_t block_cap = default_msg_send_block_capacity) {
     channels_.resize(channel_num);
+    int channel_id = 0;
     for (auto& channel : channels_) {
-      channel.Init(fnum_, this, block_size, block_cap);
+      channel.Init(fnum_, this, block_size, block_cap, channel_id++);
     }
   }
 
@@ -194,7 +195,7 @@ class ParallelMessageManager : public MessageManagerBase {
    * @param fid Destination fragment id.
    * @param arc Message buffer.
    */
-  inline void SendRawMsgByFid(fid_t fid, InArchive&& arc) {
+  inline void SendRawMsgByFid(fid_t fid, InArchive&& arc, int channel_id) {
     std::pair<fid_t, InArchive> item;
     item.first = fid;
     item.second = std::move(arc);

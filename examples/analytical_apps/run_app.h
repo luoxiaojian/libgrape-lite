@@ -138,8 +138,7 @@ void CreateAndQuery(const std::string& out_prefix,
         LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, loader_comm, graph_spec);
     using AppType = APP_T<FRAG_T>;
     auto app = std::make_shared<AppType>();
-    DoQuery<FRAG_T, AppType, Args...>(fragment, app, loader_comm, spec,
-                                      out_prefix, args...);
+    DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix, args...);
   } else {
     graph_spec.set_rebalance(false, 0);
     using FRAG_T =
@@ -148,15 +147,13 @@ void CreateAndQuery(const std::string& out_prefix,
         LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, loader_comm, graph_spec);
     using AppType = APP_T<FRAG_T>;
     auto app = std::make_shared<AppType>();
-    DoQuery<FRAG_T, AppType, Args...>(fragment, app, loader_comm, spec,
-                                      out_prefix, args...);
+    DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix, args...);
   }
 }
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
 void Run() {
   int worker_id = CommAllocatorType::get().rank();
-  int worker_num = CommAllocatorType::get().size();
   bool is_coordinator = worker_id == kCoordinatorRank;
   timer_start(is_coordinator);
 #ifdef GRANULA
@@ -218,9 +215,11 @@ void Run() {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      BFS, OID_T>(out_prefix, spec, FLAGS_bfs_source);
     } else if (name == "pagerank_local") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     PageRankLocal, double, int>(out_prefix, spec, FLAGS_pr_d,
-                                                 FLAGS_pr_mr);
+      // CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType,
+      // LoadStrategy::kOnlyOut,
+      //                PageRankLocal, double, int>(out_prefix, spec,
+      //                FLAGS_pr_d,
+      //                                            FLAGS_pr_mr);
     } else if (name == "pagerank_local_parallel") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kBothOutIn,
                      PageRankLocalParallel, double, int>(
@@ -230,9 +229,10 @@ void Run() {
                      PageRankAuto, double, int>(out_prefix, spec, FLAGS_pr_d,
                                                 FLAGS_pr_mr);
     } else if (name == "pagerank") {
-      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
-                     PageRank, double, int>(out_prefix, spec, FLAGS_pr_d,
-                                            FLAGS_pr_mr);
+      // CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType,
+      // LoadStrategy::kOnlyOut,
+      //                PageRank, double, int>(out_prefix, spec, FLAGS_pr_d,
+      //                                       FLAGS_pr_mr);
     } else if (name == "pagerank_push") {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      PageRankPush, double, int>(out_prefix, spec, FLAGS_pr_d,

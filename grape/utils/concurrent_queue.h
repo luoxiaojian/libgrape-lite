@@ -136,6 +136,21 @@ class BlockingQueue {
     }
   }
 
+  bool Wait() {
+    if (!queue_.empty()) {
+      return true;
+    }
+    std::unique_lock<std::mutex> lk(lock_);
+    while (queue_.empty() && (producer_num_ != 0)) {
+      empty_.wait(lk);
+    }
+    if (queue_.empty() && (producer_num_ == 0)) {
+      return false;
+    } else {
+      return true;
+    }
+  }
+
   size_t Size() const { return queue_.size(); }
 
  private:

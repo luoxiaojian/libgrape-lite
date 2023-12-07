@@ -99,10 +99,10 @@ void RunUndirectedPageRankOpt(const std::string& out_prefix,
     }
 
     if (!push) {
-      using AppType = PageRankOpt<FRAG_T>;
-      auto app = std::make_shared<AppType>();
-      DoQuery<FRAG_T, AppType, double, int>(fragment, app, spec, out_prefix,
-                                            delta, mr);
+      // using AppType = PageRankOpt<FRAG_T>;
+      // auto app = std::make_shared<AppType>();
+      // DoQuery<FRAG_T, AppType, double, int>(fragment, app, spec, out_prefix,
+      //                                       delta, mr);
     } else {
       using AppType = PageRankPushOpt<FRAG_T>;
       auto app = std::make_shared<AppType>();
@@ -123,10 +123,10 @@ void RunUndirectedPageRankOpt(const std::string& out_prefix,
 
     if (static_cast<double>(total_ovnum) >
         static_cast<double>(total_ivnum) * 3.2) {
-      using AppType = PageRank<FRAG_T>;
-      auto app = std::make_shared<AppType>();
-      DoQuery<FRAG_T, AppType, double, int>(fragment, app, spec, out_prefix,
-                                            delta, mr);
+      // using AppType = PageRank<FRAG_T>;
+      // auto app = std::make_shared<AppType>();
+      // DoQuery<FRAG_T, AppType, double, int>(fragment, app, spec, out_prefix,
+      //                                       delta, mr);
     } else {
       using AppType = PageRankPushOpt<FRAG_T>;
       auto app = std::make_shared<AppType>();
@@ -293,8 +293,7 @@ void CreateAndQueryOpt(const std::string& out_prefix,
         LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, loader_comm, graph_spec);
     using AppType = APP_T<FRAG_T>;
     auto app = std::make_shared<AppType>();
-    DoQuery<FRAG_T, AppType, Args...>(fragment, app, loader_comm, spec,
-                                      out_prefix, args...);
+    DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix, args...);
   } else {
     graph_spec.set_rebalance(false, 0);
     using FRAG_T = ImmutableEdgecutFragment<int64_t, uint32_t, grape::EmptyType,
@@ -303,8 +302,7 @@ void CreateAndQueryOpt(const std::string& out_prefix,
         LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, loader_comm, graph_spec);
     using AppType = APP_T<FRAG_T>;
     auto app = std::make_shared<AppType>();
-    DoQuery<FRAG_T, AppType, Args...>(fragment, app, loader_comm, spec,
-                                      out_prefix, args...);
+    DoQuery<FRAG_T, AppType, Args...>(fragment, app, spec, out_prefix, args...);
   }
 }
 
@@ -350,9 +348,11 @@ void RunOpt() {
     }
   } else if (name == "pagerank") {
     if (FLAGS_directed) {
-      FLAGS_segmented_partition = false;
-      CreateAndQueryOpt<EmptyType, LoadStrategy::kBothOutIn, PageRankDirected,
-                        double, int>(out_prefix, spec, FLAGS_pr_d, FLAGS_pr_mr);
+      // FLAGS_segmented_partition = false;
+      // CreateAndQueryOpt<EmptyType, LoadStrategy::kBothOutIn,
+      // PageRankDirected,
+      //                   double, int>(out_prefix, spec, FLAGS_pr_d,
+      //                   FLAGS_pr_mr);
     } else {
       FLAGS_segmented_partition = true;
       FLAGS_rebalance = true;

@@ -31,7 +31,6 @@ limitations under the License.
 #include "grape/serialization/in_archive.h"
 #include "grape/serialization/out_archive.h"
 #include "grape/vertex_map/vertex_map_base.h"
-#include "grape/worker/comm_spec.h"
 
 namespace grape {
 
@@ -43,13 +42,16 @@ class GlobalVertexMapBuilder {
   using internal_oid_t = typename InternalOID<OID_T>::type;
 
  private:
-  GlobalVertexMapBuilder(fid_t fid, IdIndexer<internal_oid_t, VID_T>& indexer,
+  GlobalVertexMapBuilder(fid_t fid, fid_t fnum,
+                         IdIndexer<internal_oid_t, VID_T>& indexer,
                          const PARTITIONER_T& partitioner,
-                         const IdParser<VID_T>& id_parser)
+                         const IdParser<VID_T>& id_parser, CommType& comm)
       : fid_(fid),
+        fnum_(fnum),
         indexer_(indexer),
         partitioner_(partitioner),
-        id_parser_(id_parser) {}
+        id_parser_(id_parser),
+        comm_(comm) {}
 
  public:
   ~GlobalVertexMapBuilder() {}
@@ -67,20 +69,18 @@ class GlobalVertexMapBuilder {
   }
 
   void finish(GlobalVertexMap<OID_T, VID_T, PARTITIONER_T>& vertex_map) {
-    const CommSpec& comm_spec = vertex_map.GetCommSpec();
-    int worker_id = comm_spec.worker_id();
-    int worker_num = comm_spec.worker_num();
-    fid_t fnum = comm_spec.fnum();
+    int worker_id = comm_.rank();
+    int worker_num = comm_.size();
+    fid_t fnum = static_cast<fid_t>(worker_num);
     {
       std::thread recv_thread([&]() {
         int src_worker_id = (worker_id + 1) % worker_num;
         while (src_worker_id != worker_id) {
           for (fid_t fid = 0; fid < fnum; ++fid) {
-            if (comm_spec.FragToWorker(fid) != src_worker_id) {
+            if (fid != static_cast<fid_t>(src_worker_id)) {
               continue;
             }
-            sync_comm::Recv(vertex_map.indexers_[fid], src_worker_id, 0,
-                            comm_spec.comm());
+            sync_comm::Recv(comm_, vertex_map.indexers_[fid], src_worker_id, 0);
           }
           src_worker_id = (src_worker_id + 1) % worker_num;
         }
@@ -89,10 +89,10 @@ class GlobalVertexMapBuilder {
         int dst_worker_id = (worker_id + worker_num - 1) % worker_num;
         while (dst_worker_id != worker_id) {
           for (fid_t fid = 0; fid < fnum; ++fid) {
-            if (comm_spec.FragToWorker(fid) != worker_id) {
+            if (fid != static_cast<fid_t>(worker_id)) {
               continue;
             }
-            sync_comm::Send(indexer_, dst_worker_id, 0, comm_spec.comm());
+            sync_comm::Send(comm_, indexer_, dst_worker_id, 0);
           }
           dst_worker_id = (dst_worker_id + worker_num - 1) % worker_num;
         }
@@ -107,9 +107,12 @@ class GlobalVertexMapBuilder {
   friend class GlobalVertexMap;
 
   fid_t fid_;
+  fid_t fnum_;
   IdIndexer<internal_oid_t, VID_T>& indexer_;
   const PARTITIONER_T& partitioner_;
   const IdParser<VID_T>& id_parser_;
+
+  CommType& comm_;
 };
 
 /**
@@ -128,9 +131,9 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   using internal_oid_t = typename InternalOID<OID_T>::type;
 
  public:
-  explicit GlobalVertexMap(const CommSpec& comm_spec) : base_t(comm_spec) {}
+  explicit GlobalVertexMap(fid_t fid, fid_t fnum) : base_t(fnum), fid_(fid) {}
   ~GlobalVertexMap() = default;
-  void Init() { indexers_.resize(comm_spec_.fnum()); }
+  void Init() { indexers_.resize(this->GetFragmentNum()); }
 
   size_t GetTotalVertexSize() const {
     size_t size = 0;
@@ -209,10 +212,11 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     return GetGid(fid, oid, gid);
   }
 
-  GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T> GetLocalBuilder() {
-    fid_t fid = comm_spec_.fid();
+  GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T> GetLocalBuilder(
+      CommType& comm) {
     return GlobalVertexMapBuilder<OID_T, VID_T, PARTITIONER_T>(
-        fid, indexers_[fid], partitioner_, id_parser_);
+        fid_, this->GetFragmentNum(), indexers_[fid_], partitioner_, id_parser_,
+        comm);
   }
 
  private:
@@ -221,7 +225,7 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
     auto io_adaptor = std::unique_ptr<IOADAPTOR_T>(new IOADAPTOR_T(path));
     io_adaptor->Open("wb");
     base_t::serialize(io_adaptor);
-    for (fid_t i = 0; i < comm_spec_.fnum(); ++i) {
+    for (fid_t i = 0; i < this->GetFragmentNum(); ++i) {
       indexers_[i].Serialize(io_adaptor);
     }
     io_adaptor->Close();
@@ -229,23 +233,23 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
  public:
   template <typename IOADAPTOR_T>
-  void Serialize(const std::string& prefix) {
+  void Serialize(const std::string& prefix, CommType& comm) {
     char fbuf[1024];
     snprintf(fbuf, sizeof(fbuf), "%s/%s", prefix.c_str(),
              kSerializationVertexMapFilename);
     std::string path = std::string(fbuf);
-    if (comm_spec_.worker_id() == 0) {
+    if (comm.rank() == 0) {
       serialize<IOADAPTOR_T>(path);
     }
-    MPI_Barrier(comm_spec_.comm());
+    comm.barrier();
     auto exists_file = [](const std::string& name) {
       std::ifstream f(name.c_str());
       return f.good();
     };
-    if (!exists_file(path) && comm_spec_.local_id() == 0) {
+    if (!exists_file(path) && comm.local_rank() == 0) {
       serialize<IOADAPTOR_T>(path);
     }
-    MPI_Barrier(comm_spec_.comm());
+    comm.barrier();
     if (!exists_file(path)) {
       serialize<IOADAPTOR_T>(path);
     }
@@ -253,6 +257,8 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
   template <typename IOADAPTOR_T>
   void Deserialize(const std::string& prefix, fid_t fid) {
+    fid_ = fid;
+
     char fbuf[1024];
     snprintf(fbuf, sizeof(fbuf), "%s/%s", prefix.c_str(),
              kSerializationVertexMapFilename);
@@ -263,8 +269,8 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
     base_t::deserialize(io_adaptor);
 
-    indexers_.resize(comm_spec_.fnum());
-    for (fid_t i = 0; i < comm_spec_.fnum(); ++i) {
+    indexers_.resize(this->GetFragmentNum());
+    for (fid_t i = 0; i < this->GetFragmentNum(); ++i) {
       indexers_[i].Deserialize(io_adaptor);
     }
     io_adaptor->Close();
@@ -272,7 +278,7 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
 
   void UpdateToBalance(std::vector<VID_T>& vnum_list,
                        std::vector<std::vector<VID_T>>& gid_maps) {
-    fid_t fnum = comm_spec_.fnum();
+    fid_t fnum = this->GetFragmentNum();
     std::vector<std::vector<internal_oid_t>> oid_lists(fnum);
     for (fid_t i = 0; i < fnum; ++i) {
       oid_lists[i].resize(vnum_list[i]);
@@ -307,8 +313,9 @@ class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   template <typename _OID_T, typename _VID_T, typename _PARTITIONER_T>
   friend class GlobalVertexMapBuilder;
 
+  fid_t fid_;
+
   std::vector<IdIndexer<internal_oid_t, VID_T>> indexers_;
-  using base_t::comm_spec_;
   using base_t::id_parser_;
   using base_t::partitioner_;
 };
