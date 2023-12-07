@@ -310,9 +310,19 @@ void CreateAndQueryOpt(const CommSpec& comm_spec, const std::string& out_prefix,
   }
 }
 
+#ifdef USE_MIMALLOC
+#include <mimalloc.h>
+#endif
+
 void RunOpt() {
   CommSpec comm_spec;
   comm_spec.Init(MPI_COMM_WORLD);
+
+#ifdef USE_MIMALLOC
+  mi_option_set(mi_option_allow_large_os_pages, 1);
+  // mi_option_set(mi_option_reserve_huge_os_pages, 100);
+  // mi_option_set(mi_option_verbose, 1);
+#endif
 
   bool is_coordinator = comm_spec.worker_id() == kCoordinatorRank;
   timer_start(is_coordinator);
