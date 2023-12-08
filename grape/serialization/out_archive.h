@@ -134,7 +134,7 @@ class OutArchive {
     begin_ = old_begin;
   }
 
-  std::vector<char> buffer_;
+  std::vector<char, Allocator<char>> buffer_;
   char* begin_;
   char* end_;
 };

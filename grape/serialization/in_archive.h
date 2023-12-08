@@ -80,7 +80,7 @@ class InArchive {
   void Reserve(size_t cap) { buffer_.reserve(cap); }
 
  private:
-  std::vector<char> buffer_;
+  std::vector<char, Allocator<char>> buffer_;
 };
 
 template <typename T,

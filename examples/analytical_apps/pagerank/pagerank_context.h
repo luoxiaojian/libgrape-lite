@@ -34,22 +34,20 @@ class PageRankContext : public VertexDataContext<FRAG_T, double> {
  public:
   explicit PageRankContext(const FRAG_T& fragment)
       : VertexDataContext<FRAG_T, double>(fragment, true),
-        result(this->data()) {}
+        result(this->data()) {
+    auto inner_vertices = fragment.InnerVertices();
+    auto vertices = fragment.Vertices();
+    degree.Init(inner_vertices);
+    next_result.Init(vertices);
+    avg_degree = static_cast<double>(fragment.GetEdgeNum()) /
+                 static_cast<double>(fragment.GetInnerVerticesNum());
+  }
 
   void Init(BatchShuffleMessageManager& messages, double delta, int max_round) {
-    auto& frag = this->fragment();
-    auto inner_vertices = frag.InnerVertices();
-    auto vertices = frag.Vertices();
-
     this->delta = delta;
     this->max_round = max_round;
-    degree.Init(inner_vertices, 0);
-    result.SetValue(0.0);
-    next_result.Init(vertices);
     step = 0;
 
-    avg_degree = static_cast<double>(frag.GetEdgeNum()) /
-                 static_cast<double>(frag.GetInnerVerticesNum());
 #ifdef PROFILING
     preprocess_time = 0;
     exec_time = 0;
