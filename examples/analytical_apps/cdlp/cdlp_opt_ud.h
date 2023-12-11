@@ -225,6 +225,18 @@ class CDLPOptUD
       }
     }
   }
+
+  void EstimateMessageSize(const fragment_t& frag, size_t& send_size,
+                           size_t& recv_size) {
+    send_size = frag.OEDestsSize() * (sizeof(vertex_t) + sizeof(label_t));
+    recv_size = frag.GetOuterVerticesNum();
+    recv_size *= (sizeof(vertex_t) + sizeof(label_t));
+  }
+
+  size_t MessageBlockSize() {
+    // return 8192 * (sizeof(vertex_t) + sizeof(label_t));
+    return 128ull * 1024 * (sizeof(vertex_t) + sizeof(label_t));
+  }
 };
 }  // namespace grape
 

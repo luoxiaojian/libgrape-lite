@@ -336,6 +336,11 @@ class DeltaVarintDecoder {
   T last_;
 };
 
+template <>
+struct SerializedSize<VarintEncoder> {
+  static size_t size(const VarintEncoder& v) { return 10 + v.size(); }
+};
+
 InArchive& operator<<(InArchive& arc, const VarintEncoder& encoder) {
   VarintUtil<uint64_t>::encode_to_archive(arc, encoder.size());
   arc.AddBytes(encoder.data(), encoder.size());
@@ -348,6 +353,13 @@ OutArchive& operator>>(OutArchive& arc, VarintDecoder& decoder) {
   decoder.reset(static_cast<const char*>(arc.GetBytes(size)), size);
   return arc;
 }
+
+template <typename T>
+struct SerializedSize<DeltaVarintEncoder<T>> {
+  static size_t size(const DeltaVarintEncoder<T>& v) {
+    return SerializedSize<VarintEncoder>::size(v.encoder());
+  }
+};
 
 template <typename T>
 InArchive& operator<<(InArchive& arc, const DeltaVarintEncoder<T>& encoder) {

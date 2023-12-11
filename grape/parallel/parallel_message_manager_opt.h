@@ -29,10 +29,11 @@ limitations under the License.
 #include "grape/communication/sync_comm.h"
 #include "grape/parallel/message_in_buffer.h"
 #include "grape/parallel/message_manager_base.h"
-#include "grape/parallel/thread_local_message_buffer.h"
+#include "grape/parallel/thread_local_message_buffer_opt.h"
 #include "grape/serialization/in_archive.h"
 #include "grape/serialization/out_archive.h"
 #include "grape/utils/concurrent_queue.h"
+#include "grape/utils/message_buffer_pool.h"
 #include "grape/worker/comm_spec.h"
 
 namespace grape {
@@ -50,6 +51,11 @@ namespace grape {
  * the fixed point is reached.
  *
  */
+
+struct Blob {
+  char* data;
+  size_t size;
+};
 
 class ParallelMessageManagerOpt : public MessageManagerBase {
   static constexpr size_t default_msg_send_block_size = 2 * 1023 * 1024;
@@ -82,7 +88,28 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
 
     sent_size_ = 0;
     total_sent_size_ = 0;
+
+    int channel_num = std::thread::hardware_concurrency();
+    channels_.resize(channel_num);
+    for (auto& channel : channels_) {
+      channel.Init(fnum_, this, &pool_);
+    }
+
+    size_t init_recv_size = pool_.init_size() / 2;
+    size_t init_recv_num = init_recv_size / (16ull * 1024 * 1024) + 1;
+    for (size_t i = 0; i < init_recv_num; ++i) {
+      std::vector<char, Allocator<char>> vec;
+      vec.resize(16ull * 1024 * 1024);
+      recv_buf_pool_.emplace_back(std::move(vec));
+    }
+
+    recv_bufs_[0].resize(16ull * 1024 * 1024);
+    recv_bufs_[1].resize(16ull * 1024 * 1024);
+    recv_bufs_loc_[0] = 0;
+    recv_bufs_loc_[1] = 0;
   }
+
+  MessageBufferPool& GetPool() { return pool_; }
 
   /**
    * @brief Inherit
@@ -98,11 +125,12 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
       auto& rq = recv_queues_[round_ % 2];
       if (!to_self_.empty()) {
         for (auto& iarc : to_self_) {
-          OutArchive oarc(std::move(iarc));
-          rq.Put(std::move(oarc));
+          // rq.Put(std::move(iarc));
+          rq.Put(Blob{iarc.data(), iarc.size()});
         }
-        to_self_.clear();
+        // to_self_.clear();
       }
+      std::swap(to_self_, last_to_self_);
       rq.DecProducerNum();
     }
     sent_size_ = 0;
@@ -189,11 +217,12 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
                     size_t block_cap = default_msg_send_block_capacity) {
     channels_.resize(channel_num);
     for (auto& channel : channels_) {
-      channel.Init(fnum_, this, block_size, block_cap);
+      channel.Init(fnum_, this, &pool_);
     }
   }
 
-  std::vector<ThreadLocalMessageBuffer<ParallelMessageManagerOpt>>& Channels() {
+  std::vector<ThreadLocalMessageBufferOpt<ParallelMessageManagerOpt>>&
+  Channels() {
     return channels_;
   }
 
@@ -203,8 +232,9 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
    * @param fid Destination fragment id.
    * @param arc Message buffer.
    */
-  inline void SendRawMsgByFid(fid_t fid, InArchive&& arc) {
-    std::pair<fid_t, InArchive> item;
+  inline void SendRawMsgByFid(fid_t fid,
+                              std::vector<char, Allocator<char>>&& arc) {
+    std::pair<fid_t, std::vector<char, Allocator<char>>> item;
     item.first = fid;
     item.second = std::move(arc);
     sending_queue_.Put(std::move(item));
@@ -303,22 +333,6 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
   }
 
   /**
-   * @brief Get a bunch of messages, stored in a MessageInBuffer.
-   *
-   * @param buf Message buffer which holds a grape::OutArchive.
-   */
-  inline bool GetMessageInBuffer(MessageInBuffer& buf) {
-    grape::OutArchive arc;
-    auto& que = recv_queues_[round_ % 2];
-    if (que.Get(arc)) {
-      buf.Init(std::move(arc));
-      return true;
-    } else {
-      return false;
-    }
-  }
-
-  /**
    * @brief Parallel process all incoming messages with given function of last
    * round.
    *
@@ -341,13 +355,20 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
             typename GRAPH_T::vertex_t vertex(0);
             MESSAGE_T msg;
             auto& que = recv_queues_[round_ % 2];
-            OutArchive arc;
-            while (que.Get(arc)) {
+            Blob vec;
+            // std::vector<char, Allocator<char>> vec;
+            // while (que.Get(vec)) {
+            while (que.Get(vec)) {
+              OutArchive arc;
+              // arc.SetSlice(vec.data(), vec.size());
+              arc.SetSlice(vec.data, vec.size);
               while (!arc.Empty()) {
                 arc >> id >> msg;
                 frag.Gid2Vertex(id, vertex);
                 func(tid, vertex, msg);
               }
+              // vec.clear();
+              // pool_.give(std::move(vec));
             }
           },
           i);
@@ -356,76 +377,17 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
     for (auto& thrd : threads) {
       thrd.join();
     }
-  }
 
-  template <typename GRAPH_T, typename MESSAGE_T, typename FUNC_T>
-  inline size_t ParallelProcessCount(int thread_num, const GRAPH_T& frag,
-                                     const FUNC_T& func) {
-    std::vector<std::thread> threads(thread_num);
-    std::atomic<size_t> ret(0);
-
-    for (int i = 0; i < thread_num; ++i) {
-      threads[i] = std::thread(
-          [&](int tid) {
-            typename GRAPH_T::vid_t id;
-            typename GRAPH_T::vertex_t vertex(0);
-            MESSAGE_T msg;
-            auto& que = recv_queues_[round_ % 2];
-            OutArchive arc;
-            size_t local_count = 0;
-            while (que.Get(arc)) {
-              while (!arc.Empty()) {
-                arc >> id >> msg;
-                frag.Gid2Vertex(id, vertex);
-                func(tid, vertex, msg);
-                ++local_count;
-              }
-            }
-            ret.fetch_add(local_count, std::memory_order_relaxed);
-          },
-          i);
+    recv_buf_pool_lock_.lock();
+    for (auto& vec : recv_bufs_stash_[round_ % 2]) {
+      recv_buf_pool_.push_back(std::move(vec));
     }
-
-    for (auto& thrd : threads) {
-      thrd.join();
+    recv_buf_pool_lock_.unlock();
+    recv_bufs_stash_[round_ % 2].clear();
+    for (auto& vec : last_to_self_) {
+      pool_.give(std::move(vec));
     }
-    return ret.load();
-  }
-
-  /**
-   * @brief Parallel process all incoming messages with given function of last
-   * round.
-   *
-   * @tparam GRAPH_T Graph type.
-   * @tparam MESSAGE_T Message type.
-   * @tparam FUNC_T Function type.
-   * @param thread_num Number of threads.
-   * @param frag
-   * @param func
-   */
-  template <typename MESSAGE_T, typename FUNC_T>
-  inline void ParallelProcess(int thread_num, const FUNC_T& func) {
-    std::vector<std::thread> threads(thread_num);
-
-    for (int i = 0; i < thread_num; ++i) {
-      threads[i] = std::thread(
-          [&](int tid) {
-            MESSAGE_T msg;
-            auto& que = recv_queues_[round_ % 2];
-            OutArchive arc;
-            while (que.Get(arc)) {
-              while (!arc.Empty()) {
-                arc >> msg;
-                func(tid, msg);
-              }
-            }
-          },
-          i);
-    }
-
-    for (auto& thrd : threads) {
-      thrd.join();
-    }
+    last_to_self_.clear();
   }
 
  private:
@@ -438,9 +400,11 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
     send_thread_ = std::thread(
         [this](int msg_round) {
           std::vector<MPI_Request> reqs;
-          std::pair<fid_t, InArchive> item;
+          std::pair<fid_t, std::vector<char, Allocator<char>>> item;
+          std::vector<std::vector<char, Allocator<char>>> to_others;
           while (sending_queue_.Get(item)) {
-            if (item.second.GetSize() == 0) {
+            if (item.second.size() == 0) {
+              pool_.give(std::move(item.second));
               continue;
             }
             if (item.first == fid_) {
@@ -448,10 +412,10 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
             } else {
               MPI_Request req;
               sync_comm::isend_small_buffer<char>(
-                  item.second.GetBuffer(), item.second.GetSize(),
+                  item.second.data(), item.second.size(),
                   comm_spec_.FragToWorker(item.first), msg_round, comm_, req);
               reqs.push_back(req);
-              to_others_.emplace_back(std::move(item.second));
+              to_others.emplace_back(std::move(item.second));
             }
           }
           for (fid_t i = 0; i < fnum_; ++i) {
@@ -464,7 +428,10 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
             reqs.push_back(req);
           }
           MPI_Waitall(reqs.size(), &reqs[0], MPI_STATUSES_IGNORE);
-          to_others_.clear();
+          for (auto& vec : to_others) {
+            vec.clear();
+            pool_.give(std::move(vec));
+          }
         },
         round + 1);
   }
@@ -486,72 +453,43 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
                                            comm_);
         recv_queues_[tag % 2].DecProducerNum();
       } else {
-        OutArchive arc(count);
-        sync_comm::recv_small_buffer<char>(arc.GetBuffer(), count,
-                                           status.MPI_SOURCE, tag, comm_);
-        recv_queues_[tag % 2].Put(std::move(arc));
+#if 0
+        auto vec = pool_.take();
+        vec.resize(count);
+        sync_comm::recv_small_buffer<char>(vec.data(), count, status.MPI_SOURCE,
+                                           tag, comm_);
+        recv_queues_[tag % 2].Put(std::move(vec));
+#else
+        size_t loc = recv_bufs_loc_[tag % 2];
+        if (loc + count > recv_bufs_[tag % 2].size()) {
+          recv_bufs_stash_[tag % 2].emplace_back(
+              std::move(recv_bufs_[tag % 2]));
+          recv_buf_pool_lock_.lock();
+          if (!recv_buf_pool_.empty()) {
+            recv_bufs_[tag % 2] = std::move(recv_buf_pool_.front());
+            recv_buf_pool_.pop_front();
+            recv_buf_pool_lock_.unlock();
+          } else {
+            recv_buf_pool_lock_.unlock();
+            std::vector<char, Allocator<char>> vec;
+            vec.resize(16ull * 1024 * 1024);
+            recv_bufs_[tag % 2] = std::move(vec);
+          }
+          recv_bufs_loc_[tag % 2] = 0;
+          loc = 0;
+        }
+        char* ptr = recv_bufs_[tag % 2].data() + loc;
+        sync_comm::recv_small_buffer<char>(ptr, count, status.MPI_SOURCE, tag,
+                                           comm_);
+        recv_queues_[tag % 2].Put(Blob{ptr, static_cast<size_t>(count)});
+        recv_bufs_loc_[tag % 2] += count;
+#endif
       }
     }
-  }
-
-  int probeIncomingMessages() {
-    int gotMessage = 0;
-    int flag;
-    MPI_Status status;
-    while (true) {
-      MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, comm_, &flag, &status);
-      if (flag) {
-        if (status.MPI_SOURCE == comm_spec_.worker_id()) {
-          sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, 0,
-                                             comm_);
-          return -1;
-        }
-        gotMessage = 1;
-        int tag = status.MPI_TAG;
-        int count;
-        MPI_Get_count(&status, MPI_CHAR, &count);
-        if (count == 0) {
-          sync_comm::recv_small_buffer<char>(NULL, 0, status.MPI_SOURCE, tag,
-                                             comm_);
-          recv_queues_[tag % 2].DecProducerNum();
-        } else {
-          OutArchive arc(count);
-          sync_comm::recv_small_buffer<char>(arc.GetBuffer(), count,
-                                             status.MPI_SOURCE, tag, comm_);
-          recv_queues_[tag % 2].Put(std::move(arc));
-        }
-      } else {
-        break;
-      }
-    }
-    return gotMessage;
   }
 
   void startRecvThread() {
-    recv_thread_ = std::thread([this]() {
-#if 0
-      int idle_time = 0;
-      while (true) {
-        int gotMessage = probeIncomingMessages();
-        if (gotMessage == -1) {
-          break;
-        }
-        idle_time += static_cast<int>(gotMessage == 0);
-        if (idle_time > 10) {
-          poll(NULL, 0, 1);
-          idle_time = 0;
-        } else if (gotMessage == 0) {
-#if __APPLE__
-          sched_yield();
-#else
-          pthread_yield();
-#endif
-        }
-      }
-#else
-      probeAllIncomingMessages();
-#endif
-    });
+    recv_thread_ = std::thread([this]() { probeAllIncomingMessages(); });
   }
 
   void stopRecvThread() {
@@ -574,9 +512,28 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
   void resetRecvQueue() {
     auto& curr_recv_queue = recv_queues_[round_ % 2];
     if (round_) {
-      OutArchive arc;
-      while (curr_recv_queue.Get(arc)) {}
+#if 0
+      std::vector<char, Allocator<char>> vec;
+      while (curr_recv_queue.Get(vec)) {
+        vec.clear();
+        pool_.give(std::move(vec));
+      }
+#else
+      Blob vec;
+      while (curr_recv_queue.Get(vec)) {}
+#endif
     }
+    recv_bufs_loc_[round_ % 2] = 0;
+    for (auto& buf : recv_bufs_stash_[round_ % 2]) {
+      recv_buf_pool_lock_.lock();
+      recv_buf_pool_.push_back(std::move(buf));
+      recv_buf_pool_lock_.unlock();
+    }
+    recv_bufs_stash_[round_ % 2].clear();
+    for (auto& vec : last_to_self_) {
+      pool_.give(std::move(vec));
+    }
+    last_to_self_.clear();
     curr_recv_queue.SetProducerNum(fnum_);
   }
 
@@ -588,16 +545,26 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
 
   MPI_Comm comm_;
 
-  std::vector<InArchive> to_self_;
-  std::vector<InArchive> to_others_;
+  std::vector<std::vector<char, Allocator<char>>> to_self_;
+  std::vector<std::vector<char, Allocator<char>>> last_to_self_;
 
-  std::vector<ThreadLocalMessageBuffer<ParallelMessageManagerOpt>> channels_;
+  std::vector<ThreadLocalMessageBufferOpt<ParallelMessageManagerOpt>> channels_;
   int round_;
 
-  BlockingQueue<std::pair<fid_t, InArchive>> sending_queue_;
+  BlockingQueue<std::pair<fid_t, std::vector<char, Allocator<char>>>>
+      sending_queue_;
   std::thread send_thread_;
 
-  std::array<BlockingQueue<OutArchive>, 2> recv_queues_;
+  // std::array<BlockingQueue<std::vector<char, Allocator<char>>>, 2>
+  // recv_queues_;
+  std::array<BlockingQueue<Blob>, 2> recv_queues_;
+  std::array<std::vector<std::vector<char, Allocator<char>>>, 2>
+      recv_bufs_stash_;
+  std::array<size_t, 2> recv_bufs_loc_;
+  std::array<std::vector<char, Allocator<char>>, 2> recv_bufs_;
+  std::deque<std::vector<char, Allocator<char>>> recv_buf_pool_;
+  SpinLock recv_buf_pool_lock_;
+
   std::thread recv_thread_;
 
   bool force_continue_;
@@ -606,6 +573,8 @@ class ParallelMessageManagerOpt : public MessageManagerBase {
 
   bool force_terminate_;
   TerminateInfo terminate_info_;
+
+  MessageBufferPool pool_;
 };
 
 }  // namespace grape

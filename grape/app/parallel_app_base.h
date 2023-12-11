@@ -76,6 +76,14 @@ class ParallelAppBase {
    */
   virtual void IncEval(const FRAG_T& graph, CONTEXT_T& context,
                        message_manager_t& messages) = 0;
+
+  virtual void EstimateMessageSize(const FRAG_T& graph, size_t& send_size,
+                                   size_t& recv_size) {
+    send_size = 0;
+    recv_size = 0;
+  }
+
+  virtual size_t MessageBlockSize() { return 2 * 1024 * 1024; }
 };
 
 #define INSTALL_PARALLEL_WORKER(APP_T, CONTEXT_T, FRAG_T)         \

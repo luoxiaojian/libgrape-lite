@@ -53,6 +53,11 @@ class InArchive {
     return *this;
   }
 
+  InArchive& operator=(std::vector<char, Allocator<char>>&& rhs) {
+    buffer_ = std::move(rhs);
+    return *this;
+  }
+
   inline void Reset() { buffer_.clear(); }
 
   inline char* GetBuffer() { return buffer_.data(); }
@@ -78,6 +83,8 @@ class InArchive {
   bool Empty() const { return buffer_.empty(); }
 
   void Reserve(size_t cap) { buffer_.reserve(cap); }
+
+  std::vector<char, Allocator<char>>& buffer() { return buffer_; }
 
  private:
   std::vector<char, Allocator<char>> buffer_;
@@ -238,6 +245,34 @@ inline InArchive& operator<<(InArchive& in_archive,
   }
   return in_archive;
 }
+
+template <typename T>
+struct SerializedSize {
+  static size_t size(const T& v) {
+    LOG(FATAL) << "Not implemented";
+    return sizeof(T);
+  }
+};
+
+template <>
+struct SerializedSize<EmptyType> {
+  static size_t size(const EmptyType& v) {
+    LOG(FATAL) << "Not expected to be called";
+    return 0;
+  }
+};
+
+template <>
+struct SerializedSize<std::string> {
+  static size_t size(const std::string& v) { return v.size() + sizeof(size_t); }
+};
+
+template <>
+struct SerializedSize<nonstd::string_view> {
+  static size_t size(const nonstd::string_view& v) {
+    return v.size() + sizeof(size_t);
+  }
+};
 
 }  // namespace grape
 
