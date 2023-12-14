@@ -92,6 +92,12 @@ if (WITH_ASAN)
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
 endif ()
 
+find_package(mimalloc 2.1)
+if (mimalloc_FOUND)
+  message(STATUS "Found mimalloc: ${MIMALLOC_INCLUDE_DIR}")
+  add_definitions(-DUSE_MIMALLOC)
+  include_directories(SYSTEM ${MIMALLOC_INCLUDE_DIR})
+endif ()
 
 # find CUDA, 9.0 at least
 find_package(CUDA 9 QUIET)
@@ -227,6 +233,9 @@ target_link_libraries(grape-lite ${MPI_CXX_LIBRARIES}
 if (JEMALLOC_FOUND)
   target_link_libraries(grape-lite ${JEMALLOC_LIBRARIES})
 endif ()
+if (mimalloc_FOUND)
+  target_link_libraries(grape-lite PUBLIC mimalloc)
+endif ()
 
 if (NOT GFLAGS_FOUND)
   message(WARNING "Disable analytical_apps because gflags not found")
@@ -238,6 +247,9 @@ else ()
   set_target_properties(analytical_apps PROPERTIES OUTPUT_NAME run_app)
   target_link_libraries(analytical_apps grape-lite ${MPI_CXX_LIBRARIES}
                         ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS})
+  if (mimalloc_FOUND)
+    target_link_libraries(analytical_apps PUBLIC mimalloc)
+  endif ()
   install_without_export_libgrapelite_target(analytical_apps)
 
   file(GLOB TEST_FILES RELATIVE "${PROJECT_SOURCE_DIR}/tests" "${PROJECT_SOURCE_DIR}/tests/*.cc")
@@ -253,6 +265,9 @@ else ()
     target_include_directories(${T_NAME} PRIVATE examples/analytical_apps)
     target_link_libraries(${T_NAME} PRIVATE grape-lite ${MPI_CXX_LIBRARIES}
                           ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS})
+    if (mimalloc_FOUND)
+      target_link_libraries(${T_NAME} PUBLIC mimalloc)
+    endif ()
   endforeach()
 
   if (WITH_CUDA)

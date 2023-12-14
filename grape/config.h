@@ -39,12 +39,18 @@ namespace gflags = google;
 // type alias
 using fid_t = unsigned;
 
+#ifdef USE_MIMALLOC
+#include <mimalloc.h>
+template <typename T>
+using Allocator = mi_stl_allocator<T>;
+#else
 #ifdef USE_HUGEPAGES
 template <typename T>
 using Allocator = HpAllocator<T>;
 #else
 template <typename T>
 using Allocator = DefaultAllocator<T>;
+#endif
 #endif
 
 #ifdef __CUDACC__
