@@ -17,6 +17,7 @@ limitations under the License.
 #define GRAPE_GRAPH_HASHMAP_INDEXER_IMPL_H_
 
 #include <vector>
+#include "grape/communication/sync_comm.h"
 
 #include "grape/utils/ref_vector.h"
 #include "grape/utils/string_view_vector.h"
@@ -44,6 +45,11 @@ inline int8_t log2(size_t value) {
 }
 
 template <typename T>
+size_t vec_bytes(T const& vec) {
+  return vec.size() * sizeof(vec.front()) + sizeof(typename T::size_type);
+}
+
+template <typename T>
 struct KeyBuffer {
  public:
   KeyBuffer() = default;
@@ -56,8 +62,10 @@ struct KeyBuffer {
 
   size_t size() const { return inner_.size(); }
 
-  std::vector<T, Allocator<T>>& buffer() { return inner_; }
-  const std::vector<T, Allocator<T>>& buffer() const { return inner_; }
+  // std::vector<T, Allocator<T>>& buffer() { return inner_; }
+  // const std::vector<T, Allocator<T>>& buffer() const { return inner_; }
+  std::vector<T>& buffer() { return inner_; }
+  const std::vector<T>& buffer() const { return inner_; }
 
   template <typename IOADAPTOR_T>
   void serialize(std::unique_ptr<IOADAPTOR_T>& writer) const {
@@ -96,8 +104,13 @@ struct KeyBuffer {
     dumper.dump_vec(inner_);
   }
 
+  size_t dump_size() { return vec_bytes(inner_); }
+
+  void resize(size_t size) { inner_.resize(size); }
+
  private:
-  std::vector<T, Allocator<T>> inner_;
+  // std::vector<T, Allocator<T>> inner_;
+  std::vector<T> inner_;
 };
 
 template <>
@@ -144,9 +157,61 @@ struct KeyBuffer<nonstd::string_view> {
     dumper.dump_vec(inner_.offset_buffer());
   }
 
+  size_t dump_size() {
+    return vec_bytes(inner_.content_buffer()) +
+           vec_bytes(inner_.offset_buffer());
+  }
+
  private:
   StringViewVector inner_;
 };
+
+#if __cplusplus >= 201703L
+template <>
+struct KeyBuffer<std::string_view> {
+  KeyBuffer() = default;
+  ~KeyBuffer() = default;
+
+  std::string_view get(size_t idx) const {
+    std::string_view view(inner_[idx].data(), inner_[idx].size());
+    return view;
+  }
+
+  void push_back(const std::string_view& val) {
+    nonstd::string_view view(val.data(), val.size());
+    inner_.push_back(view);
+  }
+
+  size_t size() const { return inner_.size(); }
+
+  StringViewVector& buffer() { return inner_; }
+  const StringViewVector& buffer() const { return inner_; }
+
+  void swap(KeyBuffer& rhs) { inner_.swap(rhs.inner_); }
+
+  void clear() { inner_.clear(); }
+
+  template <typename Loader>
+  void load(Loader& loader) {
+    loader.load_vec(inner_.content_buffer());
+    loader.load_vec(inner_.offset_buffer());
+  }
+
+  template <typename Dumper>
+  void dump(Dumper& dumper) const {
+    dumper.dump_vec(inner_.content_buffer());
+    dumper.dump_vec(inner_.offset_buffer());
+  }
+
+  size_t dump_size() {
+    return vec_bytes(inner_.content_buffer()) +
+           vec_bytes(inner_.offset_buffer());
+  }
+
+ private:
+  StringViewVector inner_;
+};
+#endif
 
 template <typename T>
 struct KeyBufferView {
