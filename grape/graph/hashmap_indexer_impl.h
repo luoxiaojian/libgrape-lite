@@ -45,7 +45,7 @@ inline int8_t log2(size_t value) {
 }
 
 template <typename T>
-size_t vec_bytes(T const& vec) {
+size_t vec_dump_bytes(T const& vec) {
   return vec.size() * sizeof(vec.front()) + sizeof(typename T::size_type);
 }
 
@@ -62,10 +62,8 @@ struct KeyBuffer {
 
   size_t size() const { return inner_.size(); }
 
-  // std::vector<T, Allocator<T>>& buffer() { return inner_; }
-  // const std::vector<T, Allocator<T>>& buffer() const { return inner_; }
-  std::vector<T>& buffer() { return inner_; }
-  const std::vector<T>& buffer() const { return inner_; }
+  std::vector<T, Allocator<T>>& buffer() { return inner_; }
+  const std::vector<T, Allocator<T>>& buffer() const { return inner_; }
 
   template <typename IOADAPTOR_T>
   void serialize(std::unique_ptr<IOADAPTOR_T>& writer) const {
@@ -104,13 +102,12 @@ struct KeyBuffer {
     dumper.dump_vec(inner_);
   }
 
-  size_t dump_size() { return vec_bytes(inner_); }
+  size_t dump_size() { return vec_dump_bytes(inner_); }
 
   void resize(size_t size) { inner_.resize(size); }
 
  private:
-  // std::vector<T, Allocator<T>> inner_;
-  std::vector<T> inner_;
+  std::vector<T, Allocator<T>> inner_;
 };
 
 template <>
@@ -158,8 +155,8 @@ struct KeyBuffer<nonstd::string_view> {
   }
 
   size_t dump_size() {
-    return vec_bytes(inner_.content_buffer()) +
-           vec_bytes(inner_.offset_buffer());
+    return vec_dump_bytes(inner_.content_buffer()) +
+           vec_dump_bytes(inner_.offset_buffer());
   }
 
  private:
@@ -204,8 +201,8 @@ struct KeyBuffer<std::string_view> {
   }
 
   size_t dump_size() {
-    return vec_bytes(inner_.content_buffer()) +
-           vec_bytes(inner_.offset_buffer());
+    return vec_dump_bytes(inner_.content_buffer()) +
+           vec_dump_bytes(inner_.offset_buffer());
   }
 
  private:
