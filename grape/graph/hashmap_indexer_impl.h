@@ -17,8 +17,8 @@ limitations under the License.
 #define GRAPE_GRAPH_HASHMAP_INDEXER_IMPL_H_
 
 #include <vector>
-#include "grape/communication/sync_comm.h"
 
+#include "grape/communication/sync_comm.h"
 #include "grape/utils/ref_vector.h"
 #include "grape/utils/string_view_vector.h"
 
