@@ -16,7 +16,6 @@
 #ifndef GRAPE_GRAPH_PERFECT_HASH_INDEXER_H_
 #define GRAPE_GRAPH_PERFECT_HASH_INDEXER_H_
 
-
 #include "grape/graph/hashmap_indexer_impl.h"
 #include "grape/util.h"
 #include "grape/utils/pthash_utils/single_phf_view.h"
@@ -127,7 +126,7 @@ class PHIdxerViewBuilder {
   void add(KEY_T&& oid) { keys_.push_back(std::move(oid)); }
 
   void buildPhf() {
-    grape::SinglePHFView<grape::murmurhasher>::build(keys_.begin(),
+    SinglePHFView<murmurhasher>::build(keys_.begin(),
                                                      keys_.size(), phf, 1);
     std::vector<KEY_T> ordered_keys(keys_.size());
     for (auto& key : keys_) {
@@ -140,7 +139,7 @@ class PHIdxerViewBuilder {
   }
 
   void finish(void *buffer, size_t size, ImmPHIdxer<KEY_T, INDEX_T> &idxer) {
-    grape::external_mem_dumper dumper(buffer, size);
+    external_mem_dumper dumper(buffer, size);
     phf.dump(dumper);
     key_buffer.dump(dumper);
     idxer.Init(static_cast<const char*>(dumper.buffer()), dumper.size());
@@ -152,8 +151,8 @@ class PHIdxerViewBuilder {
 
  private:
   std::vector<KEY_T> keys_;
-  grape::hashmap_indexer_impl::KeyBuffer<KEY_T> key_buffer;
-  pthash::single_phf<grape::murmurhasher, pthash::dictionary_dictionary, true> phf;
+  hashmap_indexer_impl::KeyBuffer<KEY_T> key_buffer;
+  pthash::single_phf<murmurhasher, pthash::dictionary_dictionary, true> phf;
 };
 
 }  // namespace grape

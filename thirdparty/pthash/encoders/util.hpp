@@ -23,7 +23,6 @@
 
 #include <cstdint>
 #include <cassert>
-#include <xmmintrin.h>
 
 #if defined(__x86_64__) && __SSE4_2__
 #include <immintrin.h>
@@ -31,10 +30,12 @@
 
 namespace pthash::util {
 
+#if defined(__x86_64__) && __SSE4_2__
 template <typename T>
 inline void prefetch(T const* ptr) {
   _mm_prefetch(reinterpret_cast<const char*>(ptr), _MM_HINT_T0);
 }
+#endif
 
 inline uint8_t msb(uint64_t x) {
   assert(x);
